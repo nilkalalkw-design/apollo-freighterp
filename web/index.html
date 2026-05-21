@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Apollo Freight ERP Web</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-mark">A F S</div>
+        <div>
+          <p class="eyebrow">Apollo Freight Solutions</p>
+          <h1>Operations Web Console</h1>
+        </div>
+        <nav class="nav-list" aria-label="Sections">
+          <a href="#shipments">Shipments</a>
+          <a href="#consolidations">Consolidations</a>
+          <a href="#customers">Customers</a>
+        </nav>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Live API Status</p>
+            <h2 id="apiStatusTitle">Checking Render API</h2>
+          </div>
+          <form id="apiSettingsForm" class="api-settings">
+            <label for="apiUrl">API URL</label>
+            <input id="apiUrl" name="apiUrl" type="url" autocomplete="off" />
+            <button type="submit">Save</button>
+          </form>
+        </header>
+
+        <section class="metrics" aria-label="Operational summary">
+          <article>
+            <span>Shipments</span>
+            <strong id="shipmentCount">0</strong>
+          </article>
+          <article>
+            <span>Consolidations</span>
+            <strong id="consolidationCount">0</strong>
+          </article>
+          <article>
+            <span>Customers</span>
+            <strong id="customerCount">0</strong>
+          </article>
+          <article>
+            <span>Database</span>
+            <strong id="databaseStatus">Pending</strong>
+          </article>
+        </section>
+
+        <section id="shipments" class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Shipment Register</p>
+              <h3>Latest shipments</h3>
+            </div>
+            <button id="refreshButton" type="button">Refresh</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Job No</th>
+                  <th>Customer</th>
+                  <th>Route</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="shipmentsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="split-grid">
+          <article id="consolidations" class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Consolidation</p>
+                <h3>Trips and manifests</h3>
+              </div>
+            </div>
+            <div id="consolidationsList" class="record-list"></div>
+          </article>
+
+          <article id="customers" class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Accounts</p>
+                <h3>Customer register</h3>
+              </div>
+            </div>
+            <div id="customersList" class="record-list"></div>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Quick Entry</p>
+              <h3>Create shipment</h3>
+            </div>
+          </div>
+          <form id="shipmentForm" class="entry-form">
+            <label>
+              Job No
+              <input name="jobNo" required placeholder="AFS-2605009" />
+            </label>
+            <label>
+              Customer
+              <input name="customerName" required placeholder="Customer name" />
+            </label>
+            <label>
+              Origin
+              <input name="origin" placeholder="Kuwait City" />
+            </label>
+            <label>
+              Destination
+              <input name="destination" placeholder="Riyadh" />
+            </label>
+            <label>
+              Status
+              <select name="status">
+                <option>Booked</option>
+                <option>In-Transit</option>
+                <option>Delivered</option>
+                <option>Closed</option>
+              </select>
+            </label>
+            <button type="submit">Create Shipment</button>
+          </form>
+          <p id="formMessage" class="form-message" role="status"></p>
+        </section>
+      </main>
+    </div>
+
+    <script src="./config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

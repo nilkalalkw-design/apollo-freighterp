@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: apollo-freighterp-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ALLOWED_ORIGIN
+        value: https://apollo-freighterp.vercel.app
+      - key: DATABASE_URL
+        fromDatabase:
+          name: apollo-freighterp-db
+          property: connectionString
+
+databases:
+  - name: apollo-freighterp-db
+    plan: free
+    region: frankfurt
+    databaseName: apollofreighterp
