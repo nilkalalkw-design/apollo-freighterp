@@ -4,59 +4,367 @@ const fs = require("fs");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const path = require("path");
-const { port, allowedOrigin } = require("./config");
+const { allowedOrigin, autoMigrate, port } = require("./config");
 const { query, testConnection } = require("./db");
+const { runMigrations } = require("./migrate");
 
 const app = express();
-const webDir = path.resolve(__dirname, "..", "web");
+const webDirCandidates = [path.resolve(__dirname, "..", "web"), path.resolve(__dirname, "..", "..", "web")];
+const webDir = webDirCandidates.find((candidate) => fs.existsSync(path.join(candidate, "index.html"))) || webDirCandidates[0];
 const webIndex = path.join(webDir, "index.html");
 
-const demoShipments = [
-  {
-    id: 1,
-    job_no: "AFS-DEMO-001",
-    branch: "Branch 1",
-    customer_name: "Gulf Retail Trading",
-    origin: "Kuwait City",
-    destination: "Riyadh",
-    status: "Booked",
-    booking_date: new Date().toISOString(),
-    created_at: new Date().toISOString()
-  }
-];
+const demoRows = {
+  shipments: [
+    {
+      id: 1,
+      job_no: "AFS-2605001",
+      branch: "Branch 1",
+      customer_name: "Gulf Retail Trading",
+      origin: "Kuwait City",
+      destination: "Riyadh",
+      status: "Booked",
+      pieces: 14,
+      actual_kg: 820,
+      cbm: 5.2,
+      chargeable_kg: 1040,
+      sell: 485,
+      buy_cost: 330,
+      pod_status: "Pending",
+      invoice_status: "Unbilled",
+      booking_date: "2026-05-05",
+      airway_bill_no: "AWB-2605001",
+      tariff_no: "TAR-1001",
+      transit_days: 3,
+      created_at: new Date().toISOString()
+    }
+  ],
+  consolidations: [
+    {
+      id: 1,
+      load_no: "CON-260501",
+      trip_date: "2026-05-05",
+      route: "Kuwait - Riyadh",
+      transporter: "Al Dana Transport",
+      vehicle_no: "KWT-49217",
+      status: "Dispatched",
+      pieces: 14,
+      actual_kg: 820,
+      cbm: 5.2,
+      chargeable_kg: 1040,
+      job_numbers: "AFS-2605001",
+      created_at: new Date().toISOString()
+    }
+  ],
+  customers: [
+    {
+      id: 1,
+      code: "CUS-001",
+      name: "Gulf Retail Trading",
+      location_or_lane: "Kuwait City",
+      email: "ops@gulf-retail.example",
+      terms: "30 days",
+      status: "Active",
+      is_account_overdue: false,
+      branch: "Branch 1",
+      created_at: new Date().toISOString()
+    }
+  ],
+  suppliers: [
+    {
+      id: 1,
+      code: "TRN-001",
+      name: "Al Dana Transport",
+      location_or_lane: "Kuwait - Riyadh",
+      email: "dispatch@aldana.example",
+      terms: "20 days",
+      status: "Active",
+      is_account_overdue: false,
+      branch: "Branch 1",
+      service_type: "Transporter",
+      created_at: new Date().toISOString()
+    }
+  ],
+  tariffs: [
+    {
+      id: 1,
+      tariff_no: "TAR-1001",
+      customer: "Gulf Retail Trading",
+      origin: "Kuwait City",
+      destination: "Riyadh",
+      main_section: "FTL",
+      weight_section: "Minimum",
+      rate_type: "Per KG",
+      rate: 0.42,
+      min_charge: 35,
+      volumetric_divisor: 5000,
+      effective_from: "2026-01-01",
+      effective_to: "2026-12-31",
+      status: "Active"
+    }
+  ],
+  documents: [
+    {
+      id: 1,
+      document_no: "DOC-001",
+      linked_no: "AFS-2605001",
+      type: "Waybill",
+      status: "Issued",
+      date: "2026-05-05",
+      owner: "operations",
+      file_name: "AFS-2605001-waybill.pdf"
+    }
+  ],
+  invoices: [
+    {
+      id: 1,
+      invoice_no: "INV-260001",
+      customer: "Gulf Retail Trading",
+      shipment_no: "AFS-2605004",
+      revenue: 95,
+      supplier_cost: 70,
+      gross_profit: 25,
+      status: "Sent",
+      date: "2026-05-02"
+    }
+  ],
+  users: [
+    {
+      id: 1,
+      user_name: "admin",
+      email: "admin@apollofreightsolution.com",
+      role: "Admin",
+      account_status: "Active",
+      branch_access: "Both",
+      can_view_all_entry: true,
+      can_view_only_self_entry: true,
+      can_edit_all_entry: true,
+      can_view_updated_history: true,
+      notes: "Default test administrator"
+    }
+  ],
+  "unblock-requests": [
+    {
+      id: 1,
+      request_no: "REQ-2605001",
+      customer_name: "Desert Medical Supplies",
+      requested_by: "operations",
+      reason: "Credit release requested",
+      status: "Pending",
+      date: "2026-05-05"
+    }
+  ],
+  audit: [
+    {
+      id: 1,
+      date_time: "2026-05-05 09:15",
+      user_name: "operations",
+      action: "Created shipment",
+      reference: "AFS-2605001",
+      details: {}
+    }
+  ],
+  settings: [
+    {
+      id: 1,
+      settings_key: "default",
+      company_name: "Apollo Freight Solutions",
+      shipment_number_format: "AFS-YY####",
+      invoice_number_format: "INV-YY####",
+      default_volumetric_divisor: "5000",
+      require_pod_before_invoice: "Yes",
+      branches: "Branch 1, Branch 2"
+    }
+  ]
+};
 
-const demoConsolidations = [
-  {
-    id: 1,
-    load_no: "CON-DEMO-001",
-    trip_date: new Date().toISOString(),
-    route: "Kuwait - Riyadh",
-    transporter: "Al Dana Transport",
-    vehicle_no: "KWT-DEMO",
-    status: "Planned",
-    pieces: 14,
-    actual_kg: 820,
-    cbm: 5.2,
-    chargeable_kg: 1040,
-    job_numbers: "AFS-DEMO-001",
-    created_at: new Date().toISOString()
+const resources = {
+  shipments: {
+    table: "shipments",
+    key: "job_no",
+    order: "created_at desc",
+    fields: [
+      field("job_no", ["jobNo", "job_no"], true),
+      field("branch"),
+      field("customer_name", ["customerName", "customer", "customer_name"], true),
+      field("origin"),
+      field("destination"),
+      field("status"),
+      field("pieces"),
+      field("actual_kg", ["actualKg", "actual_kg"]),
+      field("cbm"),
+      field("chargeable_kg", ["chargeableKg", "chargeable_kg"]),
+      field("sell"),
+      field("buy_cost", ["buyCost", "buy_cost"]),
+      field("pod_status", ["podStatus", "pod_status"]),
+      field("invoice_status", ["invoiceStatus", "invoice_status"]),
+      field("booking_date", ["bookingDate", "booking_date"]),
+      field("airway_bill_no", ["airwayBillNo", "airway_bill_no"]),
+      field("tariff_no", ["tariffNo", "tariff_no"]),
+      field("transit_days", ["transitDays", "transit_days"]),
+      field("notes"),
+      field("created_by", ["createdBy", "created_by"])
+    ]
+  },
+  consolidations: {
+    table: "consolidations",
+    key: "load_no",
+    order: "trip_date desc, created_at desc",
+    fields: [
+      field("load_no", ["loadNo", "load_no"], true),
+      field("trip_date", ["tripDate", "trip_date"]),
+      field("route"),
+      field("transporter"),
+      field("vehicle_no", ["vehicleNo", "vehicle_no"]),
+      field("status"),
+      field("pieces"),
+      field("actual_kg", ["actualKg", "actual_kg"]),
+      field("cbm"),
+      field("chargeable_kg", ["chargeableKg", "chargeable_kg"]),
+      field("job_numbers", ["jobNumbers", "job_numbers"]),
+      field("notes"),
+      field("created_by", ["createdBy", "created_by"])
+    ]
+  },
+  customers: partyResource("customers"),
+  suppliers: partyResource("suppliers"),
+  tariffs: {
+    table: "tariffs",
+    key: "tariff_no",
+    order: "created_at desc",
+    fields: [
+      field("tariff_no", ["tariffNo", "tariff_no"], true),
+      field("customer"),
+      field("origin"),
+      field("destination"),
+      field("main_section", ["mainSection", "main_section"]),
+      field("weight_section", ["weightSection", "weight_section"]),
+      field("rate_type", ["rateType", "rate_type"]),
+      field("rate"),
+      field("min_charge", ["minCharge", "min_charge"]),
+      field("volumetric_divisor", ["volumetricDivisor", "volumetric_divisor"]),
+      field("effective_from", ["effectiveFrom", "effective_from"]),
+      field("effective_to", ["effectiveTo", "effective_to"]),
+      field("status")
+    ]
+  },
+  documents: {
+    table: "documents",
+    key: "document_no",
+    order: "date desc, created_at desc",
+    fields: [
+      field("document_no", ["documentNo", "document_no"], true),
+      field("linked_no", ["linkedNo", "linked_no"]),
+      field("type"),
+      field("status"),
+      field("date"),
+      field("owner"),
+      field("file_name", ["fileName", "file_name"]),
+      field("storage_url", ["storageUrl", "storage_url"]),
+      field("notes")
+    ]
+  },
+  invoices: {
+    table: "invoices",
+    key: "invoice_no",
+    order: "date desc, created_at desc",
+    fields: [
+      field("invoice_no", ["invoiceNo", "invoice_no"], true),
+      field("customer"),
+      field("shipment_no", ["shipmentNo", "shipment_no"]),
+      field("revenue"),
+      field("supplier_cost", ["supplierCost", "supplier_cost"]),
+      field("status"),
+      field("date"),
+      field("due_date", ["dueDate", "due_date"]),
+      field("notes")
+    ],
+    readonlyFields: ["gross_profit"]
+  },
+  users: {
+    table: "app_users",
+    key: "user_name",
+    order: "created_at desc",
+    fields: [
+      field("user_name", ["userName", "user_name"], true),
+      field("email"),
+      field("role"),
+      field("account_status", ["accountStatus", "account_status"]),
+      field("branch_access", ["branchAccess", "branch_access"]),
+      field("can_view_all_entry", ["canViewAllEntry", "can_view_all_entry"]),
+      field("can_view_only_self_entry", ["canViewOnlySelfEntry", "can_view_only_self_entry"]),
+      field("can_edit_all_entry", ["canEditAllEntry", "can_edit_all_entry"]),
+      field("can_view_updated_history", ["canViewUpdatedHistory", "can_view_updated_history"]),
+      field("notes")
+    ]
+  },
+  "unblock-requests": {
+    table: "unblock_requests",
+    key: "request_no",
+    order: "date desc, created_at desc",
+    fields: [
+      field("request_no", ["requestNo", "request_no"], true),
+      field("customer_name", ["customerName", "customer_name"]),
+      field("requested_by", ["requestedBy", "requested_by"]),
+      field("reason"),
+      field("status"),
+      field("date"),
+      field("approved_by", ["approvedBy", "approved_by"]),
+      field("notes")
+    ]
+  },
+  audit: {
+    table: "audit_log",
+    key: null,
+    order: "date_time desc",
+    metaFields: [],
+    fields: [
+      field("date_time", ["dateTime", "date_time"]),
+      field("user_name", ["userName", "user", "user_name"]),
+      field("action"),
+      field("reference"),
+      field("details")
+    ]
+  },
+  settings: {
+    table: "app_settings",
+    key: "settings_key",
+    order: "id asc",
+    metaFields: ["updated_at"],
+    fields: [
+      field("settings_key", ["settingsKey", "settings_key"]),
+      field("company_name", ["companyName", "company_name"]),
+      field("shipment_number_format", ["shipmentNumberFormat", "shipment_number_format"]),
+      field("invoice_number_format", ["invoiceNumberFormat", "invoice_number_format"]),
+      field("default_volumetric_divisor", ["defaultVolumetricDivisor", "default_volumetric_divisor"]),
+      field("require_pod_before_invoice", ["requirePodBeforeInvoice", "require_pod_before_invoice"]),
+      field("branches")
+    ]
   }
-];
+};
 
-const demoCustomers = [
-  {
-    id: 1,
-    code: "CUS-DEMO-001",
-    name: "Gulf Retail Trading",
-    location_or_lane: "Kuwait City",
-    email: "ops@example.com",
-    terms: "30 days",
-    status: "Active",
-    is_account_overdue: false,
-    branch: "Branch 1",
-    created_at: new Date().toISOString()
-  }
-];
+function field(column, names = [column], required = false) {
+  return { column, names, required };
+}
+
+function partyResource(table) {
+  return {
+    table,
+    key: "code",
+    order: "created_at desc",
+    fields: [
+      field("code", ["code"], true),
+      field("name", ["name"], true),
+      field("location_or_lane", ["locationOrLane", "location_or_lane"]),
+      field("email"),
+      field("terms"),
+      field("status"),
+      field("is_account_overdue", ["isAccountOverdue", "is_account_overdue"]),
+      field("branch"),
+      field("credit_limit", ["creditLimit", "credit_limit"]),
+      field("notes")
+    ]
+  };
+}
 
 function isDatabaseSetupError(error) {
   return Boolean(
@@ -67,6 +375,137 @@ function isDatabaseSetupError(error) {
   );
 }
 
+function columnsFor(config) {
+  const metaFields = config.metaFields || ["created_at", "updated_at"];
+  const names = ["id", ...config.fields.map((item) => item.column), ...(config.readonlyFields || []), ...metaFields];
+  return [...new Set(names)].join(", ");
+}
+
+function valueFromBody(body, item) {
+  for (const name of item.names) {
+    if (Object.prototype.hasOwnProperty.call(body, name)) {
+      return body[name];
+    }
+  }
+
+  return undefined;
+}
+
+function collectValues(config, body, includeKey = true) {
+  const columns = [];
+  const values = [];
+
+  for (const item of config.fields) {
+    if (!includeKey && item.column === config.key) {
+      continue;
+    }
+
+    const value = valueFromBody(body, item);
+    if (value === undefined || value === "") {
+      continue;
+    }
+
+    columns.push(item.column);
+    values.push(value);
+  }
+
+  return { columns, values };
+}
+
+function requireFields(config, columns) {
+  const missing = config.fields
+    .filter((item) => item.required)
+    .filter((item) => !columns.includes(item.column))
+    .map((item) => item.names[0]);
+
+  if (missing.length) {
+    const error = new Error(`${missing.join(", ")} required.`);
+    error.status = 400;
+    throw error;
+  }
+}
+
+async function getRows(resourceName, config) {
+  const result = await query(
+    `select ${columnsFor(config)}
+     from ${config.table}
+     order by ${config.order}
+     limit 500`
+  );
+  return {
+    ok: true,
+    rows: result.rows
+  };
+}
+
+async function insertRow(config, body) {
+  const { columns, values } = collectValues(config, body);
+  requireFields(config, columns);
+
+  if (!columns.length) {
+    const error = new Error("No values supplied.");
+    error.status = 400;
+    throw error;
+  }
+
+  const placeholders = values.map((_, index) => `$${index + 1}`);
+  const conflict = config.key
+    ? `on conflict (${config.key}) do update set ${columns
+        .filter((column) => column !== config.key)
+        .map((column) => `${column} = excluded.${column}`)
+        .join(", ")}`
+    : "";
+  const result = await query(
+    `insert into ${config.table} (${columns.join(", ")})
+     values (${placeholders.join(", ")})
+     ${conflict}
+     returning ${columnsFor(config)}`,
+    values
+  );
+  return result.rows[0];
+}
+
+async function updateRow(config, id, body) {
+  if (!config.key) {
+    const error = new Error("This resource does not support direct updates.");
+    error.status = 400;
+    throw error;
+  }
+
+  const { columns, values } = collectValues(config, body, false);
+  if (!columns.length) {
+    const error = new Error("No values supplied.");
+    error.status = 400;
+    throw error;
+  }
+
+  const assignments = columns.map((column, index) => `${column} = $${index + 1}`);
+  values.push(id);
+  const result = await query(
+    `update ${config.table}
+     set ${assignments.join(", ")}
+     where ${config.key} = $${values.length}
+     returning ${columnsFor(config)}`,
+    values
+  );
+
+  if (!result.rows[0]) {
+    const error = new Error("Record not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  return result.rows[0];
+}
+
+function demoResponse(resourceName) {
+  return {
+    ok: true,
+    mode: "demo",
+    rows: demoRows[resourceName] || []
+  };
+}
+
 app.use(
   cors({
     origin: allowedOrigin === "*" ? true : allowedOrigin,
@@ -75,7 +514,7 @@ app.use(
 );
 app.use(helmet());
 app.use(morgan("dev"));
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 if (fs.existsSync(webIndex)) {
   app.use(express.static(webDir));
@@ -114,206 +553,98 @@ app.get("/api/health", async (_request, response) => {
   }
 });
 
-app.get("/api/shipments", async (_request, response) => {
-  try {
-    const result = await query(
-      `
-        select
-          id,
-          job_no,
-          branch,
-          customer_name,
-          origin,
-          destination,
-          status,
-          booking_date,
-          created_at
-        from shipments
-        order by created_at desc
-        limit 100
-      `
-    );
+app.get("/api/:resource", async (request, response, next) => {
+  const resourceName = request.params.resource;
+  const config = resources[resourceName];
 
-    response.json({
-      ok: true,
-      rows: result.rows
-    });
+  if (!config) {
+    return next();
+  }
+
+  try {
+    response.json(await getRows(resourceName, config));
   } catch (error) {
     if (isDatabaseSetupError(error)) {
-      return response.json({
-        ok: true,
-        mode: "demo",
-        rows: demoShipments
-      });
+      return response.json(demoResponse(resourceName));
     }
 
-    response.status(500).json({
-      ok: false,
-      error: error.message
-    });
+    return next(error);
   }
 });
 
-app.post("/api/shipments", async (request, response) => {
-  const {
-    jobNo,
-    branch,
-    customerName,
-    origin,
-    destination,
-    status,
-    bookingDate
-  } = request.body || {};
+app.post("/api/:resource", async (request, response, next) => {
+  const resourceName = request.params.resource;
+  const config = resources[resourceName];
 
-  if (!jobNo || !customerName) {
-    return response.status(400).json({
-      ok: false,
-      error: "jobNo and customerName are required."
-    });
+  if (!config) {
+    return next();
   }
 
   try {
-    const result = await query(
-      `
-        insert into shipments
-          (job_no, branch, customer_name, origin, destination, status, booking_date)
-        values
-          ($1, $2, $3, $4, $5, $6, coalesce($7, current_date))
-        returning *
-      `,
-      [
-        jobNo,
-        branch || "Branch 1",
-        customerName,
-        origin || "",
-        destination || "",
-        status || "Booked",
-        bookingDate || null
-      ]
-    );
-
-    return response.status(201).json({
+    const row = await insertRow(config, request.body || {});
+    response.status(201).json({
       ok: true,
-      row: result.rows[0]
+      row
     });
   } catch (error) {
     if (isDatabaseSetupError(error)) {
       return response.status(201).json({
         ok: true,
         mode: "demo",
-        row: {
-          id: Date.now(),
-          job_no: jobNo,
-          branch: branch || "Branch 1",
-          customer_name: customerName,
-          origin: origin || "",
-          destination: destination || "",
-          status: status || "Booked",
-          booking_date: bookingDate || new Date().toISOString(),
-          created_at: new Date().toISOString()
-        }
+        row: request.body || {}
       });
     }
 
-    return response.status(500).json({
-      ok: false,
-      error: error.message
-    });
+    return next(error);
   }
 });
 
-app.get("/api/consolidations", async (_request, response) => {
-  try {
-    const result = await query(
-      `
-        select
-          id,
-          load_no,
-          trip_date,
-          route,
-          transporter,
-          vehicle_no,
-          status,
-          pieces,
-          actual_kg,
-          cbm,
-          chargeable_kg,
-          job_numbers,
-          created_at
-        from consolidations
-        order by trip_date desc, created_at desc
-        limit 100
-      `
-    );
+app.put("/api/:resource/:id", async (request, response, next) => {
+  const resourceName = request.params.resource;
+  const config = resources[resourceName];
 
+  if (!config) {
+    return next();
+  }
+
+  try {
+    const row = await updateRow(config, decodeURIComponent(request.params.id), request.body || {});
     response.json({
       ok: true,
-      rows: result.rows
+      row
     });
   } catch (error) {
     if (isDatabaseSetupError(error)) {
       return response.json({
         ok: true,
         mode: "demo",
-        rows: demoConsolidations
+        row: request.body || {}
       });
     }
 
-    response.status(500).json({
-      ok: false,
-      error: error.message
-    });
-  }
-});
-
-app.get("/api/customers", async (_request, response) => {
-  try {
-    const result = await query(
-      `
-        select
-          id,
-          code,
-          name,
-          location_or_lane,
-          email,
-          terms,
-          status,
-          is_account_overdue,
-          branch,
-          created_at
-        from customers
-        order by created_at desc
-        limit 100
-      `
-    );
-
-    response.json({
-      ok: true,
-      rows: result.rows
-    });
-  } catch (error) {
-    if (isDatabaseSetupError(error)) {
-      return response.json({
-        ok: true,
-        mode: "demo",
-        rows: demoCustomers
-      });
-    }
-
-    response.status(500).json({
-      ok: false,
-      error: error.message
-    });
+    return next(error);
   }
 });
 
 app.use((error, _request, response, _next) => {
-  response.status(500).json({
+  response.status(error.status || 500).json({
     ok: false,
     error: error.message || "Unexpected server error."
   });
 });
 
-app.listen(port, () => {
-  console.log(`ApolloFreightERP server running on port ${port}`);
-});
+async function start() {
+  if (autoMigrate) {
+    try {
+      await runMigrations();
+    } catch (error) {
+      console.warn(`Database migration skipped: ${error.message}`);
+    }
+  }
+
+  app.listen(port, () => {
+    console.log(`ApolloFreightERP server running on port ${port}`);
+  });
+}
+
+start();

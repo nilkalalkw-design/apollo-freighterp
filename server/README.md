@@ -18,13 +18,19 @@ It is intended to run independently from any older live project, with:
 npm install
 ```
 
-3. Start the API:
+3. Create/update the database tables and seed data:
+
+```powershell
+npm run db:setup
+```
+
+4. Start the API:
 
 ```powershell
 npm run dev
 ```
 
-4. Test health:
+5. Test health:
 
 ```text
 GET http://localhost:4000/api/health
@@ -41,9 +47,16 @@ GET http://localhost:4000/api/health
 https://apollo-freighterp.vercel.app
 ```
 
-5. After the database is created, run the SQL in `sql/001_init.sql` on the Render database
+5. Render runs the SQL files automatically on startup when `AUTO_MIGRATE=true`
 
 The `DATABASE_URL` value is provided by Render from the database connection string in `render.yaml`.
+
+## Database files
+
+- `sql/001_init.sql` creates the full ERP schema, indexes, triggers, and upgrade-safe columns.
+- `sql/002_seed.sql` inserts starter customers, suppliers, jobs, consolidations, tariffs, invoices, users, settings, and audit rows.
+- `sql/003_views.sql` creates reporting views for financials, pending POD, unbilled shipments, and consolidation manifests.
+- `npm run db:setup` applies all SQL files in order.
 
 Live API URL:
 
@@ -51,10 +64,29 @@ Live API URL:
 https://apollo-freighterp-f9kt.onrender.com
 ```
 
-## Initial API routes
+## API routes
 
 - `GET /api/health`
 - `GET /api/shipments`
 - `POST /api/shipments`
 - `GET /api/consolidations`
+- `POST /api/consolidations`
 - `GET /api/customers`
+- `POST /api/customers`
+- `GET /api/suppliers`
+- `POST /api/suppliers`
+- `GET /api/tariffs`
+- `POST /api/tariffs`
+- `GET /api/documents`
+- `POST /api/documents`
+- `GET /api/invoices`
+- `POST /api/invoices`
+- `GET /api/users`
+- `POST /api/users`
+- `GET /api/unblock-requests`
+- `POST /api/unblock-requests`
+- `GET /api/audit`
+- `POST /api/audit`
+- `GET /api/settings`
+- `POST /api/settings`
+- `PUT /api/:resource/:id`

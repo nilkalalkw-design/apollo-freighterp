@@ -15,6 +15,10 @@
       "destination": "/web/styles.css"
     },
     {
+      "source": "/assets/(.*)",
+      "destination": "/web/assets/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/web/index.html"
     }

@@ -9,5 +9,6 @@ module.exports = {
   port: Number.isNaN(port) ? 4000 : port,
   nodeEnv: process.env.NODE_ENV || "development",
   databaseUrl: process.env.DATABASE_URL || "",
-  allowedOrigin: process.env.ALLOWED_ORIGIN || "*"
+  allowedOrigin: process.env.ALLOWED_ORIGIN || "*",
+  autoMigrate: process.env.AUTO_MIGRATE !== "false"
 };

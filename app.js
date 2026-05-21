@@ -187,7 +187,9 @@ function filteredRows(rows) {
 }
 
 function addHistory(action, reference) {
-  state.audit.unshift(audit(new Date().toISOString().slice(0, 16).replace("T", " "), "admin", action, reference));
+  const record = audit(new Date().toISOString().slice(0, 16).replace("T", " "), "admin", action, reference);
+  state.audit.unshift(record);
+  postRecord("audit", record);
   saveState();
 }
 
@@ -261,17 +263,46 @@ function showApp() {
 
 async function syncFromApi() {
   try {
-    const [health, shipments, consolidations, customers] = await Promise.all([
+    const [
+      health,
+      shipments,
+      consolidations,
+      customers,
+      suppliers,
+      tariffs,
+      documents,
+      invoices,
+      users,
+      unblockRequests,
+      auditLog,
+      settings
+    ] = await Promise.all([
       fetchJson("/api/health"),
       fetchJson("/api/shipments"),
       fetchJson("/api/consolidations"),
-      fetchJson("/api/customers")
+      fetchJson("/api/customers"),
+      fetchJson("/api/suppliers"),
+      fetchJson("/api/tariffs"),
+      fetchJson("/api/documents"),
+      fetchJson("/api/invoices"),
+      fetchJson("/api/users"),
+      fetchJson("/api/unblock-requests"),
+      fetchJson("/api/audit"),
+      fetchJson("/api/settings")
     ]);
 
     state.api = { status: "API connected", database: health.database || "unknown", mode: health.mode || "database" };
     if (shipments.rows?.length) state.shipments = shipments.rows.map(apiShipment);
     if (consolidations.rows?.length) state.loads = consolidations.rows.map(apiLoad);
     if (customers.rows?.length) state.customers = customers.rows.map(apiCustomer);
+    if (suppliers.rows?.length) state.suppliers = suppliers.rows.map(apiSupplier);
+    if (tariffs.rows?.length) state.tariffs = tariffs.rows.map(apiTariff);
+    if (documents.rows?.length) state.documents = documents.rows.map(apiDocument);
+    if (invoices.rows?.length) state.invoices = invoices.rows.map(apiInvoice);
+    if (users.rows?.length) state.users = users.rows.map(apiUser);
+    if (unblockRequests.rows?.length) state.unblockRequests = unblockRequests.rows.map(apiUnblockRequest);
+    if (auditLog.rows?.length) state.audit = auditLog.rows.map(apiAudit);
+    if (settings.rows?.length) state.settings = apiSettings(settings.rows[0]);
     saveState();
     render();
   } catch (error) {
@@ -299,6 +330,65 @@ function apiLoad(row) {
 
 function apiCustomer(row) {
   return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch);
+}
+
+function apiSupplier(row) {
+  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch);
+}
+
+function apiTariff(row) {
+  const item = tariff(row.tariff_no, row.customer, row.origin, row.destination, row.main_section, row.weight_section, row.rate_type, Number(row.rate || 0), Number(row.min_charge || 0));
+  item.volumetricDivisor = Number(row.volumetric_divisor || 5000);
+  item.effectiveFrom = String(row.effective_from || today()).slice(0, 10);
+  item.effectiveTo = String(row.effective_to || today()).slice(0, 10);
+  item.status = row.status || "Active";
+  return item;
+}
+
+function apiDocument(row) {
+  const item = documentRow(row.document_no, row.linked_no, row.type, row.status, String(row.date || today()).slice(0, 10), row.owner);
+  item.fileName = row.file_name || "";
+  item.storageUrl = row.storage_url || "";
+  return item;
+}
+
+function apiInvoice(row) {
+  return invoice(row.invoice_no, row.customer, row.shipment_no, Number(row.revenue || 0), Number(row.supplier_cost || 0), row.status, String(row.date || today()).slice(0, 10));
+}
+
+function apiUser(row) {
+  return user(row.user_name, row.email, row.role, row.account_status, row.branch_access, row.can_view_all_entry, row.can_view_only_self_entry, row.can_edit_all_entry, row.can_view_updated_history);
+}
+
+function apiUnblockRequest(row) {
+  return {
+    requestNo: row.request_no,
+    customerName: row.customer_name,
+    requestedBy: row.requested_by,
+    reason: row.reason,
+    status: row.status,
+    date: String(row.date || today()).slice(0, 10)
+  };
+}
+
+function apiAudit(row) {
+  return {
+    dateTime: String(row.date_time || "").replace("T", " ").slice(0, 16),
+    user: row.user_name,
+    action: row.action,
+    reference: row.reference
+  };
+}
+
+function apiSettings(row) {
+  return {
+    companyName: row.company_name || state.settings.companyName,
+    shipmentNumberFormat: row.shipment_number_format || state.settings.shipmentNumberFormat,
+    invoiceNumberFormat: row.invoice_number_format || state.settings.invoiceNumberFormat,
+    defaultVolumetricDivisor: row.default_volumetric_divisor || state.settings.defaultVolumetricDivisor,
+    requirePodBeforeInvoice: row.require_pod_before_invoice || state.settings.requirePodBeforeInvoice,
+    branches: row.branches || state.settings.branches
+  };
 }
 
 function render() {
@@ -717,6 +807,7 @@ function saveDialogRecord() {
   });
   if (editing.type === "load") recalculateLoad(editing.record);
   addHistory(`Updated ${editing.type}`, editing.id);
+  persistRecord(editing.type, editing.record);
   saveState();
   recordDialog.close();
   render();
@@ -752,47 +843,45 @@ function handleModuleSubmit(event) {
 }
 
 function createShipment(data) {
-  state.shipments.unshift(shipment(data.jobNo, data.branch, data.customer, data.origin, data.destination, data.status, Number(data.pieces), Number(data.actualKg), Number(data.cbm), Number(data.chargeableKg), Number(data.sell), Number(data.buyCost), "Pending", "Unbilled", today()));
-  postShipment(data);
+  const record = shipment(data.jobNo, data.branch, data.customer, data.origin, data.destination, data.status, Number(data.pieces), Number(data.actualKg), Number(data.cbm), Number(data.chargeableKg), Number(data.sell), Number(data.buyCost), "Pending", "Unbilled", today());
+  state.shipments.unshift(record);
+  postRecord("shipment", record);
   addHistory("Created shipment", data.jobNo);
-}
-
-async function postShipment(data) {
-  try {
-    await fetchJson("/api/shipments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jobNo: data.jobNo, branch: data.branch, customerName: data.customer, origin: data.origin, destination: data.destination, status: data.status, bookingDate: today() })
-    });
-  } catch {
-    state.api.mode = "browser";
-  }
 }
 
 function createLoad(data) {
   const item = load(data.loadNo, data.tripDate, data.route, data.transporter, data.vehicleNo, data.status, data.jobNumbers);
   recalculateLoad(item);
   state.loads.unshift(item);
+  postRecord("load", item);
   addHistory("Created consolidation", data.loadNo);
 }
 
 function createParty(key, data) {
-  state[key].unshift(party(data.code, data.name, data.locationOrLane, data.email, data.terms, data.status, false, data.branch));
+  const record = party(data.code, data.name, data.locationOrLane, data.email, data.terms, data.status, false, data.branch);
+  state[key].unshift(record);
+  postRecord(key, record);
   addHistory(`Created ${key}`, data.code);
 }
 
 function createTariff(data) {
-  state.tariffs.unshift(tariff(data.tariffNo, data.customer, data.origin, data.destination, data.mainSection, data.weightSection, data.rateType, Number(data.rate), Number(data.minCharge)));
+  const record = tariff(data.tariffNo, data.customer, data.origin, data.destination, data.mainSection, data.weightSection, data.rateType, Number(data.rate), Number(data.minCharge));
+  state.tariffs.unshift(record);
+  postRecord("tariff", record);
   addHistory("Created tariff", data.tariffNo);
 }
 
 function createDocument(data) {
-  state.documents.unshift(documentRow(data.documentNo, data.linkedNo, data.type, data.status, data.date, data.owner));
+  const record = documentRow(data.documentNo, data.linkedNo, data.type, data.status, data.date, data.owner);
+  state.documents.unshift(record);
+  postRecord("document", record);
   addHistory("Tagged document", data.documentNo);
 }
 
 function createInvoice(data) {
-  state.invoices.unshift(invoice(data.invoiceNo, data.customer, data.shipmentNo, Number(data.revenue), Number(data.supplierCost), data.status, data.date));
+  const record = invoice(data.invoiceNo, data.customer, data.shipmentNo, Number(data.revenue), Number(data.supplierCost), data.status, data.date);
+  state.invoices.unshift(record);
+  postRecord("invoice", record);
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
   if (shipmentItem) shipmentItem.invoiceStatus = data.invoiceNo;
   addHistory("Generated invoice", data.invoiceNo);
@@ -803,7 +892,10 @@ function updatePod(data) {
   if (!shipmentItem) return;
   shipmentItem.status = "Delivered";
   shipmentItem.podStatus = "Uploaded";
-  state.documents.unshift(documentRow(nextNumber("DOC", state.documents, "documentNo"), data.jobNo, "POD", "Uploaded", today(), "delivery"));
+  persistRecord("shipment", shipmentItem);
+  const documentRecord = documentRow(nextNumber("DOC", state.documents, "documentNo"), data.jobNo, "POD", "Uploaded", today(), "delivery");
+  state.documents.unshift(documentRecord);
+  postRecord("document", documentRecord);
   addHistory("Marked delivered and uploaded POD", `${data.jobNo} - ${data.receiver}`);
 }
 
@@ -813,12 +905,59 @@ function updateStatus(data) {
   shipmentItem.status = data.status;
   shipmentItem.podStatus = data.podStatus;
   shipmentItem.invoiceStatus = data.invoiceStatus;
+  persistRecord("shipment", shipmentItem);
   addHistory("Updated shipment status", `${data.jobNo} - ${data.notes}`);
 }
 
 function updateSettings(data) {
   state.settings = { ...state.settings, ...data };
+  postRecord("settings", state.settings);
   addHistory("Saved company settings", data.companyName);
+}
+
+function endpointFor(type) {
+  return {
+    shipment: "shipments",
+    load: "consolidations",
+    customers: "customers",
+    suppliers: "suppliers",
+    tariff: "tariffs",
+    document: "documents",
+    invoice: "invoices",
+    user: "users",
+    unblock: "unblock-requests",
+    audit: "audit",
+    settings: "settings"
+  }[type];
+}
+
+async function postRecord(type, record) {
+  const endpoint = endpointFor(type);
+  if (!endpoint) return;
+  try {
+    await fetchJson(`/api/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(record)
+    });
+  } catch {
+    state.api.mode = "browser";
+  }
+}
+
+async function persistRecord(type, record) {
+  const endpoint = endpointFor(type);
+  const id = rowId(type, record);
+  if (!endpoint || !id || type === "audit") return;
+  try {
+    await fetchJson(`/api/${endpoint}/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(record)
+    });
+  } catch {
+    state.api.mode = "browser";
+  }
 }
 
 boot();

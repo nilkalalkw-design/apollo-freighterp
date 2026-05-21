@@ -34,7 +34,17 @@ async function testConnection() {
   return result.rows[0];
 }
 
+async function closePool() {
+  if (!pool) {
+    return;
+  }
+
+  await pool.end();
+  pool = null;
+}
+
 module.exports = {
+  closePool,
   getPool,
   query,
   testConnection

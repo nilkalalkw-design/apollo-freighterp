@@ -133,6 +133,13 @@ Vercel Web: https://apollo-freighterp.vercel.app
 
 The new backend is in `server/`, and the web console is in `web/`.
 
+Database setup is now included:
+
+- `server/sql/001_init.sql`
+- `server/sql/002_seed.sql`
+- `server/sql/003_views.sql`
+- `npm run db:setup` from `server/`
+
 See:
 
 ```text
