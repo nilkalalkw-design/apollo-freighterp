@@ -144,6 +144,7 @@ const demoRows = {
       role: "Admin",
       account_status: "Active",
       branch_access: "Both",
+      password: "admin123",
       can_view_all_entry: true,
       can_view_only_self_entry: true,
       can_edit_all_entry: true,
@@ -293,12 +294,14 @@ const resources = {
     table: "app_users",
     key: "user_name",
     order: "created_at desc",
+    hiddenFields: ["password"],
     fields: [
       field("user_name", ["userName", "user_name"], true),
       field("email"),
       field("role"),
       field("account_status", ["accountStatus", "account_status"]),
       field("branch_access", ["branchAccess", "branch_access"]),
+      field("password"),
       field("can_view_all_entry", ["canViewAllEntry", "can_view_all_entry"]),
       field("can_view_only_self_entry", ["canViewOnlySelfEntry", "can_view_only_self_entry"]),
       field("can_edit_all_entry", ["canEditAllEntry", "can_edit_all_entry"]),
@@ -386,7 +389,13 @@ function isDatabaseSetupError(error) {
 
 function columnsFor(config) {
   const metaFields = config.metaFields || ["created_at", "updated_at"];
-  const names = ["id", ...config.fields.map((item) => item.column), ...(config.readonlyFields || []), ...metaFields];
+  const hiddenFields = new Set(config.hiddenFields || []);
+  const names = [
+    "id",
+    ...config.fields.map((item) => item.column).filter((column) => !hiddenFields.has(column)),
+    ...(config.readonlyFields || []),
+    ...metaFields
+  ];
   return [...new Set(names)].join(", ");
 }
 
@@ -445,6 +454,19 @@ async function getRows(resourceName, config) {
     ok: true,
     rows: result.rows
   };
+}
+
+async function loginUser(identifier, password) {
+  const result = await query(
+    `select user_name, email, role, account_status, branch_access
+     from app_users
+     where (lower(user_name) = lower($1) or lower(email) = lower($1))
+       and password = $2
+     limit 1`,
+    [identifier, password]
+  );
+
+  return result.rows[0] || null;
 }
 
 async function insertRow(config, body) {
@@ -582,6 +604,67 @@ app.get("/api/health", async (_request, response) => {
       startupError: runtimeStatus.startupError,
       error: error.message
     });
+  }
+});
+
+app.post("/api/login", async (request, response, next) => {
+  const identifier = String(request.body?.userName || request.body?.email || "").trim();
+  const password = String(request.body?.password || "");
+
+  if (!identifier || !password) {
+    return response.status(400).json({
+      ok: false,
+      error: "User name and password are required."
+    });
+  }
+
+  try {
+    const row = await loginUser(identifier, password);
+
+    if (!row) {
+      return response.status(401).json({
+        ok: false,
+        error: "Invalid login credentials."
+      });
+    }
+
+    if (String(row.account_status || "Active").toLowerCase() !== "active") {
+      return response.status(403).json({
+        ok: false,
+        error: "This user account is not active."
+      });
+    }
+
+    return response.json({
+      ok: true,
+      session: {
+        userName: row.user_name,
+        email: row.email,
+        role: row.role,
+        branchAccess: row.branch_access
+      }
+    });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) {
+      if ((identifier.toLowerCase() === "admin" || identifier.toLowerCase() === "admin@apollofreightsolution.com") && password === "admin123") {
+        return response.json({
+          ok: true,
+          session: {
+            userName: "admin",
+            email: "admin@apollofreightsolution.com",
+            role: "Admin",
+            branchAccess: "Both"
+          }
+        });
+      }
+
+      return response.status(401).json({
+        ok: false,
+        error: "Invalid login credentials."
+      });
+    }
+
+    return next(error);
   }
 });
 

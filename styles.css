@@ -456,7 +456,7 @@ label {
 }
 
 .api-banner {
-  display: flex;
+  display: none;
   gap: 10px;
   align-items: center;
   padding: 11px 24px;
@@ -660,6 +660,21 @@ th {
 
 .stack-form {
   grid-template-columns: 1fr;
+}
+
+.checkbox-field {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.checkbox-field input {
+  width: 16px;
+  min-height: 16px;
+  margin: 0;
 }
 
 .record-dialog {

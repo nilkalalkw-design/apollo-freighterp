@@ -70,13 +70,22 @@ function currentSession() {
   };
 }
 
-function rememberSession(userName) {
+function rememberSession(sessionOrUserName) {
+  const session =
+    typeof sessionOrUserName === "object" && sessionOrUserName
+      ? sessionOrUserName
+      : {
+          userName: sessionOrUserName,
+          role: sessionOrUserName === "admin" ? "Admin" : "Operations",
+          branchAccess: sessionOrUserName === "admin" ? "Both" : "Branch 1"
+        };
+
   sessionStorage.setItem(
     SESSION_KEY,
     JSON.stringify({
-      userName,
-      role: userName === "admin" ? "Admin" : "Operations",
-      branchAccess: userName === "admin" ? "Both" : "Branch 1"
+      userName: session.userName,
+      role: session.role || "Operations",
+      branchAccess: session.branchAccess || "Branch 1"
     })
   );
 }
@@ -117,8 +126,8 @@ function seedState() {
       invoice("DRAFT-260006", "Al Noor Projects", "AFS-2605003", 780, 590, "Draft", "2026-05-05")
     ],
     users: [
-      user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", true, true, true, true),
-      user("operations", "ops@apollofreightsolution.com", "Operations", "Active", "Branch 1", true, true, false, true)
+      user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", true, true, true, true, "admin123", "Default test administrator"),
+      user("operations", "ops@apollofreightsolution.com", "Operations", "Active", "Branch 1", true, true, false, true, "ops123", "Operations user")
     ],
     unblockRequests: [
       { requestNo: "REQ-2605001", customerName: "Desert Medical Supplies", requestedBy: "operations", reason: "Credit release requested", status: "Pending", date: today }
@@ -167,8 +176,21 @@ function invoice(invoiceNo, customer, shipmentNo, revenue, supplierCost, status,
   return { invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, grossProfit: revenue - supplierCost };
 }
 
-function user(userName, email, role, accountStatus, branchAccess, canViewAllEntry, canViewOnlySelfEntry, canEditAllEntry, canViewUpdatedHistory) {
-  return { userName, email, role, accountStatus, branchAccess, canViewAllEntry, canViewOnlySelfEntry, canEditAllEntry, canViewUpdatedHistory, notes: "Web demo user" };
+function user(
+  userName,
+  email,
+  role,
+  accountStatus,
+  branchAccess,
+  canViewAllEntry,
+  canViewOnlySelfEntry,
+  canEditAllEntry,
+  canViewUpdatedHistory,
+  password = "",
+  notes = "Web demo user",
+  createdDate = today()
+) {
+  return { userName, email, role, accountStatus, branchAccess, canViewAllEntry, canViewOnlySelfEntry, canEditAllEntry, canViewUpdatedHistory, password, notes, createdDate };
 }
 
 function audit(dateTime, userName, action, reference) {
@@ -278,6 +300,10 @@ function boot() {
   }
 }
 
+function isAdminSession() {
+  return (currentSession()?.role || "").toLowerCase() === "admin";
+}
+
 function openShipmentWorkspace() {
   activeModule = "Shipments / Jobs";
   render();
@@ -296,17 +322,46 @@ function handlePasswordReset() {
   resetMessage.textContent = `Password reset is not configured yet for ${email}. Enable SMTP or Microsoft 365 on the API to activate this flow.`;
 }
 
-function handleLogin(event) {
+async function handleLogin(event) {
   event.preventDefault();
   const form = new FormData(loginForm);
-  if (form.get("userName") === "admin" && form.get("password") === "admin123") {
-    rememberSession("admin");
+  const userName = String(form.get("userName") || "").trim();
+  const password = String(form.get("password") || "");
+
+  try {
+    const session = await attemptApiLogin(userName, password);
+    rememberSession(session);
     loginMessage.textContent = "";
     resetMessage.textContent = "";
     showApp();
     return;
+  } catch (error) {
+    loginMessage.textContent = error.message || "Invalid login. Check user name and password.";
   }
-  loginMessage.textContent = "Invalid login. Use admin / admin123 for test access.";
+}
+
+async function attemptApiLogin(userName, password) {
+  if (!userName || !password) {
+    throw new Error("User name and password are required.");
+  }
+
+  try {
+    const result = await fetchJson("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userName, password })
+    });
+    return result.session;
+  } catch (error) {
+    if (userName === "admin" && password === "admin123") {
+      return {
+        userName: "admin",
+        role: "Admin",
+        branchAccess: "Both"
+      };
+    }
+    throw error;
+  }
 }
 
 function showLogin() {
@@ -425,7 +480,20 @@ function apiInvoice(row) {
 }
 
 function apiUser(row) {
-  return user(row.user_name, row.email, row.role, row.account_status, row.branch_access, row.can_view_all_entry, row.can_view_only_self_entry, row.can_edit_all_entry, row.can_view_updated_history);
+  return user(
+    row.user_name,
+    row.email,
+    row.role,
+    row.account_status,
+    row.branch_access,
+    row.can_view_all_entry,
+    row.can_view_only_self_entry,
+    row.can_edit_all_entry,
+    row.can_view_updated_history,
+    "",
+    row.notes || "",
+    String(row.created_at || today()).slice(0, 10)
+  );
 }
 
 function apiUnblockRequest(row) {
@@ -467,10 +535,12 @@ function render() {
   updateUserContext();
   updateDateFilterStatus();
   moduleNav.querySelectorAll("button").forEach((button) => button.classList.toggle("active", button.dataset.module === activeModule));
-  const apiHealthy = state.api.database === "connected";
-  apiBanner.className = `api-banner ${apiHealthy ? "is-ok" : "is-warning"}`;
-  const errorText = state.api.error ? ` | Detail: ${escapeHtml(state.api.error)}` : "";
-  apiBanner.innerHTML = `<strong>${escapeHtml(state.api.status)}</strong><span>Render: ${escapeHtml(API_URL)} | Database: ${escapeHtml(state.api.database)} | Mode: ${escapeHtml(state.api.mode)}${errorText}</span>`;
+  if (apiBanner) {
+    const apiHealthy = state.api.database === "connected";
+    apiBanner.className = `api-banner ${apiHealthy ? "is-ok" : "is-warning"}`;
+    const errorText = state.api.error ? ` | Detail: ${escapeHtml(state.api.error)}` : "";
+    apiBanner.innerHTML = `<strong>${escapeHtml(state.api.status)}</strong><span>Render: ${escapeHtml(API_URL)} | Database: ${escapeHtml(state.api.database)} | Mode: ${escapeHtml(state.api.mode)}${errorText}</span>`;
+  }
 
   const renderers = {
     Dashboard: renderDashboard,
@@ -720,9 +790,31 @@ function renderReports() {
 }
 
 function renderSettings() {
+  if (!isAdminSession()) {
+    return `<section class="panel">${panelHeader("Access Denied", "Admin")}<p class="empty-state">Only admin users can access user management and settings.</p></section>`;
+  }
+
   return `
-    <section class="split-grid">
+    <section class="split-grid wide-left">
       <article class="panel">${panelHeader("User Accounts", "Permissions")} ${table("user", filteredRows(state.users), userColumns())}</article>
+      <article class="panel">${panelHeader("Create User / Permissions", "Admin")}
+        <form class="stack-form" data-form="user">
+          ${input("userName", "User Name", "")}
+          ${input("password", "Password", "", false, "password")}
+          ${input("email", "Email", "", false, "email")}
+          ${select("role", "User Role", roleOptions(), "Operations")}
+          ${select("accountStatus", "User Account", accountStatusOptions(), "Active")}
+          ${select("branchAccess", "Branch Access", branchAccessOptions(), "Branch 1")}
+          ${checkbox("canViewAllEntry", "User can view all entry")}
+          ${checkbox("canViewOnlySelfEntry", "User can view only self entry", true)}
+          ${checkbox("canEditAllEntry", "User can edit all entry")}
+          ${checkbox("canViewUpdatedHistory", "User can view updated history", true)}
+          ${input("notes", "Notes", "Created from admin panel")}
+          <button type="submit">Create User</button>
+        </form>
+      </article>
+    </section>
+    <section class="split-grid">
       <article class="panel">${panelHeader("Company Settings", "System")}
         <form class="stack-form" data-form="settings">
           ${input("companyName", "Company Name", state.settings.companyName)}
@@ -792,6 +884,10 @@ function input(name, label, value = "", readonly = false, type = "text") {
   return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" type="${type}" value="${escapeHtml(value)}" ${readonly ? "readonly" : ""} /></label>`;
 }
 
+function checkbox(name, label, checked = false) {
+  return `<label class="checkbox-field"><input name="${escapeHtml(name)}" type="checkbox" ${checked ? "checked" : ""} /><span>${escapeHtml(label)}</span></label>`;
+}
+
 function select(name, label, options, selected = options[0]) {
   return `<label>${escapeHtml(label)}<select name="${escapeHtml(name)}">${options.map((option) => `<option ${option === selected ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
 }
@@ -802,6 +898,18 @@ function selectFrom(name, label, options) {
 
 function statusOptions() {
   return ["Draft", "Booked", "In-Transit", "Delivered", "Invoiced", "Closed", "Blocked"];
+}
+
+function roleOptions() {
+  return ["Admin", "Operations", "Billing", "Management", "Read-only"];
+}
+
+function accountStatusOptions() {
+  return ["Active", "Inactive", "Locked"];
+}
+
+function branchAccessOptions() {
+  return ["Branch 1", "Branch 2", "Both"];
 }
 
 function shipmentColumns() {
@@ -919,6 +1027,7 @@ function handleModuleSubmit(event) {
     load: () => createLoad(data),
     customers: () => createParty("customers", data),
     suppliers: () => createParty("suppliers", data),
+    user: () => createUser(data),
     tariff: () => createTariff(data),
     document: () => createDocument(data),
     invoice: () => createInvoice(data),
@@ -951,6 +1060,45 @@ function createParty(key, data) {
   state[key].unshift(record);
   postRecord(key, record);
   addHistory(`Created ${key}`, data.code);
+}
+
+function createUser(data) {
+  const userName = String(data.userName || "").trim();
+  const password = String(data.password || "");
+  const email = String(data.email || "").trim();
+
+  if (!userName || !password || !email) {
+    window.alert("User name, password, and email are required.");
+    return;
+  }
+
+  if (state.users.some((record) => record.userName.toLowerCase() === userName.toLowerCase())) {
+    window.alert("User name already used or duplicate entry.");
+    return;
+  }
+
+  if (state.users.some((record) => record.email.toLowerCase() === email.toLowerCase())) {
+    window.alert("Email already used or duplicate entry.");
+    return;
+  }
+
+  const record = user(
+    userName,
+    email,
+    data.role,
+    data.accountStatus,
+    data.branchAccess,
+    data.canViewAllEntry === "on",
+    data.canViewOnlySelfEntry === "on",
+    data.canEditAllEntry === "on",
+    data.canViewUpdatedHistory === "on",
+    password,
+    data.notes || "Created from admin panel"
+  );
+
+  state.users.unshift(record);
+  postRecord("user", record);
+  addHistory("Created user account", `${userName} - ${data.branchAccess}`);
 }
 
 function createTariff(data) {

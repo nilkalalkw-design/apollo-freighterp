@@ -164,6 +164,7 @@ insert into app_users (
     role,
     account_status,
     branch_access,
+    password,
     can_view_all_entry,
     can_view_only_self_entry,
     can_edit_all_entry,
@@ -171,13 +172,14 @@ insert into app_users (
     notes
 )
 values
-    ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', true, true, true, true, 'Default test administrator'),
-    ('operations', 'ops@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', true, true, false, true, 'Operations user')
+    ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'admin123', true, true, true, true, 'Default test administrator'),
+    ('operations', 'ops@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', 'ops123', true, true, false, true, 'Operations user')
 on conflict (user_name) do update set
     email = excluded.email,
     role = excluded.role,
     account_status = excluded.account_status,
     branch_access = excluded.branch_access,
+    password = excluded.password,
     can_view_all_entry = excluded.can_view_all_entry,
     can_view_only_self_entry = excluded.can_view_only_self_entry,
     can_edit_all_entry = excluded.can_edit_all_entry,

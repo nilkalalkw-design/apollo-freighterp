@@ -158,6 +158,7 @@ create table if not exists app_users (
     role text not null default 'Operations',
     account_status text not null default 'Active',
     branch_access text not null default 'Branch 1',
+    password text not null default '',
     can_view_all_entry boolean not null default true,
     can_view_only_self_entry boolean not null default false,
     can_edit_all_entry boolean not null default false,
@@ -166,6 +167,8 @@ create table if not exists app_users (
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
+
+alter table app_users add column if not exists password text not null default '';
 
 create table if not exists unblock_requests (
     id bigserial primary key,
