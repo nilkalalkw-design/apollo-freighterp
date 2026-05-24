@@ -4,7 +4,7 @@ const fs = require("fs");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const path = require("path");
-const { allowedOrigin, autoMigrate, port } = require("./config");
+const { allowedOrigins, autoMigrate, databaseUrl, databaseUrlSource, port } = require("./config");
 const { query, testConnection } = require("./db");
 const { runMigrations } = require("./migrate");
 
@@ -12,6 +12,15 @@ const app = express();
 const webDirCandidates = [path.resolve(__dirname, "..", "web"), path.resolve(__dirname, "..", "..", "web")];
 const webDir = webDirCandidates.find((candidate) => fs.existsSync(path.join(candidate, "index.html"))) || webDirCandidates[0];
 const webIndex = path.join(webDir, "index.html");
+const runtimeStatus = {
+  autoMigrate,
+  databaseConfigured: Boolean(databaseUrl),
+  databaseUrlSource: databaseUrlSource || "missing",
+  migration: autoMigrate ? "pending" : "disabled",
+  startupError: databaseUrl
+    ? ""
+    : "No database connection string was found. Set DATABASE_URL or one of the supported PostgreSQL aliases."
+};
 
 const demoRows = {
   shipments: [
@@ -506,9 +515,19 @@ function demoResponse(resourceName) {
   };
 }
 
+function isAllowedOrigin(origin) {
+  return !origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin);
+}
+
 app.use(
   cors({
-    origin: allowedOrigin === "*" ? true : allowedOrigin,
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`Origin ${origin} is not allowed.`));
+    },
     credentials: true
   })
 );
@@ -536,10 +555,17 @@ app.get("/", (_request, response) => {
 app.get("/api/health", async (_request, response) => {
   try {
     const db = await testConnection();
+    runtimeStatus.startupError = "";
     response.json({
       ok: true,
       service: "apollofreighterp-server",
       database: "connected",
+      mode: "database",
+      databaseConfigured: runtimeStatus.databaseConfigured,
+      databaseUrlSource: runtimeStatus.databaseUrlSource,
+      allowedOrigins,
+      autoMigrate: runtimeStatus.autoMigrate,
+      migration: runtimeStatus.migration,
       serverTime: db.server_time
     });
   } catch (error) {
@@ -548,6 +574,12 @@ app.get("/api/health", async (_request, response) => {
       service: "apollofreighterp-server",
       database: "disconnected",
       mode: "demo",
+      databaseConfigured: runtimeStatus.databaseConfigured,
+      databaseUrlSource: runtimeStatus.databaseUrlSource,
+      allowedOrigins,
+      autoMigrate: runtimeStatus.autoMigrate,
+      migration: runtimeStatus.migration,
+      startupError: runtimeStatus.startupError,
       error: error.message
     });
   }
@@ -637,7 +669,11 @@ async function start() {
   if (autoMigrate) {
     try {
       await runMigrations();
+      runtimeStatus.migration = "applied";
+      runtimeStatus.startupError = "";
     } catch (error) {
+      runtimeStatus.migration = "skipped";
+      runtimeStatus.startupError = error.message;
       console.warn(`Database migration skipped: ${error.message}`);
     }
   }

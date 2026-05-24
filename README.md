@@ -113,6 +113,8 @@ Render deploys the API and database from the root `render.yaml`.
 
 Vercel deploys the static web console from `web/`.
 
+Important: create the Render deployment from the repo-root Blueprint. If the API service is created manually, Render will not auto-create the PostgreSQL database or attach `DATABASE_URL`.
+
 Recommended GitHub deployment settings:
 
 ```text

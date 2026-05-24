@@ -8,55 +8,103 @@
   </head>
   <body>
     <section id="loginScreen" class="login-screen">
-      <div class="login-card">
-        <div class="brand-row">
-          <img class="brand-logo" src="./assets/logo.png" alt="Apollo Freight Solutions logo" onerror="this.hidden=true; this.nextElementSibling.hidden=false" />
-          <div class="brand-mark" hidden>A F S</div>
-          <div>
-            <p class="eyebrow">Apollo Freight Solutions</p>
-            <h1>Cargo Shipments ERP</h1>
+      <div class="login-layout">
+        <aside class="login-brand-panel">
+          <div class="login-brand-block">
+            <div class="brand-row brand-row-large">
+              <img class="brand-logo brand-logo-large" src="./assets/logo.png" alt="Apollo Freight Solutions logo" onerror="this.hidden=true; this.nextElementSibling.hidden=false" />
+              <div class="brand-mark brand-mark-large" hidden>A F S</div>
+              <div>
+                <p class="eyebrow eyebrow-light">Apollo Freight Solutions</p>
+                <h1 class="brand-heading">Cargo Shipments ERP</h1>
+              </div>
+            </div>
+            <p class="login-tagline">We Bring Continents closer...</p>
+            <div class="brand-divider"></div>
+            <p class="brand-description">Land freight consolidation, tariffs, POD, documents, billing, and audit controls.</p>
+          </div>
+        </aside>
+
+        <div class="login-card-shell">
+          <div class="login-card">
+            <p class="auth-eyebrow">Apollo Freight Solutions</p>
+            <h2>Sign in</h2>
+            <p class="auth-copy">Use temporary admin access for testing.</p>
+
+            <form id="loginForm" class="login-form">
+              <label>
+                User name
+                <input name="userName" autocomplete="username" value="admin" required />
+              </label>
+              <label>
+                Password
+                <input name="password" type="password" autocomplete="current-password" value="admin123" required />
+              </label>
+              <p id="loginMessage" class="form-message" role="status"></p>
+              <button type="submit">Login</button>
+            </form>
+
+            <details class="reset-panel">
+              <summary>Reset password by email</summary>
+              <div class="reset-panel-body">
+                <label>
+                  Email address
+                  <input id="resetEmail" type="email" placeholder="name@company.com" />
+                </label>
+                <button id="resetPasswordButton" type="button" class="navy-button">Send Reset Link</button>
+                <p id="resetMessage" class="reset-message" role="status"></p>
+                <p class="reset-help">For the live server version, this will send a real email reset link once SMTP or Microsoft 365 is configured on the API.</p>
+              </div>
+            </details>
+
+            <p class="auth-footer">Designed by ApolloIT | Copyright 2026 Apollo Freight Solutions. All rights reserved.</p>
           </div>
         </div>
-        <form id="loginForm" class="login-form">
-          <label>
-            User name
-            <input name="userName" autocomplete="username" value="admin" required />
-          </label>
-          <label>
-            Password
-            <input name="password" type="password" autocomplete="current-password" value="admin123" required />
-          </label>
-          <button type="submit">Login</button>
-          <p id="loginMessage" class="form-message" role="status"></p>
-        </form>
       </div>
     </section>
 
     <div id="appShell" class="app-shell is-hidden">
       <aside class="sidebar">
-        <div class="sidebar-brand">
-          <img class="brand-logo" src="./assets/logo.png" alt="Apollo Freight Solutions logo" onerror="this.hidden=true; this.nextElementSibling.hidden=false" />
-          <div class="brand-mark" hidden>A F S</div>
-          <div>
-            <p class="eyebrow">Apollo Freight Solutions</p>
-            <h2>Freight ERP</h2>
+        <div class="sidebar-brand-shell">
+          <div class="sidebar-brand">
+            <img class="brand-logo" src="./assets/logo.png" alt="Apollo Freight Solutions logo" onerror="this.hidden=true; this.nextElementSibling.hidden=false" />
+            <div class="brand-mark" hidden>A F S</div>
+            <div>
+              <p class="eyebrow eyebrow-light">Apollo Freight Solutions</p>
+              <h2>Freight ERP</h2>
+            </div>
           </div>
+          <p class="sidebar-tagline">We Bring Continents closer...</p>
+          <div class="brand-divider"></div>
         </div>
         <nav id="moduleNav" class="nav-list" aria-label="ERP sections"></nav>
       </aside>
 
-      <main class="workspace">
+      <div class="workspace-shell">
         <header class="topbar">
-          <div class="page-heading">
-            <p id="pageEyebrow" class="eyebrow">Dashboard</p>
-            <h1 id="pageTitle">Dashboard</h1>
-            <p id="pageSubtitle">Live operational summary for land freight consolidation</p>
+          <div class="topbar-main">
+            <div class="brand-ribbon">
+              <p class="eyebrow">Apollo Freight Solutions</p>
+              <span>We Bring Continents closer...</span>
+            </div>
+            <div class="page-heading">
+              <p id="pageEyebrow" class="eyebrow">Dashboard</p>
+              <h1 id="pageTitle">Dashboard</h1>
+              <p id="pageSubtitle">Live operational summary for land freight consolidation</p>
+              <p id="userContextText" class="context-copy">User: admin | Branch: Both</p>
+            </div>
           </div>
           <div class="top-actions">
             <label>
               Global search
-              <input id="globalSearch" placeholder="Job, invoice, customer, route" />
+              <input id="globalSearch" placeholder="Search shipment, waybill, invoice, customer" />
             </label>
+            <button id="newShipmentButton" type="button">New Shipment</button>
+            <button id="logoutButton" type="button" class="navy-button">Logout</button>
+          </div>
+
+          <div class="date-filter-panel">
+            <span class="filter-label">Date Range Search</span>
             <label>
               From
               <input id="fromDate" type="date" />
@@ -65,14 +113,18 @@
               To
               <input id="toDate" type="date" />
             </label>
-            <button id="resetFilters" type="button">Reset</button>
-            <button id="logoutButton" type="button">Logout</button>
+            <button id="applyFilters" type="button" class="blue-button">Search</button>
+            <button id="resetFilters" type="button" class="secondary-button">Reset</button>
+            <span id="dateFilterStatusText" class="filter-status"></span>
           </div>
         </header>
 
         <div id="apiBanner" class="api-banner"></div>
-        <section id="moduleContent" class="module-content" aria-live="polite"></section>
-      </main>
+        <main class="workspace">
+          <section id="moduleContent" class="module-content" aria-live="polite"></section>
+        </main>
+        <footer class="app-footer">Designed by ApolloIT | Copyright 2026 Apollo Freight Solutions. All rights reserved.</footer>
+      </div>
     </div>
 
     <dialog id="recordDialog" class="record-dialog">

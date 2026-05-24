@@ -30,18 +30,56 @@ const moduleNav = document.querySelector("#moduleNav");
 const pageEyebrow = document.querySelector("#pageEyebrow");
 const pageTitle = document.querySelector("#pageTitle");
 const pageSubtitle = document.querySelector("#pageSubtitle");
+const userContextText = document.querySelector("#userContextText");
 const moduleContent = document.querySelector("#moduleContent");
 const apiBanner = document.querySelector("#apiBanner");
 const globalSearch = document.querySelector("#globalSearch");
 const fromDate = document.querySelector("#fromDate");
 const toDate = document.querySelector("#toDate");
+const applyFilters = document.querySelector("#applyFilters");
+const dateFilterStatusText = document.querySelector("#dateFilterStatusText");
 const resetFilters = document.querySelector("#resetFilters");
+const newShipmentButton = document.querySelector("#newShipmentButton");
 const logoutButton = document.querySelector("#logoutButton");
+const resetEmail = document.querySelector("#resetEmail");
+const resetPasswordButton = document.querySelector("#resetPasswordButton");
+const resetMessage = document.querySelector("#resetMessage");
 const recordDialog = document.querySelector("#recordDialog");
 const dialogType = document.querySelector("#dialogType");
 const dialogTitle = document.querySelector("#dialogTitle");
 const dialogBody = document.querySelector("#dialogBody");
 const dialogSave = document.querySelector("#dialogSave");
+
+function currentSession() {
+  const raw = sessionStorage.getItem(SESSION_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      return parsed;
+    }
+  } catch {}
+
+  return {
+    userName: raw,
+    role: raw === "admin" ? "Admin" : "Operations",
+    branchAccess: raw === "admin" ? "Both" : "Branch 1"
+  };
+}
+
+function rememberSession(userName) {
+  sessionStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({
+      userName,
+      role: userName === "admin" ? "Admin" : "Operations",
+      branchAccess: userName === "admin" ? "Both" : "Branch 1"
+    })
+  );
+}
 
 function seedState() {
   const today = new Date().toISOString().slice(0, 10);
@@ -219,30 +257,52 @@ function boot() {
     sessionStorage.removeItem(SESSION_KEY);
     showLogin();
   });
-  [globalSearch, fromDate, toDate].forEach((input) => input.addEventListener("input", render));
+  globalSearch.addEventListener("input", render);
+  applyFilters.addEventListener("click", render);
   resetFilters.addEventListener("click", () => {
     globalSearch.value = "";
     fromDate.value = "";
     toDate.value = "";
     render();
   });
+  newShipmentButton.addEventListener("click", openShipmentWorkspace);
+  resetPasswordButton.addEventListener("click", handlePasswordReset);
   moduleContent.addEventListener("click", handleModuleClick);
   moduleContent.addEventListener("submit", handleModuleSubmit);
   dialogSave.addEventListener("click", saveDialogRecord);
 
-  if (sessionStorage.getItem(SESSION_KEY)) {
+  if (currentSession()) {
     showApp();
   } else {
     showLogin();
   }
 }
 
+function openShipmentWorkspace() {
+  activeModule = "Shipments / Jobs";
+  render();
+  setTimeout(() => {
+    moduleContent.querySelector("form[data-form='shipment']")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 0);
+}
+
+function handlePasswordReset() {
+  const email = resetEmail.value.trim();
+  if (!email) {
+    resetMessage.textContent = "Enter an email address first.";
+    return;
+  }
+
+  resetMessage.textContent = `Password reset is not configured yet for ${email}. Enable SMTP or Microsoft 365 on the API to activate this flow.`;
+}
+
 function handleLogin(event) {
   event.preventDefault();
   const form = new FormData(loginForm);
   if (form.get("userName") === "admin" && form.get("password") === "admin123") {
-    sessionStorage.setItem(SESSION_KEY, "admin");
+    rememberSession("admin");
     loginMessage.textContent = "";
+    resetMessage.textContent = "";
     showApp();
     return;
   }
@@ -252,11 +312,13 @@ function handleLogin(event) {
 function showLogin() {
   loginScreen.classList.remove("is-hidden");
   appShell.classList.add("is-hidden");
+  resetMessage.textContent = "";
 }
 
 function showApp() {
   loginScreen.classList.add("is-hidden");
   appShell.classList.remove("is-hidden");
+  updateUserContext();
   syncFromApi();
   render();
 }
@@ -291,7 +353,13 @@ async function syncFromApi() {
       fetchJson("/api/settings")
     ]);
 
-    state.api = { status: "API connected", database: health.database || "unknown", mode: health.mode || "database" };
+    const apiMode = health.mode || (health.database === "connected" ? "database" : "demo");
+    state.api = {
+      status: health.database === "connected" ? "API connected" : "API demo mode",
+      database: health.database || "unknown",
+      mode: apiMode,
+      error: health.error || ""
+    };
     if (shipments.rows?.length) state.shipments = shipments.rows.map(apiShipment);
     if (consolidations.rows?.length) state.loads = consolidations.rows.map(apiLoad);
     if (customers.rows?.length) state.customers = customers.rows.map(apiCustomer);
@@ -396,8 +464,13 @@ function render() {
   pageEyebrow.textContent = module[0];
   pageTitle.textContent = module[0];
   pageSubtitle.textContent = module[1];
+  updateUserContext();
+  updateDateFilterStatus();
   moduleNav.querySelectorAll("button").forEach((button) => button.classList.toggle("active", button.dataset.module === activeModule));
-  apiBanner.innerHTML = `<strong>${escapeHtml(state.api.status)}</strong><span>Render: ${escapeHtml(API_URL)} | Database: ${escapeHtml(state.api.database)} | Mode: ${escapeHtml(state.api.mode)}</span>`;
+  const apiHealthy = state.api.database === "connected";
+  apiBanner.className = `api-banner ${apiHealthy ? "is-ok" : "is-warning"}`;
+  const errorText = state.api.error ? ` | Detail: ${escapeHtml(state.api.error)}` : "";
+  apiBanner.innerHTML = `<strong>${escapeHtml(state.api.status)}</strong><span>Render: ${escapeHtml(API_URL)} | Database: ${escapeHtml(state.api.database)} | Mode: ${escapeHtml(state.api.mode)}${errorText}</span>`;
 
   const renderers = {
     Dashboard: renderDashboard,
@@ -415,6 +488,22 @@ function render() {
     "Audit Log": renderAudit
   };
   moduleContent.innerHTML = (renderers[activeModule] || renderDashboard)();
+}
+
+function updateUserContext() {
+  const session = currentSession() || { userName: "admin", branchAccess: "Both" };
+  userContextText.textContent = `User: ${session.userName} | Branch: ${session.branchAccess}`;
+}
+
+function updateDateFilterStatus() {
+  if (!fromDate.value && !toDate.value) {
+    dateFilterStatusText.textContent = "Showing all records";
+    return;
+  }
+
+  const fromLabel = fromDate.value || "start";
+  const toLabel = toDate.value || "today";
+  dateFilterStatusText.textContent = `Showing records from ${fromLabel} to ${toLabel}`;
 }
 
 function renderDashboard() {

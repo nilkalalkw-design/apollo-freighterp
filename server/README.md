@@ -48,8 +48,22 @@ https://apollo-freighterp.vercel.app
 ```
 
 5. Render runs the SQL files automatically on startup when `AUTO_MIGRATE=true`
+6. After the first deploy, confirm `GET /api/health` returns `"database":"connected"`
+
+If your existing Render service was created manually instead of from the repo-root Blueprint, Render will not create the database or wire `DATABASE_URL` automatically. In that case:
+
+- create the PostgreSQL database first
+- copy its internal connection string into the web service as `DATABASE_URL`
+- or recreate the service from the root `render.yaml`
 
 The `DATABASE_URL` value is provided by Render from the database connection string in `render.yaml`.
+
+The server also accepts these fallback variable names if you already use them elsewhere:
+
+- `POSTGRES_URL`
+- `POSTGRESQL_URL`
+- `PG_CONNECTION_STRING`
+- `RENDER_DATABASE_URL`
 
 ## Database files
 
