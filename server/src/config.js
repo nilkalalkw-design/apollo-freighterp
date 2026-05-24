@@ -4,6 +4,7 @@ const dotenv = require("dotenv");
 dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 
 const port = Number.parseInt(process.env.PORT || "4000", 10);
+const defaultAllowedOrigin = (process.env.NODE_ENV || "development") === "production" ? "https://apollo-freighterp.vercel.app" : "*";
 const databaseSources = [
   ["DATABASE_URL", process.env.DATABASE_URL],
   ["POSTGRES_URL", process.env.POSTGRES_URL],
@@ -12,7 +13,7 @@ const databaseSources = [
   ["RENDER_DATABASE_URL", process.env.RENDER_DATABASE_URL]
 ];
 const databaseConfig = databaseSources.find(([, value]) => typeof value === "string" && value.trim());
-const allowedOrigins = (process.env.ALLOWED_ORIGIN || "*")
+const allowedOrigins = (process.env.ALLOWED_ORIGIN || defaultAllowedOrigin)
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
@@ -22,7 +23,7 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || "development",
   databaseUrl: databaseConfig?.[1]?.trim() || "",
   databaseUrlSource: databaseConfig?.[0] || "",
-  allowedOrigin: process.env.ALLOWED_ORIGIN || "*",
+  allowedOrigin: process.env.ALLOWED_ORIGIN || defaultAllowedOrigin,
   allowedOrigins,
   autoMigrate: process.env.AUTO_MIGRATE !== "false"
 };
