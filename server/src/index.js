@@ -166,7 +166,7 @@ const demoRows = {
       date: "2026-05-05"
     }
   ],
-    "admin-requests": [
+  "admin-requests": [
     {
       id: 1,
       request_no: "ADM-2605001",
@@ -253,11 +253,14 @@ const resources = {
       field("booking_date", ["bookingDate", "booking_date"]),
       field("airway_bill_no", ["airwayBillNo", "airway_bill_no"]),
       field("tariff_no", ["tariffNo", "tariff_no"]),
-      ransit_days", ["transitDays", "transit_days"]),
+      field("transit_days", ["transitDays", "transit_days"]),
       field("shipment_direction", ["shipmentDirection", "shipment_direction"]),
       field("shipment_service", ["shipmentService", "shipment_service"]),
       field("shipment_service_other", ["shipmentServiceOther", "shipment_service_other"]),
       field("notes"),
+      field("created_by", ["createdBy", "created_by"])
+    ]
+  },
   consolidations: {
     table: "consolidations",
     key: "load_no",
@@ -365,6 +368,49 @@ const resources = {
       field("date"),
       field("approved_by", ["approvedBy", "approved_by"]),
       field("notes")
+    ]
+  },
+  "admin-requests": {
+    table: "admin_requests",
+    key: "request_no",
+    order: "date desc, created_at desc",
+    fields: [
+      field("request_no", ["requestNo", "request_no"], true),
+      field("request_type", ["requestType", "request_type"]),
+      field("target_module", ["targetModule", "target_module"]),
+      field("reference_no", ["referenceNo", "reference_no"]),
+      field("requested_by", ["requestedBy", "requested_by"]),
+      field("status"),
+      field("date"),
+      field("details"),
+      field("proposed_values", ["proposedValues", "proposed_values"]),
+      field("approved_by", ["approvedBy", "approved_by"]),
+      field("approval_notes", ["approvalNotes", "approval_notes"])
+    ]
+  },
+  "additional-charges": {
+    table: "additional_charges",
+    key: "ref_no",
+    order: "charge_date desc, created_at desc",
+    readonlyFields: ["tax_amount", "total_amount"],
+    fields: [
+      field("ref_no", ["refNo", "ref_no"], true),
+      field("shipment_no", ["shipmentNo", "shipment_no"], true),
+      field("charge_date", ["chargeDate", "charge_date"]),
+      field("charge_type", ["chargeType", "charge_type"]),
+      field("charge_basis", ["chargeBasis", "charge_basis"]),
+      field("supplier"),
+      field("reference_no", ["referenceNo", "reference_no"]),
+      field("invoice_no", ["invoiceNo", "invoice_no"]),
+      field("amount"),
+      field("tax_percent", ["taxPercent", "tax_percent"]),
+      field("currency"),
+      field("remarks"),
+      field("attachment_name", ["attachmentName", "attachment_name"]),
+      field("status"),
+      field("requested_by", ["requestedBy", "requested_by"]),
+      field("approved_by", ["approvedBy", "approved_by"]),
+      field("approval_notes", ["approvalNotes", "approval_notes"])
     ]
   },
   audit: {
