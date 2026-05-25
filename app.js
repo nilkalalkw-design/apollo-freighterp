@@ -149,6 +149,7 @@ function seedState() {
       audit("2026-05-05 10:05", "billing", "Generated invoice", "INV-260001")
     ],
     settings: {
+      settingsKey: "default",
       companyName: "Apollo Freight Solutions",
       shipmentNumberFormat: "AFS-YY####",
       invoiceNumberFormat: "INV-YY####",
@@ -164,7 +165,8 @@ function seedState() {
     ui: {
       reportFormat: "PDF",
       reportType: "Daily shipments",
-      reportPreview: null
+      reportPreview: null,
+      selectedLoadNo: ""
     }
   };
 }
@@ -329,6 +331,7 @@ function normalizeState(stored) {
     ui: {
       ...defaults.ui,
       ...(stored.ui || {}),
+      selectedLoadNo: (stored.ui || {}).selectedLoadNo || "",
       chargeFilters: {
         shipmentNo: "",
         chargeType: "All",
@@ -360,6 +363,40 @@ function nextNumber(prefix, collection, field) {
     .map((value) => Number(value.replace(/\D/g, "").slice(-4)) || 0)
     .reduce((highest, value) => Math.max(highest, value), 0);
   return `${prefix}-${new Date().toISOString().slice(2, 7).replace("-", "")}${String(max + 1).padStart(4, "0")}`;
+}
+
+function configuredNumber(format, collection, field, fallbackPrefix) {
+  const normalizedFormat = String(format || "").trim();
+  if (!normalizedFormat || normalizedFormat === `${fallbackPrefix}-YY####`) {
+    return nextNumber(fallbackPrefix, collection, field);
+  }
+
+  const year = new Date().getFullYear().toString().slice(-2);
+  const digits = Math.max((normalizedFormat.match(/#+/) || ["####"])[0].length, 4);
+  const max = collection
+    .map((item) => String(item[field] || ""))
+    .map((value) => Number((value.match(/(\d+)$/) || ["0", "0"])[1]) || 0)
+    .reduce((highest, value) => Math.max(highest, value), 0);
+
+  return normalizedFormat
+    .replace("YY", year)
+    .replace(/#+/, String(max + 1).padStart(digits, "0"));
+}
+
+function nextShipmentNumber() {
+  return configuredNumber(state.settings.shipmentNumberFormat, state.shipments, "jobNo", "AFS");
+}
+
+function nextInvoiceNumber() {
+  return configuredNumber(state.settings.invoiceNumberFormat, state.invoices, "invoiceNo", "INV");
+}
+
+function branchOptions() {
+  const branches = String(state.settings.branches || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return branches.length ? branches : ["Branch 1", "Branch 2"];
 }
 
 function recordDate(record) {
@@ -747,6 +784,7 @@ function apiAudit(row) {
 
 function apiSettings(row) {
   return {
+    settingsKey: row.settings_key || state.settings.settingsKey || "default",
     companyName: row.company_name || state.settings.companyName,
     shipmentNumberFormat: row.shipment_number_format || state.settings.shipmentNumberFormat,
     invoiceNumberFormat: row.invoice_number_format || state.settings.invoiceNumberFormat,
@@ -845,9 +883,16 @@ function renderShipments() {
       <article class="panel">${panelHeader("Shipment Register", "Editable records")} ${table("shipment", rows, shipmentColumns())}</article>
       ${moduleActionPanel("Shipment Actions", "shipment", "Use separate desktop-style windows for new shipment entry and load/edit shipment details.", actionChecklist([
         "New button opens the shipment popup window.",
-        "Load button opens a separate search/load popup.",
-        "Shipment type controls service options: Import, Export, WHC."
+        "Load uses the selected saved shipment from the list.",
+        "Shipment type controls service options: Import, Export, WHC, and Consolidation service."
       ]))}
+    </section>
+    <section class="panel">${panelHeader("Delete Shipment", "Maintenance")}
+      ${deleteSelectorMarkup("shipment", "Shipment To Delete")}
+      <div class="action-row">
+        <button type="button" class="danger-button" data-action="delete-record" data-type="shipment">Delete Shipment</button>
+      </div>
+      <p class="empty-state">Deleting a shipment also removes linked consolidation references, documents, invoices, and additional charges.</p>
     </section>`;
 }
 
@@ -856,15 +901,17 @@ function renderConsolidation() {
     recalculateLoad(row);
     return row;
   });
+  const selectedLoad = rows.find((row) => row.loadNo === state.ui.selectedLoadNo) || null;
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Consolidation Board", "Loads / Trips")}
-        <div class="load-board">${rows.map(loadCard).join("") || empty("No consolidations found.")}</div>
+      <article class="panel">${panelHeader("Consolidation Register", "Loads / Trips")}
+        ${table("load", rows, loadColumns())}
+        ${selectedLoad ? consolidationJobsPanel(selectedLoad) : `<div class="report-preview-empty"><p class="empty-state">Select a consolidation from the list to open the related job numbers below.</p></div>`}
       </article>
       ${moduleActionPanel("Manifest Actions", "load", "Generate, load, and update consolidation manifests from separate popup windows.", actionChecklist([
-        "Load button opens an existing manifest.",
+        "Select a consolidation, then load it to review or edit.",
         "New button opens a fresh manifest builder.",
-        "Non-admin changes can be sent for approval."
+        "Click any job below the consolidation list to open that shipment."
       ]))}
     </section>`;
 }
@@ -914,6 +961,9 @@ function renderAdditionalCharges() {
         <div class="action-stack">
           <div class="action-row">
             <button type="button" data-action="new-record" data-type="charge">New Charge</button>
+          </div>
+          ${loadSelectorMarkup("charge", "Saved Charges")}
+          <div class="action-row">
             <button type="button" class="secondary-button" data-action="load-record" data-type="charge">Load Charge</button>
           </div>
           <p class="empty-state">Admins can approve or edit charges directly. Other users send change requests to admin.</p>
@@ -946,7 +996,19 @@ function renderShipmentStatus() {
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Shipment Status Register", "Status board")} ${table("shipment", rows, shipmentColumns())}</article>
-      ${moduleActionPanel("Status Actions", "status", "Status updates now open in a separate popup window, and loading an existing shipment stays separate from creating a new status note.")}
+      <article class="panel">${panelHeader("Status Actions", "Update / Email")}
+        <div class="action-stack">
+          <p class="empty-state">Select a shipment, load its status window, or send the latest update through Outlook to the related customer.</p>
+          <div class="action-row">
+            <button type="button" data-action="new-record" data-type="status">New</button>
+          </div>
+          ${loadSelectorMarkup("status", "Shipment To Load")}
+          <div class="action-row">
+            <button type="button" data-action="load-record" data-type="status">Load</button>
+            <button type="button" class="secondary-button" data-action="send-status-email" data-type="status">Send Update</button>
+          </div>
+        </div>
+      </article>
     </section>`;
 }
 
@@ -1019,11 +1081,95 @@ function moduleActionPanel(title, type, note, extra = "") {
       <p class="empty-state">${escapeHtml(note)}</p>
       <div class="action-row">
         <button type="button" data-action="new-record" data-type="${escapeHtml(type)}">New</button>
+      </div>
+      ${loadSelectorMarkup(type)}
+      <div class="action-row">
         <button type="button" class="secondary-button" data-action="load-record" data-type="${escapeHtml(type)}">Load</button>
       </div>
       ${extra}
     </div>
   </article>`;
+}
+
+function loadSelectorMarkup(type, label = "Saved Records") {
+  const rows = collectionFor(type);
+  if (!rows.length) {
+    return `<p class="empty-state">No saved ${escapeHtml(type)} records available.</p>`;
+  }
+
+  return `<label>${escapeHtml(label)}
+    <select data-load-select="${escapeHtml(type)}">
+      ${rows.map((row) => `<option value="${escapeHtml(rowId(type, row))}">${escapeHtml(loadOptionLabel(type, row))}</option>`).join("")}
+    </select>
+  </label>`;
+}
+
+function deleteSelectorMarkup(type, label = "Record To Delete") {
+  const rows = collectionFor(type);
+  if (!rows.length) {
+    return `<p class="empty-state">No saved ${escapeHtml(type)} records available.</p>`;
+  }
+
+  return `<label>${escapeHtml(label)}
+    <select data-delete-select="${escapeHtml(type)}">
+      ${rows.map((row) => `<option value="${escapeHtml(rowId(type, row))}">${escapeHtml(loadOptionLabel(type, row))}</option>`).join("")}
+    </select>
+  </label>`;
+}
+
+function loadOptionLabel(type, row) {
+  if (type === "shipment" || type === "status" || type === "pod") {
+    return `${row.jobNo} | ${row.customer} | ${row.status}`;
+  }
+
+  if (type === "load") {
+    return `${row.loadNo} | ${row.route} | ${row.status}`;
+  }
+
+  if (type === "user") {
+    return `${row.userName} | ${row.role}`;
+  }
+
+  if (type === "charge") {
+    return `${row.refNo} | ${row.shipmentNo} | ${row.chargeType}`;
+  }
+
+  if (type === "customers" || type === "suppliers") {
+    return `${row.code} | ${row.name}`;
+  }
+
+  return rowId(type, row);
+}
+
+function consolidationJobsPanel(loadItem) {
+  const jobs = String(loadItem.jobNumbers || "")
+    .split(",")
+    .map((jobNo) => jobNo.trim())
+    .filter(Boolean);
+
+  return `<section class="consolidation-jobs">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">Selected Consolidation</p>
+        <h2>${escapeHtml(loadItem.loadNo)}</h2>
+      </div>
+      <button type="button" class="secondary-button" data-action="open" data-type="load" data-id="${escapeHtml(loadItem.loadNo)}">Edit Consolidation</button>
+    </div>
+    ${jobs.length ? `<div class="job-list-table">${jobs.map((jobNo) => consolidationJobRow(loadItem.loadNo, jobNo)).join("")}</div>` : `<p class="empty-state">No job numbers linked to this consolidation.</p>`}
+  </section>`;
+}
+
+function consolidationJobRow(loadNo, jobNo) {
+  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
+  if (!shipmentItem) {
+    return `<div class="job-list-row"><strong>${escapeHtml(jobNo)}</strong><span class="empty-state">Shipment not found.</span><button type="button" class="danger-button" data-action="remove-load-job" data-load-id="${escapeHtml(loadNo)}" data-job-id="${escapeHtml(jobNo)}">Remove</button></div>`;
+  }
+
+  return `<div class="job-list-row">
+    <button type="button" class="ghost-button inline-link" data-action="open" data-type="shipment" data-id="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button>
+    <span>${escapeHtml(shipmentItem.customer)} | ${escapeHtml(shipmentItem.status)} | ${escapeHtml(shipmentItem.destination)}</span>
+    <button type="button" class="danger-button" data-action="remove-load-job" data-load-id="${escapeHtml(loadNo)}" data-job-id="${escapeHtml(jobNo)}">Remove</button>
+  </div>`;
 }
 
 function actionChecklist(items) {
@@ -1111,8 +1257,16 @@ function table(type, rows, columns, showLoad = true) {
 
 function tableRow(type, row, index, columns, showLoad = true) {
   const id = rowId(type, row);
-  const actionCell = showLoad ? `<td><button class="ghost-button" data-action="open" data-type="${type}" data-id="${escapeHtml(id)}">Load</button></td>` : "";
+  const actionCell = showLoad ? `<td>${tableActionButton(type, id)}</td>` : "";
   return `<tr>${columns.map(([key]) => `<td>${cellHtml(type, key, row)}</td>`).join("")}${actionCell}</tr>`;
+}
+
+function tableActionButton(type, id) {
+  if (type === "load") {
+    return `<button class="ghost-button" data-action="view-load" data-id="${escapeHtml(id)}">View Jobs</button>`;
+  }
+
+  return `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Load</button>`;
 }
 
 function display(value) {
@@ -1161,14 +1315,14 @@ function shipmentDirectionOptions() {
 
 function shipmentServiceOptions(direction) {
   if (direction === "Import") {
-    return ["SI", "AI", "LI", "Other"];
+    return ["SI", "AI", "LI", "Consolidation", "Other"];
   }
 
   if (direction === "WHC") {
-    return ["WHC Remark"];
+    return ["WHC Remark", "Consolidation"];
   }
 
-  return ["SE", "AE", "LE", "Other"];
+  return ["SE", "AE", "LE", "Consolidation", "Other"];
 }
 
 function filteredAdditionalCharges() {
@@ -1251,8 +1405,8 @@ function select(name, label, options, selected = options[0]) {
   return `<label>${escapeHtml(label)}<select name="${escapeHtml(name)}">${options.map((option) => `<option ${option === selected ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
 }
 
-function selectFrom(name, label, options) {
-  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(options[0] || "")}" /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(option)}"></option>`).join("")}</datalist></label>`;
+function selectFrom(name, label, options, value = options[0] || "") {
+  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(value)}" /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(option)}"></option>`).join("")}</datalist></label>`;
 }
 
 function statusOptions() {
@@ -1268,11 +1422,15 @@ function accountStatusOptions() {
 }
 
 function branchAccessOptions() {
-  return ["Branch 1", "Branch 2", "Both"];
+  return [...branchOptions(), "Both"];
 }
 
 function shipmentColumns() {
   return [["jobNo", "Job No"], ["customer", "Customer"], ["shipmentDirection", "Type"], ["shipmentService", "Service"], ["status", "Status"], ["bookingDate", "Date"], ["invoiceStatus", "Invoice"]];
+}
+
+function loadColumns() {
+  return [["loadNo", "Consolidation"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["status", "Status"], ["jobNumbers", "Job Numbers"]];
 }
 
 function partyColumns() {
@@ -1315,6 +1473,8 @@ function rowId(type, row) {
   const keys = {
     shipment: "jobNo",
     load: "loadNo",
+    pod: "jobNo",
+    status: "jobNo",
     customers: "code",
     suppliers: "code",
     tariff: "tariffNo",
@@ -1322,6 +1482,7 @@ function rowId(type, row) {
     charge: "refNo",
     invoice: "invoiceNo",
     user: "userName",
+    settings: "settingsKey",
     unblock: "requestNo",
     adminRequest: "requestNo",
     audit: "reference"
@@ -1333,6 +1494,8 @@ function collectionFor(type) {
   const collections = {
     shipment: state.shipments,
     load: state.loads,
+    pod: state.shipments,
+    status: state.shipments,
     customers: state.customers,
     suppliers: state.suppliers,
     tariff: state.tariffs,
@@ -1340,6 +1503,7 @@ function collectionFor(type) {
     charge: state.additionalCharges,
     invoice: state.invoices,
     user: state.users,
+    settings: [state.settings],
     unblock: state.unblockRequests,
     adminRequest: state.adminRequests,
     audit: state.audit
@@ -1363,7 +1527,29 @@ function handleModuleClick(event) {
   }
 
   if (action === "load-record") {
-    openLoadDialog(type);
+    handleLoadRecord(type);
+    return;
+  }
+
+  if (action === "view-load") {
+    state.ui.selectedLoadNo = id;
+    saveState();
+    render();
+    return;
+  }
+
+  if (action === "remove-load-job") {
+    removeJobFromLoad(button.dataset.loadId, button.dataset.jobId);
+    return;
+  }
+
+  if (action === "delete-record") {
+    deleteShipmentFromSelector();
+    return;
+  }
+
+  if (action === "send-status-email") {
+    sendShipmentStatusEmail(selectedRecordId("status"));
     return;
   }
 
@@ -1387,6 +1573,42 @@ function handleModuleClick(event) {
     applyChargeFilters();
     return;
   }
+}
+
+function selectedRecordId(type) {
+  return moduleContent.querySelector(`[data-load-select='${type}']`)?.value || "";
+}
+
+function handleLoadRecord(type) {
+  const selectedId = selectedRecordId(type);
+
+  if (type === "load") {
+    if (!selectedId) {
+      window.alert("Select a consolidation first.");
+      return;
+    }
+    state.ui.selectedLoadNo = selectedId;
+    saveState();
+    render();
+    return;
+  }
+
+  if (type === "status") {
+    openStatusDialog(selectedId);
+    return;
+  }
+
+  if (type === "pod") {
+    openPodDialog(selectedId);
+    return;
+  }
+
+  if (selectedId) {
+    openRecord(type, selectedId);
+    return;
+  }
+
+  openLoadDialog(type);
 }
 
 function openRecord(type, id) {
@@ -1449,11 +1671,17 @@ function saveDialogRecord() {
   }
 
   Object.assign(editing.record, updatedRecord);
+  const editedType = editing.type;
+  const editedId = editing.id;
   addHistory(`Updated ${editing.type}`, editing.id);
   persistRecord(editing.type, editing.record);
   saveState();
   resetDialogShell();
   recordDialog.close();
+  if (editedType === "user") {
+    window.alert(`User ${editedId} updated successfully.`);
+    setTimeout(() => syncFromApi(), 300);
+  }
   render();
 }
 
@@ -1488,9 +1716,12 @@ function openNewDialog(type) {
     typeLabel: config.typeLabel,
     body: config.body,
     saveLabel: config.saveLabel,
-    onSave() {
+    async onSave() {
       const data = collectFormValues(dialogBody.closest("form"));
-      config.onSave(data);
+      const saved = await config.onSave(data);
+      if (saved === false) {
+        return;
+      }
       saveState();
       recordDialog.close();
       render();
@@ -1516,6 +1747,48 @@ function openLoadDialog(type) {
       const selectedId = data.selectedId || firstId;
       recordDialog.close();
       openRecord(type, selectedId);
+    }
+  });
+}
+
+function openStatusDialog(jobNo = "") {
+  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo) || state.shipments[0];
+  openDialog({
+    title: jobNo ? `Shipment Status - ${jobNo}` : "Shipment Status Update",
+    typeLabel: "Status",
+    body: `
+      ${selectFrom("jobNo", "Job No", state.shipments.map((row) => row.jobNo), shipmentItem?.jobNo || "")}
+      ${select("status", "Shipment Status", statusOptions(), shipmentItem?.status || "Booked")}
+      ${select("podStatus", "POD Status", ["Pending", "Uploaded", "Missing", "Disputed", "Approved"], shipmentItem?.podStatus || "Pending")}
+      ${select("invoiceStatus", "Invoice Status", ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue"], shipmentItem?.invoiceStatus || "Unbilled")}
+      ${input("notes", "Notes", "Status update")}
+    `,
+    saveLabel: "Update Shipment Status",
+    onSave() {
+      const data = collectFormValues(dialogBody.closest("form"));
+      updateStatus(data);
+      saveState();
+      recordDialog.close();
+      render();
+    }
+  });
+}
+
+function openPodDialog(jobNo = "") {
+  openDialog({
+    title: jobNo ? `POD / Delivery - ${jobNo}` : "Delivery Update",
+    typeLabel: "POD",
+    body: `
+      ${selectFrom("jobNo", "Shipment No", state.shipments.map((row) => row.jobNo), jobNo || state.shipments[0]?.jobNo || "")}
+      ${input("receiver", "Receiver", "Receiver Name")}
+    `,
+    saveLabel: "Mark Delivered + Upload POD",
+    onSave() {
+      const data = collectFormValues(dialogBody.closest("form"));
+      updatePod(data);
+      saveState();
+      recordDialog.close();
+      render();
     }
   });
 }
@@ -1621,7 +1894,7 @@ function dialogConfigFor(type) {
       typeLabel: "Invoice",
       saveLabel: "Generate Invoice",
       body: `
-        ${input("invoiceNo", "Invoice No", nextNumber("INV", state.invoices, "invoiceNo"), true)}
+        ${input("invoiceNo", "Invoice No", nextInvoiceNumber(), true)}
         ${selectFrom("customer", "Customer", state.customers.map((row) => row.name))}
         ${selectFrom("shipmentNo", "Shipment", state.shipments.map((row) => row.jobNo))}
         ${input("revenue", "Revenue", "100.000", false, "number")}
@@ -1678,7 +1951,7 @@ function partyDialogConfig(key, label) {
       ${input("email", "Contact Email", "", false, "email")}
       ${select("terms", "Credit Limit Days", ["15 days", "30 days", "45 days"])}
       ${select("status", "Status", ["Active", "Inactive", "Blocked"])}
-      ${select("branch", "Branch", ["Branch 1", "Branch 2", "Both"])}
+      ${select("branch", "Branch", [...branchOptions(), "Both"])}
     `,
     onSave: (data) => createParty(key, data)
   };
@@ -1686,9 +1959,9 @@ function partyDialogConfig(key, label) {
 
 function shipmentDialogBody() {
   return `
-    ${input("jobNo", "Job Number", nextNumber("AFS", state.shipments, "jobNo"), true)}
+    ${input("jobNo", "Job Number", nextShipmentNumber(), true)}
     ${input("airwayBillNo", "Airway Bill Number", nextNumber("AWB", state.shipments, "jobNo"))}
-    ${select("branch", "Branch", ["Branch 1", "Branch 2"])}
+    ${select("branch", "Branch", branchOptions())}
     ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), "Export")}
     ${select("shipmentService", "Shipment Service", shipmentServiceOptions("Export"), "AE")}
     ${input("shipmentServiceOther", "Other Service / WHC Remark", "")}
@@ -1715,7 +1988,7 @@ function userDialogBody() {
     ${input("email", "Email", "", false, "email")}
     ${select("role", "User Role", roleOptions(), "Operations")}
     ${select("accountStatus", "User Account", accountStatusOptions(), "Active")}
-    ${select("branchAccess", "Branch Access", branchAccessOptions(), "Branch 1")}
+    ${select("branchAccess", "Branch Access", branchAccessOptions(), branchOptions()[0])}
     ${checkbox("canViewAllEntry", "User can view all entry")}
     ${checkbox("canViewOnlySelfEntry", "User can view only self entry", true)}
     ${checkbox("canEditAllEntry", "User can edit all entry")}
@@ -2014,7 +2287,10 @@ function handleModuleSubmit(event) {
     status: () => updateStatus(data),
     settings: () => updateSettings(data)
   };
-  handlers[type]?.();
+  const saved = handlers[type]?.();
+  if (saved === false) {
+    return;
+  }
   saveState();
   render();
 }
@@ -2046,6 +2322,7 @@ function createShipment(data) {
   state.shipments.unshift(record);
   postRecord("shipment", record);
   addHistory("Created shipment", data.jobNo);
+  return true;
 }
 
 function createLoad(data) {
@@ -2054,6 +2331,7 @@ function createLoad(data) {
   state.loads.unshift(item);
   postRecord("load", item);
   addHistory("Created consolidation", data.loadNo);
+  return true;
 }
 
 function createParty(key, data) {
@@ -2061,6 +2339,7 @@ function createParty(key, data) {
   state[key].unshift(record);
   postRecord(key, record);
   addHistory(`Created ${key}`, data.code);
+  return true;
 }
 
 function createUser(data) {
@@ -2070,17 +2349,17 @@ function createUser(data) {
 
   if (!userName || !password || !email) {
     window.alert("User name, password, and email are required.");
-    return;
+    return false;
   }
 
   if (state.users.some((record) => record.userName.toLowerCase() === userName.toLowerCase())) {
     window.alert("User name already used or duplicate entry.");
-    return;
+    return false;
   }
 
   if (state.users.some((record) => record.email.toLowerCase() === email.toLowerCase())) {
     window.alert("Email already used or duplicate entry.");
-    return;
+    return false;
   }
 
   const record = user(
@@ -2100,6 +2379,9 @@ function createUser(data) {
   state.users.unshift(record);
   postRecord("user", record);
   addHistory("Created user account", `${userName} - ${data.branchAccess}`);
+  window.alert(`User ${userName} created successfully.`);
+  setTimeout(() => syncFromApi(), 300);
+  return true;
 }
 
 function createTariff(data) {
@@ -2107,6 +2389,7 @@ function createTariff(data) {
   state.tariffs.unshift(record);
   postRecord("tariff", record);
   addHistory("Created tariff", data.tariffNo);
+  return true;
 }
 
 function createDocument(data) {
@@ -2114,6 +2397,7 @@ function createDocument(data) {
   state.documents.unshift(record);
   postRecord("document", record);
   addHistory("Tagged document", data.documentNo);
+  return true;
 }
 
 function createCharge(data) {
@@ -2152,6 +2436,7 @@ function createCharge(data) {
   state.additionalCharges.unshift(record);
   postRecord("charge", record);
   addHistory(isAdmin ? "Created additional charge" : "Submitted additional charge", data.refNo);
+  return true;
 }
 
 function createInvoice(data) {
@@ -2161,11 +2446,12 @@ function createInvoice(data) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
   if (shipmentItem) shipmentItem.invoiceStatus = data.invoiceNo;
   addHistory("Generated invoice", data.invoiceNo);
+  return true;
 }
 
 function updatePod(data) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.jobNo);
-  if (!shipmentItem) return;
+  if (!shipmentItem) return false;
   shipmentItem.status = "Delivered";
   shipmentItem.podStatus = "Uploaded";
   persistRecord("shipment", shipmentItem);
@@ -2173,22 +2459,27 @@ function updatePod(data) {
   state.documents.unshift(documentRecord);
   postRecord("document", documentRecord);
   addHistory("Marked delivered and uploaded POD", `${data.jobNo} - ${data.receiver}`);
+  return true;
 }
 
 function updateStatus(data) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.jobNo);
-  if (!shipmentItem) return;
+  if (!shipmentItem) return false;
   shipmentItem.status = data.status;
   shipmentItem.podStatus = data.podStatus;
   shipmentItem.invoiceStatus = data.invoiceStatus;
   persistRecord("shipment", shipmentItem);
   addHistory("Updated shipment status", `${data.jobNo} - ${data.notes}`);
+  return true;
 }
 
 function updateSettings(data) {
-  state.settings = { ...state.settings, ...data };
-  postRecord("settings", state.settings);
+  state.settings = { ...state.settings, ...data, settingsKey: state.settings.settingsKey || "default" };
+  persistRecord("settings", state.settings);
   addHistory("Saved company settings", data.companyName);
+  window.alert("Company settings saved successfully.");
+  setTimeout(() => syncFromApi(), 300);
+  return true;
 }
 
 function endpointFor(type) {
@@ -2236,6 +2527,116 @@ async function persistRecord(type, record) {
   } catch {
     state.api.mode = "browser";
   }
+}
+
+async function deleteRecord(type, id) {
+  const endpoint = endpointFor(type);
+  if (!endpoint || !id) return;
+  try {
+    await fetchJson(`/api/${endpoint}/${encodeURIComponent(id)}`, {
+      method: "DELETE"
+    });
+  } catch {
+    state.api.mode = "browser";
+  }
+}
+
+function deleteShipmentFromSelector() {
+  const jobNo = moduleContent.querySelector("[data-delete-select='shipment']")?.value || "";
+  if (!jobNo) {
+    window.alert("Select a shipment to delete.");
+    return;
+  }
+
+  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
+  if (!shipmentItem) {
+    window.alert("Shipment not found.");
+    return;
+  }
+
+  if (!window.confirm(`Delete shipment ${jobNo} and its linked records?`)) {
+    return;
+  }
+
+  const linkedDocuments = state.documents.filter((row) => row.linkedNo === jobNo);
+  const linkedInvoices = state.invoices.filter((row) => row.shipmentNo === jobNo);
+  const linkedCharges = state.additionalCharges.filter((row) => row.shipmentNo === jobNo);
+
+  state.shipments = state.shipments.filter((row) => row.jobNo !== jobNo);
+  state.documents = state.documents.filter((row) => row.linkedNo !== jobNo);
+  state.invoices = state.invoices.filter((row) => row.shipmentNo !== jobNo);
+  state.additionalCharges = state.additionalCharges.filter((row) => row.shipmentNo !== jobNo);
+
+  state.loads.forEach((loadItem) => {
+    const jobs = String(loadItem.jobNumbers || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .filter((item) => item !== jobNo);
+    loadItem.jobNumbers = jobs.join(", ");
+    recalculateLoad(loadItem);
+    persistRecord("load", loadItem);
+  });
+
+  deleteRecord("shipment", jobNo);
+  linkedDocuments.forEach((row) => deleteRecord("document", row.documentNo));
+  linkedInvoices.forEach((row) => deleteRecord("invoice", row.invoiceNo));
+  linkedCharges.forEach((row) => deleteRecord("charge", row.refNo));
+
+  addHistory("Deleted shipment", jobNo);
+  saveState();
+  render();
+}
+
+function removeJobFromLoad(loadNo, jobNo) {
+  const loadItem = state.loads.find((row) => row.loadNo === loadNo);
+  if (!loadItem) return;
+
+  loadItem.jobNumbers = String(loadItem.jobNumbers || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => item !== jobNo)
+    .join(", ");
+
+  recalculateLoad(loadItem);
+  persistRecord("load", loadItem);
+  addHistory("Removed shipment from consolidation", `${loadNo} - ${jobNo}`);
+  saveState();
+  render();
+}
+
+function sendShipmentStatusEmail(jobNo) {
+  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
+  if (!shipmentItem) {
+    window.alert("Select a shipment first.");
+    return;
+  }
+
+  const customer = state.customers.find((row) => row.name === shipmentItem.customer);
+  if (!customer?.email) {
+    window.alert("No customer email is stored for this shipment.");
+    return;
+  }
+
+  const subject = encodeURIComponent(`Shipment Update ${shipmentItem.jobNo}`);
+  const body = encodeURIComponent(
+    [
+      `Dear ${shipmentItem.customer},`,
+      "",
+      `Shipment No: ${shipmentItem.jobNo}`,
+      `Origin: ${shipmentItem.origin}`,
+      `Destination: ${shipmentItem.destination}`,
+      `Status: ${shipmentItem.status}`,
+      `POD Status: ${shipmentItem.podStatus}`,
+      `Invoice Status: ${shipmentItem.invoiceStatus}`,
+      "",
+      "Regards,",
+      "Apollo Freight Solutions"
+    ].join("\n")
+  );
+
+  window.location.href = `mailto:${encodeURIComponent(customer.email)}?subject=${subject}&body=${body}`;
 }
 
 boot();

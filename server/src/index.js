@@ -569,11 +569,11 @@ async function insertRow(config, body) {
   }
 
   const placeholders = values.map((_, index) => `$${index + 1}`);
+  const updateColumns = columns.filter((column) => column !== config.key);
   const conflict = config.key
-    ? `on conflict (${config.key}) do update set ${columns
-        .filter((column) => column !== config.key)
-        .map((column) => `${column} = excluded.${column}`)
-        .join(", ")}`
+    ? updateColumns.length
+      ? `on conflict (${config.key}) do update set ${updateColumns.map((column) => `${column} = excluded.${column}`).join(", ")}`
+      : `on conflict (${config.key}) do nothing`
     : "";
   const result = await query(
     `insert into ${config.table} (${columns.join(", ")})
@@ -607,6 +607,29 @@ async function updateRow(config, id, body) {
      where ${config.key} = $${values.length}
      returning ${columnsFor(config)}`,
     values
+  );
+
+  if (!result.rows[0]) {
+    const error = new Error("Record not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  return result.rows[0];
+}
+
+async function deleteRow(config, id) {
+  if (!config.key) {
+    const error = new Error("This resource does not support direct deletion.");
+    error.status = 400;
+    throw error;
+  }
+
+  const result = await query(
+    `delete from ${config.table}
+     where ${config.key} = $1
+     returning ${columnsFor(config)}`,
+    [id]
   );
 
   if (!result.rows[0]) {
@@ -823,6 +846,33 @@ app.put("/api/:resource/:id", async (request, response, next) => {
         ok: true,
         mode: "demo",
         row: request.body || {}
+      });
+    }
+
+    return next(error);
+  }
+});
+
+app.delete("/api/:resource/:id", async (request, response, next) => {
+  const resourceName = request.params.resource;
+  const config = resources[resourceName];
+
+  if (!config) {
+    return next();
+  }
+
+  try {
+    const row = await deleteRow(config, decodeURIComponent(request.params.id));
+    response.json({
+      ok: true,
+      row
+    });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) {
+      return response.json({
+        ok: true,
+        mode: "demo",
+        row: {}
       });
     }
 
