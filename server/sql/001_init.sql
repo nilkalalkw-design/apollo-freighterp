@@ -1,3 +1,4 @@
+```sql
 create table if not exists shipments (
     id bigserial primary key,
     job_no text not null unique,
@@ -18,6 +19,9 @@ create table if not exists shipments (
     airway_bill_no text not null default '',
     tariff_no text not null default '',
     transit_days integer not null default 0,
+    shipment_direction text not null default 'Export',
+    shipment_service text not null default 'AE',
+    shipment_service_other text not null default '',
     notes text not null default '',
     created_by text not null default 'system',
     created_at timestamptz not null default now(),
@@ -35,6 +39,9 @@ alter table shipments add column if not exists invoice_status text not null defa
 alter table shipments add column if not exists airway_bill_no text not null default '';
 alter table shipments add column if not exists tariff_no text not null default '';
 alter table shipments add column if not exists transit_days integer not null default 0;
+alter table shipments add column if not exists shipment_direction text not null default 'Export';
+alter table shipments add column if not exists shipment_service text not null default 'AE';
+alter table shipments add column if not exists shipment_service_other text not null default '';
 alter table shipments add column if not exists notes text not null default '';
 alter table shipments add column if not exists created_by text not null default 'system';
 alter table shipments add column if not exists updated_at timestamptz not null default now();
@@ -184,6 +191,48 @@ create table if not exists unblock_requests (
     updated_at timestamptz not null default now()
 );
 
+create table if not exists admin_requests (
+    id bigserial primary key,
+    request_no text not null unique,
+    request_type text not null default 'Other',
+    target_module text not null default '',
+    reference_no text not null default '',
+    requested_by text not null default '',
+    status text not null default 'Pending',
+    date date not null default current_date,
+    details text not null default '',
+    proposed_values text not null default '',
+    approved_by text not null default '',
+    approval_notes text not null default '',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists additional_charges (
+    id bigserial primary key,
+    ref_no text not null unique,
+    shipment_no text not null default '',
+    charge_date date not null default current_date,
+    charge_type text not null default 'Labour Charges',
+    charge_basis text not null default '1 ton',
+    supplier text not null default '',
+    reference_no text not null default '',
+    invoice_no text not null default '',
+    amount numeric(12, 3) not null default 0,
+    tax_percent numeric(12, 3) not null default 0,
+    tax_amount numeric(12, 3) generated always as ((amount * tax_percent) / 100) stored,
+    total_amount numeric(12, 3) generated always as (amount + ((amount * tax_percent) / 100)) stored,
+    currency text not null default 'KWD',
+    remarks text not null default '',
+    attachment_name text not null default '',
+    status text not null default 'Draft',
+    requested_by text not null default '',
+    approved_by text not null default '',
+    approval_notes text not null default '',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
 create table if not exists audit_log (
     id bigserial primary key,
     date_time timestamptz not null default now(),
@@ -228,6 +277,8 @@ create index if not exists idx_documents_linked_no on documents (linked_no);
 create index if not exists idx_invoices_shipment_no on invoices (shipment_no);
 create index if not exists idx_audit_log_date_time on audit_log (date_time desc);
 create index if not exists idx_status_history_job_no on shipment_status_history (job_no, updated_at desc);
+create index if not exists idx_admin_requests_status on admin_requests (status, date desc);
+create index if not exists idx_additional_charges_shipment on additional_charges (shipment_no, charge_date desc);
 
 create or replace function set_updated_at()
 returns trigger as $$
@@ -250,7 +301,10 @@ begin
         'documents',
         'invoices',
         'app_users',
-        'unblock_requests'
+        'unblock_requests',
+        'admin_requests',
+        'additional_charges',
+        'app_settings'
     ]
     loop
         if not exists (
@@ -266,3 +320,4 @@ begin
         end if;
     end loop;
 end $$;
+```
