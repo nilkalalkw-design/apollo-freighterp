@@ -44,6 +44,9 @@ const demoRows = {
       airway_bill_no: "AWB-2605001",
       tariff_no: "TAR-1001",
       transit_days: 3,
+      shipment_direction: "Export",
+      shipment_service: "AE",
+      shipment_service_other: "",
       created_at: new Date().toISOString()
     }
   ],
@@ -163,6 +166,46 @@ const demoRows = {
       date: "2026-05-05"
     }
   ],
+    "admin-requests": [
+    {
+      id: 1,
+      request_no: "ADM-2605001",
+      request_type: "Manifest Approval",
+      target_module: "Consolidation",
+      reference_no: "CON-260502",
+      requested_by: "operations",
+      status: "Pending",
+      date: "2026-05-24",
+      details: "Operations requested approval for consolidation edits before dispatch.",
+      proposed_values: "Route: Kuwait - Dammam | Status: Planned | Jobs: AFS-2605002",
+      approved_by: "",
+      approval_notes: ""
+    }
+  ],
+  "additional-charges": [
+    {
+      id: 1,
+      ref_no: "CHG-001",
+      shipment_no: "AFS-2605001",
+      charge_date: "2026-05-24",
+      charge_type: "Labour Charges",
+      charge_basis: "1 ton",
+      supplier: "ABC Labour",
+      reference_no: "LAB-5001",
+      invoice_no: "INV-LAB-001",
+      amount: 50,
+      tax_percent: 10,
+      tax_amount: 5,
+      total_amount: 55,
+      currency: "KWD",
+      remarks: "Labour support at warehouse dock.",
+      attachment_name: "",
+      status: "Approved",
+      requested_by: "admin",
+      approved_by: "admin",
+      approval_notes: "Approved by admin"
+    }
+  ],
   audit: [
     {
       id: 1,
@@ -210,11 +253,11 @@ const resources = {
       field("booking_date", ["bookingDate", "booking_date"]),
       field("airway_bill_no", ["airwayBillNo", "airway_bill_no"]),
       field("tariff_no", ["tariffNo", "tariff_no"]),
-      field("transit_days", ["transitDays", "transit_days"]),
+      ransit_days", ["transitDays", "transit_days"]),
+      field("shipment_direction", ["shipmentDirection", "shipment_direction"]),
+      field("shipment_service", ["shipmentService", "shipment_service"]),
+      field("shipment_service_other", ["shipmentServiceOther", "shipment_service_other"]),
       field("notes"),
-      field("created_by", ["createdBy", "created_by"])
-    ]
-  },
   consolidations: {
     table: "consolidations",
     key: "load_no",
