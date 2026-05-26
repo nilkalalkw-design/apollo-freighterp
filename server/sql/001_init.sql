@@ -248,12 +248,12 @@ create table if not exists audit_log (
 create table if not exists app_settings (
     id bigserial primary key,
     settings_key text not null unique default 'default',
-    company_name text not null default 'Apollo Freight Solutions',
-    shipment_number_format text not null default 'AFS-YY####',
-    invoice_number_format text not null default 'INV-YY####',
+    company_name text not null default 'APOLLO FREIGHT SOLUTIONS',
+    shipment_number_format text not null default 'AFS-SI###',
+    invoice_number_format text not null default 'INV-YY###',
     default_volumetric_divisor text not null default '5000',
     require_pod_before_invoice text not null default 'Yes',
-    branches text not null default 'Branch 1, Branch 2',
+    branches text not null default 'Kuwait 1, Dubai 2',
     updated_at timestamptz not null default now()
 );
 

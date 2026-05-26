@@ -716,6 +716,17 @@ th {
   gap: 10px;
 }
 
+.dialog-picker,
+.selected-job-list {
+  display: grid;
+  gap: 10px;
+}
+
+.selected-job-chip {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
 .inline-link {
   width: auto;
   min-height: 0;

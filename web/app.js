@@ -365,22 +365,35 @@ function nextNumber(prefix, collection, field) {
   return `${prefix}-${new Date().toISOString().slice(2, 7).replace("-", "")}${String(max + 1).padStart(4, "0")}`;
 }
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function configuredNumber(format, collection, field, fallbackPrefix) {
   const normalizedFormat = String(format || "").trim();
-  if (!normalizedFormat || normalizedFormat === `${fallbackPrefix}-YY####`) {
+  if (!normalizedFormat || !normalizedFormat.includes("#")) {
     return nextNumber(fallbackPrefix, collection, field);
   }
 
+  const fullYear = new Date().getFullYear().toString();
   const year = new Date().getFullYear().toString().slice(-2);
-  const hashPattern = normalizedFormat.match(/#+/);
-  const digits = hashPattern ? hashPattern[0].length : 4;
+  const resolvedFormat = normalizedFormat.replaceAll("YYYY", fullYear).replaceAll("YY", year);
+  const hashPattern = resolvedFormat.match(/#+/);
+  if (!hashPattern) return nextNumber(fallbackPrefix, collection, field);
+
+  const digits = hashPattern[0].length;
+  const prefix = resolvedFormat.slice(0, hashPattern.index);
+  const suffix = resolvedFormat.slice(hashPattern.index + digits);
+  const numberPattern = new RegExp(`^${escapeRegex(prefix)}(\\d{${digits},})${escapeRegex(suffix)}$`, "i");
   const max = collection
     .map((item) => String(item[field] || ""))
-    .map((value) => Number((value.match(/(\d+)$/) || ["0", "0"])[1]) || 0)
+    .map((value) => {
+      const match = value.match(numberPattern);
+      return match ? Number(match[1]) || 0 : 0;
+    })
     .reduce((highest, value) => Math.max(highest, value), 0);
 
-  return normalizedFormat
-    .replace("YY", year)
+  return resolvedFormat
     .replace(/#+/, String(max + 1).padStart(digits, "0"));
 }
 
@@ -839,7 +852,7 @@ function render() {
     "User Management / Settings": renderSettings,
     "Audit Log": renderAudit
   };
-  moduleContent.innerHTML = `${adminTopRequestsPanel()}${(renderers[activeModule] || renderDashboard)()}`;
+  moduleContent.innerHTML = (renderers[activeModule] || renderDashboard)();
 }
 
 function updateUserContext() {
@@ -883,7 +896,7 @@ function renderDashboard() {
           ${alert("Jobs missing tariff/rate", "AFS-2605005 needs tariff selection before invoice.")}
           ${alert("Delivered but not invoiced", "AFS-2605003 is delivered and waiting for billing.")}
           ${alert("Pending POD", `${pod} shipments need POD upload or dispute update.`)}
-          ${alert("Admin requests waiting", `${pendingRequests} pending request(s) need admin approval. Review the top approval panels.`)}
+          ${alert("Admin requests waiting", `${pendingRequests} pending request(s) need admin approval. Open User Management / Settings to review.`)}
           ${alert("Additional charges waiting", `${pendingCharges} additional charge entry/changes are waiting for approval.`)}
         </div>
       </article>
@@ -995,6 +1008,7 @@ function renderAdditionalCharges() {
       <article class="panel">${panelHeader("Shipment Cost Summary", "Profitability")}
         ${summaryCard(summary)}
         <div class="action-stack">
+          ${newRecordSelectorMarkup("charge")}
           <div class="action-row">
             <button type="button" data-action="new-record" data-type="charge">New Charge</button>
           </div>
@@ -1037,6 +1051,7 @@ function renderShipmentStatus() {
       <article class="panel">${panelHeader("Status Actions", "Update / Email")}
         <div class="action-stack">
           <p class="empty-state">Select a shipment, load its status window, or send the latest update through Outlook to the related customer.</p>
+          ${newRecordSelectorMarkup("status")}
           <div class="action-row">
             <button type="button" data-action="new-record" data-type="status">New</button>
           </div>
@@ -1080,6 +1095,7 @@ function renderSettings() {
   }
 
   return `
+    ${adminTopRequestsPanel()}
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("User Accounts", "Permissions")} ${table("user", filteredRows(state.users), userColumns())}</article>
       ${moduleActionPanel("User / Permission Actions", "user", "Admin users can open separate New and Load windows for staff accounts and permissions.")}
@@ -1094,6 +1110,7 @@ function renderSettings() {
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${input("branches", "Branches", state.settings.branches)}
+          <p class="empty-state">Next shipment number: ${escapeHtml(nextShipmentNumber())} | Next invoice number: ${escapeHtml(nextInvoiceNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>
       </article>
@@ -1114,6 +1131,7 @@ function moduleActionPanel(title, type, note, extra = "") {
   return `<article class="panel">${panelHeader(title, "New / Load")}
     <div class="action-stack">
       <p class="empty-state">${escapeHtml(note)}</p>
+      ${newRecordSelectorMarkup(type)}
       <div class="action-row">
         <button type="button" data-action="new-record" data-type="${escapeHtml(type)}">New</button>
       </div>
@@ -1124,6 +1142,32 @@ function moduleActionPanel(title, type, note, extra = "") {
       ${extra}
     </div>
   </article>`;
+}
+
+function newRecordSelectorMarkup(type, label = "New Entry Option") {
+  const options = newRecordOptions(type);
+  return `<label>${escapeHtml(label)}
+    <select data-new-select="${escapeHtml(type)}">
+      ${options.map((option) => `<option value="${escapeHtml(option.type)}">${escapeHtml(option.label)}</option>`).join("")}
+    </select>
+  </label>`;
+}
+
+function newRecordOptions(type) {
+  const labels = {
+    shipment: "New Shipment",
+    load: "New Consolidation",
+    customers: "New Customer",
+    suppliers: "New Supplier / Transporter",
+    tariff: "New Tariff",
+    document: "New Document Tag",
+    charge: "New Additional Charge",
+    invoice: "New Invoice",
+    pod: "New POD / Delivery",
+    status: "New Shipment Status",
+    user: "New User Account"
+  };
+  return [{ type, label: labels[type] || `New ${type}` }];
 }
 
 function loadSelectorMarkup(type, label = "Saved Records") {
@@ -1230,6 +1274,7 @@ function chargeFilterPanel() {
     ${input("chargeFromDate", "From Date", filters.fromDate || "", false, "date")}
     ${input("chargeToDate", "To Date", filters.toDate || "", false, "date")}
     <button type="button" data-action="filter-charges">Search</button>
+    ${newRecordSelectorMarkup("charge", "New Entry")}
     <button type="button" data-action="new-record" data-type="charge">New Charge</button>
     <button type="button" class="secondary-button" data-action="load-record" data-type="charge">Load Charge</button>
   </div>`;
@@ -1566,7 +1611,7 @@ async function handleModuleClick(event) {
   }
 
   if (action === "new-record") {
-    openNewDialog(type);
+    openNewDialog(selectedNewRecordType(type));
     return;
   }
 
@@ -1631,6 +1676,10 @@ async function handleModuleClick(event) {
 
 function selectedRecordId(type) {
   return moduleContent.querySelector(`[data-load-select='${type}']`)?.value || "";
+}
+
+function selectedNewRecordType(type) {
+  return moduleContent.querySelector(`[data-new-select='${type}']`)?.value || type;
 }
 
 function handleLoadRecord(type) {
@@ -1920,9 +1969,10 @@ function dialogConfigFor(type) {
         ${select("status", "Status", ["Planned", "Loading", "Dispatched", "Delivered", "Closed"])}
         ${select("manifestStatus", "Manifest Status", ["Not Generated", "Pending Approval", "Approved", "Rejected"])}
         ${input("lastManifestRequestNo", "Last Manifest Request No", "")}
-        ${selectFrom("jobNumbers", "Job Numbers", state.shipments.map((row) => row.jobNo))}
+        ${consolidationShipmentPicker()}
       `,
-      onSave: createLoad
+      onSave: createLoad,
+      afterOpen: bindConsolidationJobPicker
     },
     customers: partyDialogConfig("customers", "Customer"),
     suppliers: partyDialogConfig("suppliers", "Supplier / Transporter"),
@@ -2091,6 +2141,23 @@ function chargeDialogBody() {
   `;
 }
 
+function consolidationShipmentPicker(initialJobs = "") {
+  const shipmentOptions = state.shipments.map((row) => row.jobNo);
+  return `<div class="dialog-picker" data-consolidation-picker>
+    <input type="hidden" name="jobNumbers" value="${escapeHtml(initialJobs)}" />
+    <label>Add Shipment To Consolidation
+      <select data-consolidation-job-select>
+        ${shipmentOptions.map((jobNo) => `<option value="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</option>`).join("")}
+      </select>
+    </label>
+    <div class="action-row">
+      <button type="button" class="secondary-button" data-dialog-action="add-consolidation-job">Add Shipment</button>
+    </div>
+    <div class="selected-job-list" data-consolidation-jobs-list></div>
+    <p class="empty-state">Use the dropdown to add one or multiple shipment job numbers into this consolidation.</p>
+  </div>`;
+}
+
 function bindShipmentDirectionDialog() {
   const directionSelect = dialogBody.querySelector("select[name='shipmentDirection']");
   const serviceSelect = dialogBody.querySelector("select[name='shipmentService']");
@@ -2111,6 +2178,46 @@ function bindShipmentDirectionDialog() {
 
   directionSelect.addEventListener("change", syncOptions);
   syncOptions();
+}
+
+function bindConsolidationJobPicker() {
+  const picker = dialogBody.querySelector("[data-consolidation-picker]");
+  if (!picker) return;
+
+  const selectField = picker.querySelector("[data-consolidation-job-select]");
+  const hiddenField = picker.querySelector("input[name='jobNumbers']");
+  const list = picker.querySelector("[data-consolidation-jobs-list]");
+  const selectedJobs = new Set(
+    String(hiddenField.value || "")
+      .split(",")
+      .map((jobNo) => jobNo.trim())
+      .filter(Boolean)
+  );
+
+  const syncSelectedJobs = () => {
+    hiddenField.value = [...selectedJobs].join(", ");
+    list.innerHTML = selectedJobs.size
+      ? [...selectedJobs].map((jobNo) => `<span class="job-chip selected-job-chip"><strong>${escapeHtml(jobNo)}</strong><button type="button" class="ghost-button" data-remove-consolidation-job="${escapeHtml(jobNo)}">Remove</button></span>`).join("")
+      : `<p class="empty-state">No shipments added yet.</p>`;
+  };
+
+  picker.addEventListener("click", (event) => {
+    const addButton = event.target.closest("[data-dialog-action='add-consolidation-job']");
+    if (addButton) {
+      const jobNo = selectField?.value || "";
+      if (jobNo) selectedJobs.add(jobNo);
+      syncSelectedJobs();
+      return;
+    }
+
+    const removeButton = event.target.closest("[data-remove-consolidation-job]");
+    if (removeButton) {
+      selectedJobs.delete(removeButton.dataset.removeConsolidationJob);
+      syncSelectedJobs();
+    }
+  });
+
+  syncSelectedJobs();
 }
 
 function collectFormValues(form) {

@@ -222,12 +222,12 @@ const demoRows = {
     {
       id: 1,
       settings_key: "default",
-      company_name: "Apollo Freight Solutions",
-      shipment_number_format: "AFS-YY####",
-      invoice_number_format: "INV-YY####",
+      company_name: "APOLLO FREIGHT SOLUTIONS",
+      shipment_number_format: "AFS-SI###",
+      invoice_number_format: "INV-YY###",
       default_volumetric_divisor: "5000",
       require_pod_before_invoice: "Yes",
-      branches: "Branch 1, Branch 2"
+      branches: "Kuwait 1, Dubai 2"
     }
   ]
 };
