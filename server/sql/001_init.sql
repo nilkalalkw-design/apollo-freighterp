@@ -1,4 +1,3 @@
-```sql
 create table if not exists shipments (
     id bigserial primary key,
     job_no text not null unique,
@@ -59,6 +58,8 @@ create table if not exists consolidations (
     cbm numeric(12, 3) not null default 0,
     chargeable_kg numeric(12, 3) not null default 0,
     job_numbers text not null default '',
+    manifest_status text not null default 'Not Generated',
+    last_manifest_request_no text not null default '',
     notes text not null default '',
     created_by text not null default 'system',
     created_at timestamptz not null default now(),
@@ -66,6 +67,8 @@ create table if not exists consolidations (
 );
 
 alter table consolidations add column if not exists notes text not null default '';
+alter table consolidations add column if not exists manifest_status text not null default 'Not Generated';
+alter table consolidations add column if not exists last_manifest_request_no text not null default '';
 alter table consolidations add column if not exists created_by text not null default 'system';
 alter table consolidations add column if not exists updated_at timestamptz not null default now();
 
@@ -320,4 +323,3 @@ begin
         end if;
     end loop;
 end $$;
-```

@@ -104,8 +104,8 @@ function seedState() {
       shipment("AFS-2605004", "Branch 1", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Invoiced", 4, 160, 0.9, 180, 95, 70, "Uploaded", "INV-260001", "2026-05-02", "AWB-2605004", "TAR-1001", 3, "WHC", "WHC Remark", "Warehouse handling and cross-docking")
     ],
     loads: [
-      load("CON-260501", "2026-05-05", "Kuwait - Riyadh", "Al Dana Transport", "KWT-49217", "Dispatched", "AFS-2605001, AFS-2605004"),
-      load("CON-260502", "2026-05-06", "Kuwait - Dammam", "Falcon Line Haul", "KWT-77320", "Planned", "AFS-2605002")
+      load("CON-260501", "2026-05-05", "Kuwait - Riyadh", "Al Dana Transport", "KWT-49217", "Dispatched", "AFS-2605001, AFS-2605004", "Not Generated", ""),
+      load("CON-260502", "2026-05-06", "Kuwait - Dammam", "Falcon Line Haul", "KWT-77320", "Planned", "AFS-2605002", "Not Generated", "")
     ],
     customers: [
       party("CUS-001", "Gulf Retail Trading", "Kuwait City", "ops@gulf-retail.example", "30 days", "Active", false, "Branch 1"),
@@ -150,12 +150,12 @@ function seedState() {
     ],
     settings: {
       settingsKey: "default",
-      companyName: "Apollo Freight Solutions",
-      shipmentNumberFormat: "AFS-YY####",
-      invoiceNumberFormat: "INV-YY####",
+      companyName: "APOLLO FREIGHT SOLUTIONS",
+      shipmentNumberFormat: "AFS-SI###",
+      invoiceNumberFormat: "INV-YY###",
       defaultVolumetricDivisor: "5000",
       requirePodBeforeInvoice: "Yes",
-      branches: "Branch 1, Branch 2"
+      branches: "Kuwait 1, Dubai 2"
     },
     api: {
       status: "Checking API",
@@ -197,8 +197,8 @@ function shipment(
   return { jobNo, branch, customer, origin, destination, status, pieces, actualKg, cbm, chargeableKg, sell, buyCost, podStatus, invoiceStatus, bookingDate, airwayBillNo, tariffNo, transitDays, shipmentDirection, shipmentService, shipmentServiceOther };
 }
 
-function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers) {
-  return { loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0 };
+function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, manifestStatus = "Not Generated", lastManifestRequestNo = "") {
+  return { loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo };
 }
 
 function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch) {
@@ -372,7 +372,8 @@ function configuredNumber(format, collection, field, fallbackPrefix) {
   }
 
   const year = new Date().getFullYear().toString().slice(-2);
-  const digits = Math.max((normalizedFormat.match(/#+/) || ["####"])[0].length, 4);
+  const hashPattern = normalizedFormat.match(/#+/);
+  const digits = hashPattern ? hashPattern[0].length : 4;
   const max = collection
     .map((item) => String(item[field] || ""))
     .map((value) => Number((value.match(/(\d+)$/) || ["0", "0"])[1]) || 0)
@@ -612,25 +613,28 @@ async function syncFromApi() {
     ]);
 
     const apiMode = health.mode || (health.database === "connected" ? "database" : "demo");
+    const databaseReady = health.database === "connected" && apiMode === "database";
     state.api = {
-      status: health.database === "connected" ? "API connected" : "API demo mode",
+      status: databaseReady ? "API connected" : "API setup required",
       database: health.database || "unknown",
       mode: apiMode,
-      error: health.error || ""
+      error: health.error || health.startupError || ""
     };
-    if (shipments.rows?.length) state.shipments = shipments.rows.map(apiShipment);
-    if (consolidations.rows?.length) state.loads = consolidations.rows.map(apiLoad);
-    if (customers.rows?.length) state.customers = customers.rows.map(apiCustomer);
-    if (suppliers.rows?.length) state.suppliers = suppliers.rows.map(apiSupplier);
-    if (tariffs.rows?.length) state.tariffs = tariffs.rows.map(apiTariff);
-    if (documents.rows?.length) state.documents = documents.rows.map(apiDocument);
-    if (additionalCharges.rows?.length) state.additionalCharges = additionalCharges.rows.map(apiAdditionalCharge);
-    if (invoices.rows?.length) state.invoices = invoices.rows.map(apiInvoice);
-    if (users.rows?.length) state.users = users.rows.map(apiUser);
-    if (unblockRequests.rows?.length) state.unblockRequests = unblockRequests.rows.map(apiUnblockRequest);
-    if (adminRequests.rows?.length) state.adminRequests = adminRequests.rows.map(apiAdminRequest);
-    if (auditLog.rows?.length) state.audit = auditLog.rows.map(apiAudit);
-    if (settings.rows?.length) state.settings = apiSettings(settings.rows[0]);
+    if (databaseReady) {
+      state.shipments = (shipments.rows || []).map(apiShipment);
+      state.loads = (consolidations.rows || []).map(apiLoad);
+      state.customers = (customers.rows || []).map(apiCustomer);
+      state.suppliers = (suppliers.rows || []).map(apiSupplier);
+      state.tariffs = (tariffs.rows || []).map(apiTariff);
+      state.documents = (documents.rows || []).map(apiDocument);
+      state.additionalCharges = (additionalCharges.rows || []).map(apiAdditionalCharge);
+      state.invoices = (invoices.rows || []).map(apiInvoice);
+      state.users = (users.rows || []).map(apiUser);
+      state.unblockRequests = (unblockRequests.rows || []).map(apiUnblockRequest);
+      state.adminRequests = (adminRequests.rows || []).map(apiAdminRequest);
+      state.audit = (auditLog.rows || []).map(apiAudit);
+      if (settings.rows?.length) state.settings = apiSettings(settings.rows[0]);
+    }
     saveState();
     maybePlayAdminNotification();
     render();
@@ -674,7 +678,17 @@ function apiShipment(row) {
 }
 
 function apiLoad(row) {
-  const item = load(row.load_no, String(row.trip_date || today()).slice(0, 10), row.route, row.transporter, row.vehicle_no, row.status, row.job_numbers || "");
+  const item = load(
+    row.load_no,
+    String(row.trip_date || today()).slice(0, 10),
+    row.route,
+    row.transporter,
+    row.vehicle_no,
+    row.status,
+    row.job_numbers || "",
+    row.manifest_status || "Not Generated",
+    row.last_manifest_request_no || ""
+  );
   recalculateLoad(item);
   return item;
 }
@@ -825,7 +839,7 @@ function render() {
     "User Management / Settings": renderSettings,
     "Audit Log": renderAudit
   };
-  moduleContent.innerHTML = (renderers[activeModule] || renderDashboard)();
+  moduleContent.innerHTML = `${adminTopRequestsPanel()}${(renderers[activeModule] || renderDashboard)()}`;
 }
 
 function updateUserContext() {
@@ -869,11 +883,34 @@ function renderDashboard() {
           ${alert("Jobs missing tariff/rate", "AFS-2605005 needs tariff selection before invoice.")}
           ${alert("Delivered but not invoiced", "AFS-2605003 is delivered and waiting for billing.")}
           ${alert("Pending POD", `${pod} shipments need POD upload or dispute update.`)}
-          ${alert("Admin requests waiting", `${pendingRequests} pending request(s) need admin approval. Open User Management / Settings to review.`)}
+          ${alert("Admin requests waiting", `${pendingRequests} pending request(s) need admin approval. Review the top approval panels.`)}
           ${alert("Additional charges waiting", `${pendingCharges} additional charge entry/changes are waiting for approval.`)}
         </div>
       </article>
     </section>`;
+}
+
+function adminTopRequestsPanel() {
+  if (!isAdminSession()) return "";
+  return `<section class="split-grid admin-request-strip">
+    <article class="panel">${panelHeader("Customer Block / Unblock Requests", "Admin")}
+      ${table("unblock", filteredRows(state.unblockRequests), unblockColumns())}
+    </article>
+    <article class="panel">${panelHeader("Admin Requests", "Approval")}
+      ${table("adminRequest", filteredRows(state.adminRequests), adminRequestColumns())}
+    </article>
+  </section>`;
+}
+
+function adminDeletePanel(type, label, note = "") {
+  if (!isAdminSession()) return "";
+  return `<section class="panel admin-delete-panel">${panelHeader(`Delete ${label}`, "Admin Only")}
+    ${deleteSelectorMarkup(type, `${label} To Delete`)}
+    <div class="action-row">
+      <button type="button" class="danger-button" data-action="delete-record" data-type="${escapeHtml(type)}">Delete ${escapeHtml(label)}</button>
+    </div>
+    ${note ? `<p class="empty-state">${escapeHtml(note)}</p>` : ""}
+  </section>`;
 }
 
 function renderShipments() {
@@ -887,13 +924,7 @@ function renderShipments() {
         "Shipment type controls service options: Import, Export, WHC, and Consolidation service."
       ]))}
     </section>
-    <section class="panel">${panelHeader("Delete Shipment", "Maintenance")}
-      ${deleteSelectorMarkup("shipment", "Shipment To Delete")}
-      <div class="action-row">
-        <button type="button" class="danger-button" data-action="delete-record" data-type="shipment">Delete Shipment</button>
-      </div>
-      <p class="empty-state">Deleting a shipment also removes linked consolidation references, documents, invoices, and additional charges.</p>
-    </section>`;
+    ${adminDeletePanel("shipment", "Shipment", "Deleting a shipment also removes linked consolidation references, documents, invoices, and additional charges.")}`;
 }
 
 function renderConsolidation() {
@@ -911,9 +942,11 @@ function renderConsolidation() {
       ${moduleActionPanel("Manifest Actions", "load", "Generate, load, and update consolidation manifests from separate popup windows.", actionChecklist([
         "Select a consolidation, then load it to review or edit.",
         "New button opens a fresh manifest builder.",
-        "Click any job below the consolidation list to open that shipment."
+        "Click any job below the consolidation list to open that shipment.",
+        "Non-admin manifest changes go to admin approval first."
       ]))}
-    </section>`;
+    </section>
+    ${adminDeletePanel("load", "Consolidation", "Deleting a consolidation removes the trip/manifest only. Shipments stay available.")}`;
 }
 
 function renderParties(key, label) {
@@ -925,7 +958,8 @@ function renderParties(key, label) {
         "New creates a fresh master-data entry window.",
         "Load opens an existing record to review or update."
       ]))}
-    </section>`;
+    </section>
+    ${adminDeletePanel(key, label)}`;
 }
 
 function renderTariffs() {
@@ -934,7 +968,8 @@ function renderTariffs() {
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Rate Master", "Tariffs")} ${table("tariff", rows, tariffColumns())}</article>
       ${moduleActionPanel("Tariff Actions", "tariff", "Maintain tariff cards from separate New and Load popups just like the desktop layout.")}
-    </section>`;
+    </section>
+    ${adminDeletePanel("tariff", "Tariff")}`;
 }
 
 function renderDocuments() {
@@ -943,7 +978,8 @@ function renderDocuments() {
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Document Library", "Attachments")} ${table("document", rows, documentColumns())}</article>
       ${moduleActionPanel("Document Actions", "document", "Separate popup windows are available for new document tags and for loading stored shipment files.")}
-    </section>`;
+    </section>
+    ${adminDeletePanel("document", "Document")}`;
 }
 
 function renderAdditionalCharges() {
@@ -970,7 +1006,8 @@ function renderAdditionalCharges() {
           ${actionChecklist(chargeTypeOptions())}
         </div>
       </article>
-    </section>`;
+    </section>
+    ${adminDeletePanel("charge", "Additional Charge")}`;
 }
 
 function renderInvoices() {
@@ -979,7 +1016,8 @@ function renderInvoices() {
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Invoice Register", "Billing")} ${table("invoice", rows, invoiceColumns())}</article>
       ${moduleActionPanel("Invoice Actions", "invoice", "Keep invoice creation and load/update in separate popup windows.")}
-    </section>`;
+    </section>
+    ${adminDeletePanel("invoice", "Invoice")}`;
 }
 
 function renderPod() {
@@ -1046,6 +1084,7 @@ function renderSettings() {
       <article class="panel">${panelHeader("User Accounts", "Permissions")} ${table("user", filteredRows(state.users), userColumns())}</article>
       ${moduleActionPanel("User / Permission Actions", "user", "Admin users can open separate New and Load windows for staff accounts and permissions.")}
     </section>
+    ${adminDeletePanel("user", "User Account", "Deleting a user removes the login from the live database. The current logged-in admin cannot delete itself.")}
     <section class="split-grid">
       <article class="panel">${panelHeader("Company Settings", "System")}
         <form class="stack-form" data-form="settings">
@@ -1064,10 +1103,6 @@ function renderSettings() {
           ${alert("Pending unblock requests", `${state.unblockRequests.filter((row) => row.status === "Pending").length} request(s) waiting for approval.`)}
         </div>
       </article>
-    </section>
-    <section class="split-grid">
-      <article class="panel">${panelHeader("Customer Unblock Requests", "Admin")} ${table("unblock", filteredRows(state.unblockRequests), unblockColumns())}</article>
-      <article class="panel">${panelHeader("Admin Requests", "Approval")} ${table("adminRequest", filteredRows(state.adminRequests), adminRequestColumns())}</article>
     </section>`;
 }
 
@@ -1152,8 +1187,14 @@ function consolidationJobsPanel(loadItem) {
       <div>
         <p class="eyebrow">Selected Consolidation</p>
         <h2>${escapeHtml(loadItem.loadNo)}</h2>
+        <p class="empty-state">Manifest: ${escapeHtml(loadItem.manifestStatus || "Not Generated")}${loadItem.lastManifestRequestNo ? ` | Request: ${escapeHtml(loadItem.lastManifestRequestNo)}` : ""}</p>
       </div>
-      <button type="button" class="secondary-button" data-action="open" data-type="load" data-id="${escapeHtml(loadItem.loadNo)}">Edit Consolidation</button>
+      <div class="action-row">
+        ${isAdminSession()
+          ? `<button type="button" class="secondary-button" data-action="approve-load-manifest" data-id="${escapeHtml(loadItem.loadNo)}">Generate / Approve Manifest</button>`
+          : `<button type="button" class="secondary-button" data-action="request-load-manifest" data-id="${escapeHtml(loadItem.loadNo)}">Send Manifest Request</button>`}
+        <button type="button" class="secondary-button" data-action="open" data-type="load" data-id="${escapeHtml(loadItem.loadNo)}">Edit Consolidation</button>
+      </div>
     </div>
     ${jobs.length ? `<div class="job-list-table">${jobs.map((jobNo) => consolidationJobRow(loadItem.loadNo, jobNo)).join("")}</div>` : `<p class="empty-state">No job numbers linked to this consolidation.</p>`}
   </section>`;
@@ -1161,14 +1202,17 @@ function consolidationJobsPanel(loadItem) {
 
 function consolidationJobRow(loadNo, jobNo) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
+  const removeButton = isAdminSession()
+    ? `<button type="button" class="danger-button" data-action="remove-load-job" data-load-id="${escapeHtml(loadNo)}" data-job-id="${escapeHtml(jobNo)}">Remove</button>`
+    : "";
   if (!shipmentItem) {
-    return `<div class="job-list-row"><strong>${escapeHtml(jobNo)}</strong><span class="empty-state">Shipment not found.</span><button type="button" class="danger-button" data-action="remove-load-job" data-load-id="${escapeHtml(loadNo)}" data-job-id="${escapeHtml(jobNo)}">Remove</button></div>`;
+    return `<div class="job-list-row"><strong>${escapeHtml(jobNo)}</strong><span class="empty-state">Shipment not found.</span>${removeButton}</div>`;
   }
 
   return `<div class="job-list-row">
     <button type="button" class="ghost-button inline-link" data-action="open" data-type="shipment" data-id="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button>
     <span>${escapeHtml(shipmentItem.customer)} | ${escapeHtml(shipmentItem.status)} | ${escapeHtml(shipmentItem.destination)}</span>
-    <button type="button" class="danger-button" data-action="remove-load-job" data-load-id="${escapeHtml(loadNo)}" data-job-id="${escapeHtml(jobNo)}">Remove</button>
+    ${removeButton}
   </div>`;
 }
 
@@ -1355,7 +1399,7 @@ function badge(value) {
 }
 
 function cellHtml(type, key, row) {
-  if (["status", "podStatus", "invoiceStatus", "accountStatus"].includes(key)) {
+  if (["status", "podStatus", "invoiceStatus", "accountStatus", "manifestStatus"].includes(key)) {
     return badge(display(row[key]));
   }
 
@@ -1430,7 +1474,7 @@ function shipmentColumns() {
 }
 
 function loadColumns() {
-  return [["loadNo", "Consolidation"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["status", "Status"], ["jobNumbers", "Job Numbers"]];
+  return [["loadNo", "Consolidation"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]];
 }
 
 function partyColumns() {
@@ -1511,7 +1555,7 @@ function collectionFor(type) {
   return collections[type] || [];
 }
 
-function handleModuleClick(event) {
+async function handleModuleClick(event) {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const { action, type, id } = button.dataset;
@@ -1539,12 +1583,22 @@ function handleModuleClick(event) {
   }
 
   if (action === "remove-load-job") {
-    removeJobFromLoad(button.dataset.loadId, button.dataset.jobId);
+    await removeJobFromLoad(button.dataset.loadId, button.dataset.jobId);
     return;
   }
 
   if (action === "delete-record") {
-    deleteShipmentFromSelector();
+    await deleteSelectedRecord(type);
+    return;
+  }
+
+  if (action === "request-load-manifest") {
+    await requestLoadManifest(id);
+    return;
+  }
+
+  if (action === "approve-load-manifest") {
+    await approveLoadManifest(id);
     return;
   }
 
@@ -1638,9 +1692,9 @@ function openRecord(type, id) {
   recordDialog.showModal();
 }
 
-function saveDialogRecord() {
+async function saveDialogRecord() {
   if (dialogState?.onSave) {
-    dialogState.onSave();
+    await dialogState.onSave();
     return;
   }
 
@@ -1655,7 +1709,7 @@ function saveDialogRecord() {
   if (editing.type === "load") recalculateLoad(updatedRecord);
 
   if (editing.type === "charge" && !isAdminSession()) {
-    submitAdminRequest(
+    await submitAdminRequest(
       "Additional Charges",
       editing.id,
       "Charge change request submitted by non-admin user.",
@@ -1670,11 +1724,30 @@ function saveDialogRecord() {
     return;
   }
 
+  if (editing.type === "load" && !isAdminSession()) {
+    const request = await submitAdminRequest(
+      "Consolidation",
+      editing.id,
+      "Consolidation change request submitted by non-admin user.",
+      summarizeChanges(editing.record, updatedRecord),
+      "Manifest Approval"
+    );
+    editing.record.manifestStatus = "Pending Approval";
+    editing.record.lastManifestRequestNo = request.requestNo;
+    await persistRecord("load", editing.record);
+    addHistory("Submitted consolidation change request", editing.id);
+    saveState();
+    resetDialogShell();
+    recordDialog.close();
+    render();
+    return;
+  }
+
   Object.assign(editing.record, updatedRecord);
   const editedType = editing.type;
   const editedId = editing.id;
   addHistory(`Updated ${editing.type}`, editing.id);
-  persistRecord(editing.type, editing.record);
+  await persistRecord(editing.type, editing.record);
   saveState();
   resetDialogShell();
   recordDialog.close();
@@ -1764,9 +1837,9 @@ function openStatusDialog(jobNo = "") {
       ${input("notes", "Notes", "Status update")}
     `,
     saveLabel: "Update Shipment Status",
-    onSave() {
+    async onSave() {
       const data = collectFormValues(dialogBody.closest("form"));
-      updateStatus(data);
+      await updateStatus(data);
       saveState();
       recordDialog.close();
       render();
@@ -1783,9 +1856,9 @@ function openPodDialog(jobNo = "") {
       ${input("receiver", "Receiver", "Receiver Name")}
     `,
     saveLabel: "Mark Delivered + Upload POD",
-    onSave() {
+    async onSave() {
       const data = collectFormValues(dialogBody.closest("form"));
-      updatePod(data);
+      await updatePod(data);
       saveState();
       recordDialog.close();
       render();
@@ -1809,15 +1882,15 @@ function openAdminRequestDialog(record) {
     `,
     saveLabel: "Approve Request",
     secondaryLabel: "Reject Request",
-    onSave() {
+    async onSave() {
       const data = collectFormValues(dialogBody.closest("form"));
-      approveAdminRequest(record, data.approvalNotes || "");
+      await approveAdminRequest(record, data.approvalNotes || "");
       recordDialog.close();
       render();
     },
-    onSecondary() {
+    async onSecondary() {
       const data = collectFormValues(dialogBody.closest("form"));
-      rejectAdminRequest(record, data.approvalNotes || "");
+      await rejectAdminRequest(record, data.approvalNotes || "");
       recordDialog.close();
       render();
     }
@@ -1845,6 +1918,8 @@ function dialogConfigFor(type) {
         ${input("transporter", "Transporter", "Al Dana Transport")}
         ${input("vehicleNo", "Vehicle No", "KWT-00000")}
         ${select("status", "Status", ["Planned", "Loading", "Dispatched", "Delivered", "Closed"])}
+        ${select("manifestStatus", "Manifest Status", ["Not Generated", "Pending Approval", "Approved", "Rejected"])}
+        ${input("lastManifestRequestNo", "Last Manifest Request No", "")}
         ${selectFrom("jobNumbers", "Job Numbers", state.shipments.map((row) => row.jobNo))}
       `,
       onSave: createLoad
@@ -2186,7 +2261,7 @@ function downloadCsv(preview) {
   URL.revokeObjectURL(link.href);
 }
 
-function submitAdminRequest(targetModule, referenceNo, details, proposedValues, requestType = "Change Request") {
+async function submitAdminRequest(targetModule, referenceNo, details, proposedValues, requestType = "Change Request") {
   const request = adminRequest(
     nextNumber("ADM", state.adminRequests, "requestNo"),
     requestType,
@@ -2199,15 +2274,15 @@ function submitAdminRequest(targetModule, referenceNo, details, proposedValues, 
     proposedValues
   );
   state.adminRequests.unshift(request);
-  postRecord("adminRequest", request);
+  await postRecord("adminRequest", request);
   return request;
 }
 
-function approveAdminRequest(request, approvalNotes = "") {
+async function approveAdminRequest(request, approvalNotes = "") {
   request.status = "Approved";
   request.approvedBy = currentSession()?.userName || "admin";
   request.approvalNotes = approvalNotes;
-  persistRecord("adminRequest", request);
+  await persistRecord("adminRequest", request);
 
   if (request.targetModule === "Additional Charges") {
     const charge = state.additionalCharges.find((row) => row.refNo === request.referenceNo);
@@ -2240,7 +2315,16 @@ function approveAdminRequest(request, approvalNotes = "") {
         approvalNotes
       );
       Object.assign(charge, refreshed);
-      persistRecord("charge", charge);
+      await persistRecord("charge", charge);
+    }
+  }
+
+  if (request.targetModule === "Consolidation") {
+    const loadItem = state.loads.find((row) => row.loadNo === request.referenceNo);
+    if (loadItem) {
+      loadItem.manifestStatus = "Approved";
+      loadItem.lastManifestRequestNo = request.requestNo;
+      await persistRecord("load", loadItem);
     }
   }
 
@@ -2248,11 +2332,11 @@ function approveAdminRequest(request, approvalNotes = "") {
   saveState();
 }
 
-function rejectAdminRequest(request, approvalNotes = "") {
+async function rejectAdminRequest(request, approvalNotes = "") {
   request.status = "Rejected";
   request.approvedBy = currentSession()?.userName || "admin";
   request.approvalNotes = approvalNotes;
-  persistRecord("adminRequest", request);
+  await persistRecord("adminRequest", request);
 
   if (request.targetModule === "Additional Charges") {
     const charge = state.additionalCharges.find((row) => row.refNo === request.referenceNo && row.status === "Pending Approval");
@@ -2260,7 +2344,16 @@ function rejectAdminRequest(request, approvalNotes = "") {
       charge.status = "Rejected";
       charge.approvedBy = request.approvedBy;
       charge.approvalNotes = approvalNotes;
-      persistRecord("charge", charge);
+      await persistRecord("charge", charge);
+    }
+  }
+
+  if (request.targetModule === "Consolidation") {
+    const loadItem = state.loads.find((row) => row.loadNo === request.referenceNo);
+    if (loadItem) {
+      loadItem.manifestStatus = "Rejected";
+      loadItem.lastManifestRequestNo = request.requestNo;
+      await persistRecord("load", loadItem);
     }
   }
 
@@ -2268,7 +2361,50 @@ function rejectAdminRequest(request, approvalNotes = "") {
   saveState();
 }
 
-function handleModuleSubmit(event) {
+function manifestChangeSummary(loadItem) {
+  return [
+    `route: ${loadItem.route}`,
+    `transporter: ${loadItem.transporter}`,
+    `vehicleNo: ${loadItem.vehicleNo}`,
+    `tripDate: ${loadItem.tripDate}`,
+    `status: ${loadItem.status}`,
+    `jobNumbers: ${loadItem.jobNumbers}`
+  ].join(" | ");
+}
+
+async function requestLoadManifest(loadNo) {
+  const loadItem = state.loads.find((row) => row.loadNo === loadNo);
+  if (!loadItem) return;
+  const request = await submitAdminRequest(
+    "Consolidation",
+    loadNo,
+    "Generate loading list / manifest",
+    manifestChangeSummary(loadItem),
+    "Manifest Approval"
+  );
+  loadItem.manifestStatus = "Pending Approval";
+  loadItem.lastManifestRequestNo = request.requestNo;
+  await persistRecord("load", loadItem);
+  addHistory("Submitted manifest approval request", `${loadNo} - ${request.requestNo}`);
+  saveState();
+  render();
+}
+
+async function approveLoadManifest(loadNo) {
+  if (!isAdminSession()) {
+    window.alert("Only admin users can approve consolidation manifests.");
+    return;
+  }
+  const loadItem = state.loads.find((row) => row.loadNo === loadNo);
+  if (!loadItem) return;
+  loadItem.manifestStatus = "Approved";
+  await persistRecord("load", loadItem);
+  addHistory("Generated and approved manifest", loadNo);
+  saveState();
+  render();
+}
+
+async function handleModuleSubmit(event) {
   event.preventDefault();
   const form = event.target.closest("form[data-form]");
   if (!form) return;
@@ -2287,7 +2423,7 @@ function handleModuleSubmit(event) {
     status: () => updateStatus(data),
     settings: () => updateSettings(data)
   };
-  const saved = handlers[type]?.();
+  const saved = await handlers[type]?.();
   if (saved === false) {
     return;
   }
@@ -2295,7 +2431,7 @@ function handleModuleSubmit(event) {
   render();
 }
 
-function createShipment(data) {
+async function createShipment(data) {
   const record = shipment(
     data.jobNo,
     data.branch,
@@ -2320,29 +2456,29 @@ function createShipment(data) {
     data.shipmentServiceOther || ""
   );
   state.shipments.unshift(record);
-  postRecord("shipment", record);
+  await postRecord("shipment", record);
   addHistory("Created shipment", data.jobNo);
   return true;
 }
 
-function createLoad(data) {
-  const item = load(data.loadNo, data.tripDate, data.route, data.transporter, data.vehicleNo, data.status, data.jobNumbers);
+async function createLoad(data) {
+  const item = load(data.loadNo, data.tripDate, data.route, data.transporter, data.vehicleNo, data.status, data.jobNumbers, data.manifestStatus || "Not Generated", data.lastManifestRequestNo || "");
   recalculateLoad(item);
   state.loads.unshift(item);
-  postRecord("load", item);
+  await postRecord("load", item);
   addHistory("Created consolidation", data.loadNo);
   return true;
 }
 
-function createParty(key, data) {
+async function createParty(key, data) {
   const record = party(data.code, data.name, data.locationOrLane, data.email, data.terms, data.status, false, data.branch);
   state[key].unshift(record);
-  postRecord(key, record);
+  await postRecord(key, record);
   addHistory(`Created ${key}`, data.code);
   return true;
 }
 
-function createUser(data) {
+async function createUser(data) {
   const userName = String(data.userName || "").trim();
   const password = String(data.password || "");
   const email = String(data.email || "").trim();
@@ -2377,34 +2513,34 @@ function createUser(data) {
   );
 
   state.users.unshift(record);
-  postRecord("user", record);
+  const apiSaved = await postRecord("user", record);
   addHistory("Created user account", `${userName} - ${data.branchAccess}`);
   window.alert(`User ${userName} created successfully.`);
-  setTimeout(() => syncFromApi(), 300);
+  if (apiSaved) setTimeout(() => syncFromApi(), 300);
   return true;
 }
 
-function createTariff(data) {
+async function createTariff(data) {
   const record = tariff(data.tariffNo, data.customer, data.origin, data.destination, data.mainSection, data.weightSection, data.rateType, Number(data.rate), Number(data.minCharge));
   state.tariffs.unshift(record);
-  postRecord("tariff", record);
+  await postRecord("tariff", record);
   addHistory("Created tariff", data.tariffNo);
   return true;
 }
 
-function createDocument(data) {
+async function createDocument(data) {
   const record = documentRow(data.documentNo, data.linkedNo, data.type, data.status, data.date, data.owner);
   state.documents.unshift(record);
-  postRecord("document", record);
+  await postRecord("document", record);
   addHistory("Tagged document", data.documentNo);
   return true;
 }
 
-function createCharge(data) {
+async function createCharge(data) {
   const sessionUser = currentSession()?.userName || "operations";
   const isAdmin = isAdminSession();
   const request = !isAdmin
-    ? submitAdminRequest(
+    ? await submitAdminRequest(
         "Additional Charges",
         data.refNo,
         "New additional charge submitted for approval.",
@@ -2434,51 +2570,51 @@ function createCharge(data) {
   );
 
   state.additionalCharges.unshift(record);
-  postRecord("charge", record);
+  await postRecord("charge", record);
   addHistory(isAdmin ? "Created additional charge" : "Submitted additional charge", data.refNo);
   return true;
 }
 
-function createInvoice(data) {
+async function createInvoice(data) {
   const record = invoice(data.invoiceNo, data.customer, data.shipmentNo, Number(data.revenue), Number(data.supplierCost), data.status, data.date);
   state.invoices.unshift(record);
-  postRecord("invoice", record);
+  await postRecord("invoice", record);
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
   if (shipmentItem) shipmentItem.invoiceStatus = data.invoiceNo;
   addHistory("Generated invoice", data.invoiceNo);
   return true;
 }
 
-function updatePod(data) {
+async function updatePod(data) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.jobNo);
   if (!shipmentItem) return false;
   shipmentItem.status = "Delivered";
   shipmentItem.podStatus = "Uploaded";
-  persistRecord("shipment", shipmentItem);
+  await persistRecord("shipment", shipmentItem);
   const documentRecord = documentRow(nextNumber("DOC", state.documents, "documentNo"), data.jobNo, "POD", "Uploaded", today(), "delivery");
   state.documents.unshift(documentRecord);
-  postRecord("document", documentRecord);
+  await postRecord("document", documentRecord);
   addHistory("Marked delivered and uploaded POD", `${data.jobNo} - ${data.receiver}`);
   return true;
 }
 
-function updateStatus(data) {
+async function updateStatus(data) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.jobNo);
   if (!shipmentItem) return false;
   shipmentItem.status = data.status;
   shipmentItem.podStatus = data.podStatus;
   shipmentItem.invoiceStatus = data.invoiceStatus;
-  persistRecord("shipment", shipmentItem);
+  await persistRecord("shipment", shipmentItem);
   addHistory("Updated shipment status", `${data.jobNo} - ${data.notes}`);
   return true;
 }
 
-function updateSettings(data) {
+async function updateSettings(data) {
   state.settings = { ...state.settings, ...data, settingsKey: state.settings.settingsKey || "default" };
-  persistRecord("settings", state.settings);
+  const apiSaved = await persistRecord("settings", state.settings);
   addHistory("Saved company settings", data.companyName);
   window.alert("Company settings saved successfully.");
-  setTimeout(() => syncFromApi(), 300);
+  if (apiSaved) setTimeout(() => syncFromApi(), 300);
   return true;
 }
 
@@ -2502,62 +2638,148 @@ function endpointFor(type) {
 
 async function postRecord(type, record) {
   const endpoint = endpointFor(type);
-  if (!endpoint) return;
+  if (!endpoint) return false;
   try {
-    await fetchJson(`/api/${endpoint}`, {
+    const result = await fetchJson(`/api/${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(record)
     });
-  } catch {
-    state.api.mode = "browser";
+    if (result.mode === "demo") throw new Error("Database tables are not ready yet.");
+    return true;
+  } catch (error) {
+    markApiWriteError(error);
+    return false;
   }
 }
 
 async function persistRecord(type, record) {
   const endpoint = endpointFor(type);
   const id = rowId(type, record);
-  if (!endpoint || !id || type === "audit") return;
+  if (!endpoint || !id || type === "audit") return false;
   try {
-    await fetchJson(`/api/${endpoint}/${encodeURIComponent(id)}`, {
+    const result = await fetchJson(`/api/${endpoint}/${encodeURIComponent(id)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(record)
     });
-  } catch {
-    state.api.mode = "browser";
+    if (result.mode === "demo") throw new Error("Database tables are not ready yet.");
+    return true;
+  } catch (error) {
+    markApiWriteError(error);
+    return false;
   }
 }
 
 async function deleteRecord(type, id) {
   const endpoint = endpointFor(type);
-  if (!endpoint || !id) return;
+  if (!endpoint || !id) return false;
   try {
-    await fetchJson(`/api/${endpoint}/${encodeURIComponent(id)}`, {
+    const result = await fetchJson(`/api/${endpoint}/${encodeURIComponent(id)}`, {
       method: "DELETE"
     });
-  } catch {
-    state.api.mode = "browser";
+    if (result.mode === "demo") throw new Error("Database tables are not ready yet.");
+    return true;
+  } catch (error) {
+    markApiWriteError(error);
+    return false;
   }
 }
 
-function deleteShipmentFromSelector() {
-  const jobNo = moduleContent.querySelector("[data-delete-select='shipment']")?.value || "";
-  if (!jobNo) {
-    window.alert("Select a shipment to delete.");
+function markApiWriteError(error) {
+  state.api = {
+    ...state.api,
+    status: "API save warning",
+    database: state.api.database || "unknown",
+    mode: "browser",
+    error: error?.message || "Live database save failed."
+  };
+}
+
+function selectedDeleteId(type) {
+  return moduleContent.querySelector(`[data-delete-select='${type}']`)?.value || "";
+}
+
+function typeLabel(type) {
+  return {
+    shipment: "shipment",
+    load: "consolidation",
+    customers: "customer",
+    suppliers: "supplier / transporter",
+    tariff: "tariff",
+    document: "document",
+    charge: "additional charge",
+    invoice: "invoice",
+    user: "user account"
+  }[type] || type;
+}
+
+async function deleteSelectedRecord(type) {
+  if (!isAdminSession()) {
+    window.alert("Only admin users can delete records.");
     return;
   }
 
-  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
-  if (!shipmentItem) {
-    window.alert("Shipment not found.");
+  const id = selectedDeleteId(type);
+  if (!id) {
+    window.alert(`Select a ${typeLabel(type)} to delete.`);
     return;
   }
 
-  if (!window.confirm(`Delete shipment ${jobNo} and its linked records?`)) {
+  const record = collectionFor(type).find((row) => rowId(type, row) === id);
+  if (!record) {
+    window.alert(`${typeLabel(type)} not found.`);
     return;
   }
 
+  if (type === "user" && id === currentSession()?.userName) {
+    window.alert("You cannot delete the user account you are currently using.");
+    return;
+  }
+
+  const message = type === "shipment"
+    ? `Delete shipment ${id} and its linked records?`
+    : `Delete ${typeLabel(type)} ${id}?`;
+  if (!window.confirm(message)) return;
+
+  if (type === "shipment") {
+    await deleteShipmentById(id);
+    return;
+  }
+
+  const affectedShipments = type === "invoice"
+    ? state.shipments.filter((shipmentItem) => shipmentItem.invoiceStatus === id)
+    : [];
+  removeLocalRecord(type, id);
+  await deleteRecord(type, id);
+  await Promise.all(affectedShipments.map((shipmentItem) => persistRecord("shipment", shipmentItem)));
+  addHistory(`Deleted ${typeLabel(type)}`, id);
+  saveState();
+  render();
+}
+
+function removeLocalRecord(type, id) {
+  const keep = (row) => rowId(type, row) !== id;
+  if (type === "load") {
+    state.loads = state.loads.filter(keep);
+    if (state.ui.selectedLoadNo === id) state.ui.selectedLoadNo = "";
+    return;
+  }
+  if (type === "customers") state.customers = state.customers.filter(keep);
+  if (type === "suppliers") state.suppliers = state.suppliers.filter(keep);
+  if (type === "tariff") state.tariffs = state.tariffs.filter(keep);
+  if (type === "document") state.documents = state.documents.filter(keep);
+  if (type === "charge") state.additionalCharges = state.additionalCharges.filter(keep);
+  if (type === "invoice") {
+    state.invoices = state.invoices.filter(keep);
+    state.shipments.forEach((shipmentItem) => {
+      if (shipmentItem.invoiceStatus === id) shipmentItem.invoiceStatus = "Unbilled";
+    });
+  }
+  if (type === "user") state.users = state.users.filter(keep);
+}
+
+async function deleteShipmentById(jobNo) {
   const linkedDocuments = state.documents.filter((row) => row.linkedNo === jobNo);
   const linkedInvoices = state.invoices.filter((row) => row.shipmentNo === jobNo);
   const linkedCharges = state.additionalCharges.filter((row) => row.shipmentNo === jobNo);
@@ -2567,7 +2789,7 @@ function deleteShipmentFromSelector() {
   state.invoices = state.invoices.filter((row) => row.shipmentNo !== jobNo);
   state.additionalCharges = state.additionalCharges.filter((row) => row.shipmentNo !== jobNo);
 
-  state.loads.forEach((loadItem) => {
+  for (const loadItem of state.loads) {
     const jobs = String(loadItem.jobNumbers || "")
       .split(",")
       .map((item) => item.trim())
@@ -2575,20 +2797,27 @@ function deleteShipmentFromSelector() {
       .filter((item) => item !== jobNo);
     loadItem.jobNumbers = jobs.join(", ");
     recalculateLoad(loadItem);
-    persistRecord("load", loadItem);
-  });
+    await persistRecord("load", loadItem);
+  }
 
-  deleteRecord("shipment", jobNo);
-  linkedDocuments.forEach((row) => deleteRecord("document", row.documentNo));
-  linkedInvoices.forEach((row) => deleteRecord("invoice", row.invoiceNo));
-  linkedCharges.forEach((row) => deleteRecord("charge", row.refNo));
+  await deleteRecord("shipment", jobNo);
+  await Promise.all([
+    ...linkedDocuments.map((row) => deleteRecord("document", row.documentNo)),
+    ...linkedInvoices.map((row) => deleteRecord("invoice", row.invoiceNo)),
+    ...linkedCharges.map((row) => deleteRecord("charge", row.refNo))
+  ]);
 
   addHistory("Deleted shipment", jobNo);
   saveState();
   render();
 }
 
-function removeJobFromLoad(loadNo, jobNo) {
+async function removeJobFromLoad(loadNo, jobNo) {
+  if (!isAdminSession()) {
+    window.alert("Only admin users can remove shipments from a consolidation.");
+    return;
+  }
+
   const loadItem = state.loads.find((row) => row.loadNo === loadNo);
   if (!loadItem) return;
 
@@ -2600,7 +2829,7 @@ function removeJobFromLoad(loadNo, jobNo) {
     .join(", ");
 
   recalculateLoad(loadItem);
-  persistRecord("load", loadItem);
+  await persistRecord("load", loadItem);
   addHistory("Removed shipment from consolidation", `${loadNo} - ${jobNo}`);
   saveState();
   render();

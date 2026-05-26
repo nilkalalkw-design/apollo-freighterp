@@ -11,11 +11,18 @@ function listSqlFiles() {
     .sort();
 }
 
+function normalizeSql(sql) {
+  return sql
+    .replace(/^\s*```sql\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+}
+
 async function runMigrations({ logger = console } = {}) {
   const files = listSqlFiles();
 
   for (const fileName of files) {
-    const sql = fs.readFileSync(path.join(sqlDir, fileName), "utf8");
+    const sql = normalizeSql(fs.readFileSync(path.join(sqlDir, fileName), "utf8"));
     logger.log(`Applying ${fileName}`);
     await query(sql);
   }

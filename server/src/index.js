@@ -64,6 +64,8 @@ const demoRows = {
       cbm: 5.2,
       chargeable_kg: 1040,
       job_numbers: "AFS-2605001",
+      manifest_status: "Not Generated",
+      last_manifest_request_no: "",
       created_at: new Date().toISOString()
     }
   ],
@@ -277,6 +279,8 @@ const resources = {
       field("cbm"),
       field("chargeable_kg", ["chargeableKg", "chargeable_kg"]),
       field("job_numbers", ["jobNumbers", "job_numbers"]),
+      field("manifest_status", ["manifestStatus", "manifest_status"]),
+      field("last_manifest_request_no", ["lastManifestRequestNo", "last_manifest_request_no"]),
       field("notes"),
       field("created_by", ["createdBy", "created_by"])
     ]
@@ -641,6 +645,36 @@ async function deleteRow(config, id) {
   return result.rows[0];
 }
 
+async function checkDatabaseReady() {
+  const requiredTables = [
+    "shipments",
+    "consolidations",
+    "customers",
+    "suppliers",
+    "tariffs",
+    "documents",
+    "invoices",
+    "app_users",
+    "unblock_requests",
+    "admin_requests",
+    "additional_charges",
+    "app_settings"
+  ];
+  const result = await query(
+    `select table_name
+     from information_schema.tables
+     where table_schema = 'public'
+       and table_name = any($1::text[])`,
+    [requiredTables]
+  );
+  const existingTables = new Set(result.rows.map((row) => row.table_name));
+  const missingTables = requiredTables.filter((tableName) => !existingTables.has(tableName));
+  return {
+    ready: missingTables.length === 0,
+    missingTables
+  };
+}
+
 function demoResponse(resourceName) {
   return {
     ok: true,
@@ -689,17 +723,21 @@ app.get("/", (_request, response) => {
 app.get("/api/health", async (_request, response) => {
   try {
     const db = await testConnection();
-    runtimeStatus.startupError = "";
+    const readiness = await checkDatabaseReady();
+    const ready = readiness.ready;
     response.json({
       ok: true,
       service: "apollofreighterp-server",
-      database: "connected",
-      mode: "database",
+      database: ready ? "connected" : "not-ready",
+      mode: ready ? "database" : "setup",
       databaseConfigured: runtimeStatus.databaseConfigured,
       databaseUrlSource: runtimeStatus.databaseUrlSource,
       allowedOrigins,
       autoMigrate: runtimeStatus.autoMigrate,
       migration: runtimeStatus.migration,
+      missingTables: readiness.missingTables,
+      startupError: ready ? runtimeStatus.startupError : runtimeStatus.startupError || `Missing tables: ${readiness.missingTables.join(", ")}`,
+      error: ready ? "" : runtimeStatus.startupError || `Missing tables: ${readiness.missingTables.join(", ")}`,
       serverTime: db.server_time
     });
   } catch (error) {

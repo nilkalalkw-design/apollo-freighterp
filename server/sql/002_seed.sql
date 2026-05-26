@@ -122,11 +122,13 @@ insert into consolidations (
     cbm,
     chargeable_kg,
     job_numbers,
+    manifest_status,
+    last_manifest_request_no,
     created_by
 )
 values
-    ('CON-260501', '2026-05-05', 'Kuwait - Riyadh', 'Al Dana Transport', 'KWT-49217', 'Dispatched', 18, 980.000, 6.100, 1220.000, 'AFS-2605001, AFS-2605004', 'admin'),
-    ('CON-260502', '2026-05-06', 'Kuwait - Dammam', 'Falcon Line Haul', 'KWT-77320', 'Planned', 8, 410.000, 2.100, 420.000, 'AFS-2605002', 'operations')
+    ('CON-260501', '2026-05-05', 'Kuwait - Riyadh', 'Al Dana Transport', 'KWT-49217', 'Dispatched', 18, 980.000, 6.100, 1220.000, 'AFS-2605001, AFS-2605004', 'Not Generated', '', 'admin'),
+    ('CON-260502', '2026-05-06', 'Kuwait - Dammam', 'Falcon Line Haul', 'KWT-77320', 'Planned', 8, 410.000, 2.100, 420.000, 'AFS-2605002', 'Not Generated', '', 'operations')
 on conflict (load_no) do update set
     trip_date = excluded.trip_date,
     route = excluded.route,
@@ -137,7 +139,9 @@ on conflict (load_no) do update set
     actual_kg = excluded.actual_kg,
     cbm = excluded.cbm,
     chargeable_kg = excluded.chargeable_kg,
-    job_numbers = excluded.job_numbers;
+    job_numbers = excluded.job_numbers,
+    manifest_status = excluded.manifest_status,
+    last_manifest_request_no = excluded.last_manifest_request_no;
 
 insert into documents (document_no, linked_no, type, status, date, owner, file_name)
 values
@@ -178,19 +182,10 @@ insert into app_users (
     notes
 )
 values
-    ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'admin123', true, true, true, true, 'Default test administrator'),
-    ('operations', 'ops@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', 'ops123', true, true, false, true, 'Operations user')
-on conflict (user_name) do update set
-    email = excluded.email,
-    role = excluded.role,
-    account_status = excluded.account_status,
-    branch_access = excluded.branch_access,
-    password = excluded.password,
-    can_view_all_entry = excluded.can_view_all_entry,
-    can_view_only_self_entry = excluded.can_view_only_self_entry,
-    can_edit_all_entry = excluded.can_edit_all_entry,
-    can_view_updated_history = excluded.can_view_updated_history,
-    notes = excluded.notes;
+    ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'admin123', true, true, true, true, 'System temporary admin'),
+    ('ops-branch1', 'operations.branch1@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', 'ops123', false, true, false, false, 'Can create and track Branch 1 shipments'),
+    ('billing-branch2', 'billing.branch2@apollofreightsolution.com', 'Billing', 'Active', 'Branch 2', 'billing123', true, false, true, true, 'Invoice and finance access for Branch 2')
+on conflict (user_name) do nothing;
 
 insert into unblock_requests (request_no, customer_name, requested_by, reason, status, date)
 values
@@ -275,14 +270,8 @@ insert into app_settings (
     branches
 )
 values
-    ('default', 'Apollo Freight Solutions', 'AFS-YY####', 'INV-YY####', '5000', 'Yes', 'Branch 1, Branch 2')
-on conflict (settings_key) do update set
-    company_name = excluded.company_name,
-    shipment_number_format = excluded.shipment_number_format,
-    invoice_number_format = excluded.invoice_number_format,
-    default_volumetric_divisor = excluded.default_volumetric_divisor,
-    require_pod_before_invoice = excluded.require_pod_before_invoice,
-    branches = excluded.branches;
+    ('default', 'APOLLO FREIGHT SOLUTIONS', 'AFS-SI###', 'INV-YY###', '5000', 'Yes', 'Kuwait 1, Dubai 2')
+on conflict (settings_key) do nothing;
 
 insert into audit_log (date_time, user_name, action, reference, details)
 values

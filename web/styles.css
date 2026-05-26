@@ -510,6 +510,15 @@ label {
   gap: 18px;
 }
 
+.admin-request-strip {
+  align-items: stretch;
+}
+
+.admin-delete-panel {
+  border-color: rgba(191, 45, 45, 0.28);
+  background: #fffafa;
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
