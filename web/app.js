@@ -53,6 +53,7 @@ const dialogTitle = document.querySelector("#dialogTitle");
 const dialogBody = document.querySelector("#dialogBody");
 const dialogSecondary = document.querySelector("#dialogSecondary");
 const dialogSave = document.querySelector("#dialogSave");
+const toastStack = document.querySelector("#toastStack");
 
 function currentSession() {
   const raw = sessionStorage.getItem(SESSION_KEY);
@@ -498,7 +499,7 @@ function boot() {
     toDate.value = "";
     render();
   });
-  newShipmentButton.addEventListener("click", openShipmentWorkspace);
+  newShipmentButton?.addEventListener("click", openShipmentWorkspace);
   resetPasswordButton.addEventListener("click", handlePasswordReset);
   moduleContent.addEventListener("click", handleModuleClick);
   moduleContent.addEventListener("submit", handleModuleSubmit);
@@ -515,6 +516,32 @@ function boot() {
 
 function isAdminSession() {
   return (currentSession()?.role || "").toLowerCase() === "admin";
+}
+
+function notify(status, title, detail = "") {
+  if (!toastStack) {
+    if (detail) window.alert(`${title}\n${detail}`);
+    else window.alert(title);
+    return;
+  }
+
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${status}`;
+  toast.innerHTML = `<strong>${escapeHtml(title)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}`;
+  toastStack.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 4200);
+}
+
+function notifySuccess(title, detail = "") {
+  notify("success", title, detail);
+}
+
+function notifyDenied(title, detail = "") {
+  notify("denied", title, detail);
+}
+
+function notifyFailed(title, detail = "") {
+  notify("failed", title, detail);
 }
 
 function openShipmentWorkspace() {
@@ -1040,7 +1067,8 @@ function renderPod() {
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("POD Pending / Delivery Board", "Delivery")} ${table("shipment", rows, shipmentColumns())}</article>
       ${moduleActionPanel("POD Actions", "pod", "Load a shipment into a separate POD window or create a new delivery update popup.")}
-    </section>`;
+    </section>
+    ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for POD-related shipment cleanup.")}`;
 }
 
 function renderShipmentStatus() {
@@ -1062,7 +1090,8 @@ function renderShipmentStatus() {
           </div>
         </div>
       </article>
-    </section>`;
+    </section>
+    ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for status-board shipment cleanup.")}`;
 }
 
 function renderReports() {
@@ -1414,6 +1443,51 @@ function shipmentServiceOptions(direction) {
   return ["SE", "AE", "LE", "Consolidation", "Other"];
 }
 
+function isConsolidationShipment(row) {
+  return String(row?.shipmentService || "").toLowerCase() === "consolidation";
+}
+
+function assignedConsolidationJobs(exceptLoadNo = "") {
+  const jobs = new Set();
+  state.loads
+    .filter((loadItem) => !exceptLoadNo || loadItem.loadNo !== exceptLoadNo)
+    .forEach((loadItem) => {
+      String(loadItem.jobNumbers || "")
+        .split(",")
+        .map((jobNo) => jobNo.trim())
+        .filter(Boolean)
+        .forEach((jobNo) => jobs.add(jobNo));
+    });
+  return jobs;
+}
+
+function availableConsolidationShipmentOptions(initialJobs = "", currentLoadNo = "") {
+  const selected = new Set(
+    String(initialJobs || "")
+      .split(",")
+      .map((jobNo) => jobNo.trim())
+      .filter(Boolean)
+  );
+  const assigned = assignedConsolidationJobs(currentLoadNo);
+  return state.shipments
+    .filter((row) => isConsolidationShipment(row))
+    .filter((row) => selected.has(row.jobNo) || !assigned.has(row.jobNo))
+    .map((row) => row.jobNo);
+}
+
+function normalizeConsolidationJobs(jobNumbers, currentLoadNo = "") {
+  const assigned = assignedConsolidationJobs(currentLoadNo);
+  const valid = new Set(state.shipments.filter(isConsolidationShipment).map((row) => row.jobNo));
+  return [
+    ...new Set(
+      String(jobNumbers || "")
+        .split(",")
+        .map((jobNo) => jobNo.trim())
+        .filter((jobNo) => jobNo && valid.has(jobNo) && !assigned.has(jobNo))
+    )
+  ];
+}
+
 function filteredAdditionalCharges() {
   const filters = state.ui.chargeFilters || {};
   return filteredRows(state.additionalCharges).filter((row) => {
@@ -1731,14 +1805,61 @@ function openRecord(type, id) {
   dialogSave.textContent = type === "charge" && !isAdminSession() ? "Send Change Request" : "Save Changes";
   dialogSecondary.classList.add("is-hidden");
   dialogBody.innerHTML = Object.entries(record)
-    .map(([key, value]) => {
-      if (typeof value === "boolean") {
-        return checkbox(key, key, value);
-      }
-      return `<label>${escapeHtml(key)}<input name="${escapeHtml(key)}" value="${escapeHtml(value)}" /></label>`;
-    })
+    .map(([key, value]) => detailFieldControl(type, key, value, record))
     .join("");
+  if (type === "shipment") bindShipmentDirectionDialog();
+  if (type === "load") bindConsolidationJobPicker();
   recordDialog.showModal();
+}
+
+function detailFieldControl(type, key, value, record) {
+  const readonlyKeys = new Set(["jobNo", "loadNo", "code", "tariffNo", "documentNo", "invoiceNo", "refNo", "userName", "requestNo"]);
+  const options = detailFieldOptions(type, key, record);
+  if (type === "load" && key === "jobNumbers") {
+    return consolidationShipmentPicker(value, record.loadNo);
+  }
+  if (typeof value === "boolean") {
+    return checkbox(key, labelize(key), value);
+  }
+
+  if (options.length) {
+    return select(key, labelize(key), options, String(value ?? ""));
+  }
+
+  const inputType = key.toLowerCase().includes("date") ? "date" : typeof value === "number" ? "number" : "text";
+  const readonly = readonlyKeys.has(key);
+  return input(key, labelize(key), value ?? "", readonly, inputType);
+}
+
+function detailFieldOptions(type, key, record) {
+  const common = {
+    branch: branchOptions(),
+    status: statusOptions(),
+    podStatus: ["Pending", "Uploaded", "Missing", "Disputed", "Approved"],
+    invoiceStatus: ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue", ...state.invoices.map((row) => row.invoiceNo)],
+    shipmentDirection: shipmentDirectionOptions(),
+    shipmentService: shipmentServiceOptions(record.shipmentDirection || "Export"),
+    manifestStatus: ["Not Generated", "Pending Approval", "Approved", "Rejected"],
+    chargeType: chargeTypeOptions(),
+    chargeBasis: chargeBasisOptions(),
+    currency: ["KWD", "USD", "SAR"],
+    accountStatus: accountStatusOptions(),
+    role: roleOptions(),
+    branchAccess: branchAccessOptions()
+  };
+
+  if (key === "customer") return state.customers.map((row) => row.name);
+  if (key === "tariffNo") return state.tariffs.map((row) => row.tariffNo);
+  if (key === "supplier") return state.suppliers.map((row) => row.name);
+  if (key === "shipmentNo" || key === "linkedNo") return state.shipments.map((row) => row.jobNo);
+  if (type === "load" && key === "jobNumbers") return [];
+  return common[key] || [];
+}
+
+function labelize(key) {
+  return String(key)
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (letter) => letter.toUpperCase());
 }
 
 async function saveDialogRecord() {
@@ -1755,7 +1876,15 @@ async function saveDialogRecord() {
       updatedRecord[key] = coerceValue(updatedRecord[key], data[key]);
     }
   });
-  if (editing.type === "load") recalculateLoad(updatedRecord);
+  if (editing.type === "load") {
+    const jobs = normalizeConsolidationJobs(updatedRecord.jobNumbers, editing.id);
+    if (!jobs.length) {
+      notifyDenied("Consolidation not saved", "Add at least one unassigned shipment with service type Consolidation.");
+      return;
+    }
+    updatedRecord.jobNumbers = jobs.join(", ");
+    recalculateLoad(updatedRecord);
+  }
 
   if (editing.type === "charge" && !isAdminSession()) {
     await submitAdminRequest(
@@ -1769,6 +1898,7 @@ async function saveDialogRecord() {
     saveState();
     resetDialogShell();
     recordDialog.close();
+    notifySuccess("Request submitted", `${editing.id} was sent to admin approval.`);
     render();
     return;
   }
@@ -1788,6 +1918,7 @@ async function saveDialogRecord() {
     saveState();
     resetDialogShell();
     recordDialog.close();
+    notifySuccess("Request submitted", `${editing.id} was sent to admin approval.`);
     render();
     return;
   }
@@ -1801,8 +1932,10 @@ async function saveDialogRecord() {
   resetDialogShell();
   recordDialog.close();
   if (editedType === "user") {
-    window.alert(`User ${editedId} updated successfully.`);
+    notifySuccess("User updated", `${editedId} was saved successfully.`);
     setTimeout(() => syncFromApi(), 300);
+  } else {
+    notifySuccess("Record updated", `${editedId} was saved successfully.`);
   }
   render();
 }
@@ -2123,6 +2256,7 @@ function userDialogBody() {
 }
 
 function chargeDialogBody() {
+  const invoiceOptions = ["", ...state.invoices.map((row) => row.invoiceNo)];
   return `
     ${input("refNo", "Ref No", nextNumber("CHG", state.additionalCharges, "refNo"), true)}
     ${selectFrom("shipmentNo", "Shipment No", state.shipments.map((row) => row.jobNo))}
@@ -2131,7 +2265,7 @@ function chargeDialogBody() {
     ${select("chargeBasis", "Charge Basis", chargeBasisOptions())}
     ${selectFrom("supplier", "Supplier / Vendor", state.suppliers.map((row) => row.name))}
     ${input("referenceNo", "Reference No", "")}
-    ${input("invoiceNo", "Invoice No", "")}
+    ${select("invoiceNo", "Invoice No", invoiceOptions, "")}
     ${input("amount", "Amount", "0.000", false, "number")}
     ${input("taxPercent", "Tax %", "0", false, "number")}
     ${select("currency", "Currency", ["KWD", "USD", "SAR"], "KWD")}
@@ -2141,8 +2275,8 @@ function chargeDialogBody() {
   `;
 }
 
-function consolidationShipmentPicker(initialJobs = "") {
-  const shipmentOptions = state.shipments.map((row) => row.jobNo);
+function consolidationShipmentPicker(initialJobs = "", currentLoadNo = "") {
+  const shipmentOptions = availableConsolidationShipmentOptions(initialJobs, currentLoadNo);
   return `<div class="dialog-picker" data-consolidation-picker>
     <input type="hidden" name="jobNumbers" value="${escapeHtml(initialJobs)}" />
     <label>Add Shipment To Consolidation
@@ -2154,7 +2288,7 @@ function consolidationShipmentPicker(initialJobs = "") {
       <button type="button" class="secondary-button" data-dialog-action="add-consolidation-job">Add Shipment</button>
     </div>
     <div class="selected-job-list" data-consolidation-jobs-list></div>
-    <p class="empty-state">Use the dropdown to add one or multiple shipment job numbers into this consolidation.</p>
+    <p class="empty-state">${shipmentOptions.length ? "Only shipments saved with service type Consolidation are available. Already assigned shipments are hidden." : "No unassigned Consolidation service shipments are available."}</p>
   </div>`;
 }
 
@@ -2206,6 +2340,7 @@ function bindConsolidationJobPicker() {
     if (addButton) {
       const jobNo = selectField?.value || "";
       if (jobNo) selectedJobs.add(jobNo);
+      else notifyDenied("No shipment selected", "Create a shipment with service type Consolidation first.");
       syncSelectedJobs();
       return;
     }
@@ -2565,15 +2700,22 @@ async function createShipment(data) {
   state.shipments.unshift(record);
   await postRecord("shipment", record);
   addHistory("Created shipment", data.jobNo);
+  notifySuccess("Shipment created", `${data.jobNo} was saved successfully.`);
   return true;
 }
 
 async function createLoad(data) {
-  const item = load(data.loadNo, data.tripDate, data.route, data.transporter, data.vehicleNo, data.status, data.jobNumbers, data.manifestStatus || "Not Generated", data.lastManifestRequestNo || "");
+  const jobs = normalizeConsolidationJobs(data.jobNumbers);
+  if (!jobs.length) {
+    notifyDenied("Consolidation not created", "Add at least one unassigned shipment with service type Consolidation.");
+    return false;
+  }
+  const item = load(data.loadNo, data.tripDate, data.route, data.transporter, data.vehicleNo, data.status, jobs.join(", "), data.manifestStatus || "Not Generated", data.lastManifestRequestNo || "");
   recalculateLoad(item);
   state.loads.unshift(item);
   await postRecord("load", item);
   addHistory("Created consolidation", data.loadNo);
+  notifySuccess("Consolidation created", `${data.loadNo} was saved successfully.`);
   return true;
 }
 
@@ -2582,6 +2724,7 @@ async function createParty(key, data) {
   state[key].unshift(record);
   await postRecord(key, record);
   addHistory(`Created ${key}`, data.code);
+  notifySuccess("Record created", `${data.code} was saved successfully.`);
   return true;
 }
 
@@ -2622,7 +2765,7 @@ async function createUser(data) {
   state.users.unshift(record);
   const apiSaved = await postRecord("user", record);
   addHistory("Created user account", `${userName} - ${data.branchAccess}`);
-  window.alert(`User ${userName} created successfully.`);
+  notifySuccess("User created", `${userName} was saved successfully.`);
   if (apiSaved) setTimeout(() => syncFromApi(), 300);
   return true;
 }
@@ -2632,6 +2775,7 @@ async function createTariff(data) {
   state.tariffs.unshift(record);
   await postRecord("tariff", record);
   addHistory("Created tariff", data.tariffNo);
+  notifySuccess("Tariff created", `${data.tariffNo} was saved successfully.`);
   return true;
 }
 
@@ -2640,6 +2784,7 @@ async function createDocument(data) {
   state.documents.unshift(record);
   await postRecord("document", record);
   addHistory("Tagged document", data.documentNo);
+  notifySuccess("Document saved", `${data.documentNo} was saved successfully.`);
   return true;
 }
 
@@ -2679,6 +2824,7 @@ async function createCharge(data) {
   state.additionalCharges.unshift(record);
   await postRecord("charge", record);
   addHistory(isAdmin ? "Created additional charge" : "Submitted additional charge", data.refNo);
+  notifySuccess(isAdmin ? "Charge saved" : "Charge submitted", `${data.refNo} was ${isAdmin ? "saved" : "sent for approval"}.`);
   return true;
 }
 
@@ -2689,6 +2835,7 @@ async function createInvoice(data) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
   if (shipmentItem) shipmentItem.invoiceStatus = data.invoiceNo;
   addHistory("Generated invoice", data.invoiceNo);
+  notifySuccess("Invoice saved", `${data.invoiceNo} was saved successfully.`);
   return true;
 }
 
@@ -2702,6 +2849,7 @@ async function updatePod(data) {
   state.documents.unshift(documentRecord);
   await postRecord("document", documentRecord);
   addHistory("Marked delivered and uploaded POD", `${data.jobNo} - ${data.receiver}`);
+  notifySuccess("POD updated", `${data.jobNo} was marked delivered.`);
   return true;
 }
 
@@ -2713,6 +2861,7 @@ async function updateStatus(data) {
   shipmentItem.invoiceStatus = data.invoiceStatus;
   await persistRecord("shipment", shipmentItem);
   addHistory("Updated shipment status", `${data.jobNo} - ${data.notes}`);
+  notifySuccess("Status updated", `${data.jobNo} was saved successfully.`);
   return true;
 }
 
@@ -2720,7 +2869,7 @@ async function updateSettings(data) {
   state.settings = { ...state.settings, ...data, settingsKey: state.settings.settingsKey || "default" };
   const apiSaved = await persistRecord("settings", state.settings);
   addHistory("Saved company settings", data.companyName);
-  window.alert("Company settings saved successfully.");
+  notifySuccess("Settings saved", "Company settings were updated successfully.");
   if (apiSaved) setTimeout(() => syncFromApi(), 300);
   return true;
 }
@@ -2801,6 +2950,7 @@ function markApiWriteError(error) {
     mode: "browser",
     error: error?.message || "Live database save failed."
   };
+  notifyFailed("Live database save failed", state.api.error);
 }
 
 function selectedDeleteId(type) {
@@ -2823,24 +2973,24 @@ function typeLabel(type) {
 
 async function deleteSelectedRecord(type) {
   if (!isAdminSession()) {
-    window.alert("Only admin users can delete records.");
+    notifyDenied("Delete denied", "Only admin users can delete records.");
     return;
   }
 
   const id = selectedDeleteId(type);
   if (!id) {
-    window.alert(`Select a ${typeLabel(type)} to delete.`);
+    notifyDenied("Delete denied", `Select a ${typeLabel(type)} to delete.`);
     return;
   }
 
   const record = collectionFor(type).find((row) => rowId(type, row) === id);
   if (!record) {
-    window.alert(`${typeLabel(type)} not found.`);
+    notifyFailed("Delete failed", `${typeLabel(type)} not found.`);
     return;
   }
 
   if (type === "user" && id === currentSession()?.userName) {
-    window.alert("You cannot delete the user account you are currently using.");
+    notifyDenied("Delete denied", "You cannot delete the user account you are currently using.");
     return;
   }
 
@@ -2862,6 +3012,7 @@ async function deleteSelectedRecord(type) {
   await Promise.all(affectedShipments.map((shipmentItem) => persistRecord("shipment", shipmentItem)));
   addHistory(`Deleted ${typeLabel(type)}`, id);
   saveState();
+  notifySuccess("Record deleted", `${id} was deleted successfully.`);
   render();
 }
 
@@ -2916,12 +3067,13 @@ async function deleteShipmentById(jobNo) {
 
   addHistory("Deleted shipment", jobNo);
   saveState();
+  notifySuccess("Shipment deleted", `${jobNo} and linked records were deleted successfully.`);
   render();
 }
 
 async function removeJobFromLoad(loadNo, jobNo) {
   if (!isAdminSession()) {
-    window.alert("Only admin users can remove shipments from a consolidation.");
+    notifyDenied("Remove denied", "Only admin users can remove shipments from a consolidation.");
     return;
   }
 
@@ -2939,6 +3091,7 @@ async function removeJobFromLoad(loadNo, jobNo) {
   await persistRecord("load", loadItem);
   addHistory("Removed shipment from consolidation", `${loadNo} - ${jobNo}`);
   saveState();
+  notifySuccess("Shipment removed", `${jobNo} was removed from ${loadNo}.`);
   render();
 }
 
