@@ -3,145 +3,206 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Apollo Freight ERP</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <title>Apollo Freight Solutions</title>
+    <style>
+      :root {
+        --navy: #12325f;
+        --blue: #1f6fbf;
+        --orange: #f28c28;
+        --line: #d9e2ef;
+        --text: #102033;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Arial, Helvetica, sans-serif;
+        color: var(--text);
+        background: #f5f8fc;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .front-page {
+        width: min(980px, 100%);
+        display: grid;
+        grid-template-columns: 1fr 1.1fr;
+        min-height: 560px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        background: #ffffff;
+        box-shadow: 0 24px 60px rgba(18, 50, 95, 0.16);
+      }
+
+      .brand-panel {
+        background: var(--navy);
+        color: #ffffff;
+        padding: 46px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .brand-row {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+      }
+
+      .brand-logo {
+        width: 72px;
+        height: 72px;
+        object-fit: contain;
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 8px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        text-transform: uppercase;
+        letter-spacing: 0;
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--orange);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 2.25rem;
+        line-height: 1.1;
+      }
+
+      .tagline {
+        font-size: 1.1rem;
+        line-height: 1.55;
+        color: #dbeafe;
+        margin: 28px 0 0;
+      }
+
+      .link-panel {
+        padding: 54px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .welcome {
+        font-size: 1.9rem;
+        line-height: 1.2;
+        margin: 0 0 12px;
+        color: var(--navy);
+      }
+
+      .intro {
+        margin: 0 0 28px;
+        color: #526579;
+        line-height: 1.55;
+      }
+
+      .link-actions {
+        display: grid;
+        gap: 14px;
+      }
+
+      .link-button {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 58px;
+        padding: 16px 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        text-decoration: none;
+        color: var(--navy);
+        font-weight: 700;
+        background: #ffffff;
+      }
+
+      .link-button.primary {
+        color: #ffffff;
+        border-color: var(--blue);
+        background: var(--blue);
+      }
+
+      .link-button span {
+        font-size: 1.35rem;
+        color: var(--orange);
+      }
+
+      .link-button.primary span {
+        color: #ffffff;
+      }
+
+      .footer-note {
+        margin-top: 28px;
+        font-size: 0.82rem;
+        color: #64748b;
+      }
+
+      @media (max-width: 760px) {
+        body {
+          padding: 14px;
+        }
+
+        .front-page {
+          grid-template-columns: 1fr;
+          min-height: 0;
+        }
+
+        .brand-panel,
+        .link-panel {
+          padding: 28px;
+        }
+
+        h1,
+        .welcome {
+          font-size: 1.75rem;
+        }
+      }
+    </style>
   </head>
   <body>
-    <section id="loginScreen" class="login-screen">
-      <div class="login-layout">
-        <aside class="login-brand-panel">
-          <div class="login-brand-block">
-            <div class="brand-row brand-row-large">
-              <img class="brand-logo brand-logo-large" src="./assets/logo.png" alt="Apollo Freight Solutions logo" onerror="this.hidden=true" />
-              <div>
-                <p class="eyebrow eyebrow-light">Apollo Freight Solutions</p>
-                <h1 class="brand-heading">Cargo Shipments ERP</h1>
-              </div>
-            </div>
-            <p class="login-tagline">We Bring Continents closer...</p>
-            <div class="brand-divider"></div>
-            <p class="brand-description">Land freight consolidation, tariffs, POD, documents, billing, and audit controls.</p>
-          </div>
-        </aside>
-
-        <div class="login-card-shell">
-          <div class="login-card">
-            <p class="auth-eyebrow">Apollo Freight Solutions</p>
-            <h2>Sign in</h2>
-
-            <form id="loginForm" class="login-form">
-              <label>
-                User name
-                <input name="userName" autocomplete="username" value="admin" required />
-              </label>
-              <label>
-                Password
-                <input name="password" type="password" autocomplete="current-password" value="admin123" required />
-              </label>
-              <p id="loginMessage" class="form-message" role="status"></p>
-              <button type="submit">Login</button>
-            </form>
-
-            <details class="reset-panel">
-              <summary>Reset password by email</summary>
-              <div class="reset-panel-body">
-                <label>
-                  Email address
-                  <input id="resetEmail" type="email" placeholder="name@company.com" />
-                </label>
-                <button id="resetPasswordButton" type="button" class="navy-button">Send Reset Link</button>
-                <p id="resetMessage" class="reset-message" role="status"></p>
-                <p class="reset-help">For the live server version, this will send a real email reset link once SMTP or Microsoft 365 is configured on the API.</p>
-              </div>
-            </details>
-
-            <p class="auth-footer">Designed by ApolloIT | Copyright 2026 Apollo Freight Solutions. All rights reserved.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <div id="appShell" class="app-shell is-hidden">
-      <aside class="sidebar">
-        <div class="sidebar-brand-shell">
-          <div class="sidebar-brand">
+    <main class="front-page">
+      <section class="brand-panel">
+        <div>
+          <div class="brand-row">
             <img class="brand-logo" src="./assets/logo.png" alt="Apollo Freight Solutions logo" onerror="this.hidden=true" />
             <div>
-              <p class="eyebrow eyebrow-light">Apollo Freight Solutions</p>
-              <h2>Freight ERP</h2>
-            </div>
-          </div>
-          <p class="sidebar-tagline">We Bring Continents closer...</p>
-          <div class="brand-divider"></div>
-        </div>
-        <nav id="moduleNav" class="nav-list" aria-label="ERP sections"></nav>
-      </aside>
-
-      <div class="workspace-shell">
-        <header class="topbar">
-          <div class="topbar-main">
-            <div class="brand-ribbon">
               <p class="eyebrow">Apollo Freight Solutions</p>
-              <span>We Bring Continents closer...</span>
-            </div>
-            <div class="page-heading">
-              <p id="pageEyebrow" class="eyebrow">Dashboard</p>
-              <h1 id="pageTitle">Dashboard</h1>
-              <p id="pageSubtitle">Live operational summary for land freight consolidation</p>
-              <p id="userContextText" class="context-copy">User: admin | Branch: Both</p>
+              <h1>Welcome to Apollo Freight Solutions</h1>
             </div>
           </div>
-          <div class="top-actions">
-            <label>
-              Global search
-              <input id="globalSearch" placeholder="Search shipment, waybill, invoice, customer" />
-            </label>
-            <button id="logoutButton" type="button" class="navy-button">Logout</button>
-          </div>
-
-          <div class="date-filter-panel">
-            <span class="filter-label">Date Range Search</span>
-            <label>
-              From
-              <input id="fromDate" type="date" />
-            </label>
-            <label>
-              To
-              <input id="toDate" type="date" />
-            </label>
-            <button id="applyFilters" type="button" class="blue-button">Search</button>
-            <button id="resetFilters" type="button" class="secondary-button">Reset</button>
-            <span id="dateFilterStatusText" class="filter-status"></span>
-          </div>
-        </header>
-
-        <div id="apiBanner" class="api-banner"></div>
-        <main class="workspace">
-          <section id="moduleContent" class="module-content" aria-live="polite"></section>
-        </main>
-        <footer class="app-footer">Designed by ApolloIT | Copyright 2026 Apollo Freight Solutions. All rights reserved.</footer>
-      </div>
-    </div>
-
-    <dialog id="recordDialog" class="record-dialog">
-      <form method="dialog">
-        <div class="dialog-header">
-          <div>
-            <p id="dialogType" class="eyebrow">Record</p>
-            <h2 id="dialogTitle">Record details</h2>
-          </div>
-          <button value="close" class="secondary-button">Close</button>
+          <p class="tagline">We Bring Continents closer...</p>
         </div>
-        <div id="dialogBody" class="dialog-body"></div>
-        <div class="dialog-actions">
-          <button id="dialogSecondary" type="button" class="secondary-button is-hidden">Secondary</button>
-          <button id="dialogSave" type="button">Save Changes</button>
-        </div>
-      </form>
-    </dialog>
-    <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
+        <p class="footer-note">Designed by ApolloIT | Copyright 2026 Apollo Freight Solutions.</p>
+      </section>
 
-    <script src="./config.js"></script>
-    <script src="./app.js"></script>
+      <section class="link-panel" aria-label="Apollo links">
+        <h2 class="welcome">Welcome to Apollo Freight Solutions</h2>
+        <p class="intro">Choose the service you want to open.</p>
+        <div class="link-actions">
+          <a class="link-button primary" href="/web">
+            Cargo ERP
+            <span aria-hidden="true">></span>
+          </a>
+          <a class="link-button" href="https://apollo-freight-client.vercel.app/">
+            Client Portal
+            <span aria-hidden="true">></span>
+          </a>
+          <a class="link-button" href="https://apollo-freight.com/">
+            Apollo Freight Website
+            <span aria-hidden="true">></span>
+          </a>
+        </div>
+      </section>
+    </main>
   </body>
 </html>
