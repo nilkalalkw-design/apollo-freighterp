@@ -1,5 +1,5 @@
 const API_URL = (window.APOLLO_API_URL || "https://apollo-freighterp-f9kt.onrender.com").replace(/\/$/, "");
-const STORAGE_KEY = "apollofreighterp-web-state-v2";
+const STORAGE_KEY = "apollofreighterp-web-state-v3";
 const SESSION_KEY = "apollofreighterp-session";
 
 const modules = [
