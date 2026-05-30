@@ -1180,12 +1180,14 @@ function chargeReceiptPanel(shipmentNo) {
   const charges = state.additionalCharges.filter((row) => row.shipmentNo === shipmentNo);
   if (!shipmentNo) return `<p class="empty-state">Select a shipment to view charge receipt lines.</p>`;
   const invoiceNo = charges.find((row) => row.invoiceNo)?.invoiceNo || "Not assigned";
+  const receiptNo = charges.find((row) => row.referenceNo)?.referenceNo || charges[0]?.refNo || "No receipt";
   const total = charges.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
   const rows = charges.length
     ? charges
         .map(
           (row) => `<div class="receipt-line">
             <span>${escapeHtml(row.chargeType)}</span>
+            <small>${escapeHtml(row.status)} | ${escapeHtml(row.currency)}</small>
             <strong>${money(row.totalAmount)}</strong>
             <button type="button" class="ghost-button" data-action="open" data-type="charge" data-id="${escapeHtml(row.refNo)}">Edit</button>
             ${isAdminSession() ? `<button type="button" class="danger-button" data-action="delete-record-direct" data-type="charge" data-id="${escapeHtml(row.refNo)}">Delete</button>` : ""}
@@ -1194,7 +1196,7 @@ function chargeReceiptPanel(shipmentNo) {
         .join("")
     : `<p class="empty-state">No charge lines added for this shipment yet.</p>`;
   return `<section class="receipt-box">
-    <div class="panel-header"><div><p class="eyebrow">One Shipment / One Invoice</p><h2>${escapeHtml(invoiceNo)}</h2></div></div>
+    <div class="panel-header"><div><p class="eyebrow">Receipt ${escapeHtml(receiptNo)} / Invoice ${escapeHtml(invoiceNo)}</p><h2>Charge Lines</h2></div></div>
     ${rows}
     <div class="receipt-total"><span>Total Receipt Amount</span><strong>${money(total)}</strong></div>
   </section>`;
@@ -2027,7 +2029,7 @@ function detailFieldOptions(type, key, record) {
     manifestStatus: ["Not Generated", "Pending Approval", "Approved", "Rejected"],
     chargeType: chargeTypeOptions(),
     chargeBasis: chargeBasisOptions(),
-    currency: ["KWD", "USD", "SAR"],
+    currency: ["KWD", "AED", "USD"],
     accountStatus: accountStatusOptions(),
     role: roleOptions(),
     branchAccess: branchAccessOptions()
@@ -2331,7 +2333,8 @@ function dialogConfigFor(type) {
       typeLabel: "Additional Charges",
       saveLabel: isAdminSession() ? "Save Charge" : "Send for Approval",
       body: chargeDialogBody(),
-      onSave: createCharge
+      onSave: createCharge,
+      afterOpen: bindChargeLineBuilder
     },
     invoice: {
       title: "New Invoice",
@@ -2447,18 +2450,74 @@ function chargeDialogBody() {
     ${input("refNo", "Receipt / Reference No", nextAdditionalChargeNumber(), true)}
     ${selectFrom("shipmentNo", "Shipment No", visibleRows(state.shipments).map((row) => row.jobNo))}
     ${input("chargeDate", "Charge Date", today(), false, "date")}
-    ${select("chargeType", "Charge Type", chargeTypeOptions())}
-    ${select("chargeBasis", "Charge Basis", chargeBasisOptions())}
     ${selectFrom("supplier", "Supplier / Vendor", state.suppliers.map((row) => row.name))}
     ${input("referenceNo", "Reference No", "")}
     ${select("invoiceNo", "Invoice No", invoiceOptions, "")}
-    ${input("amount", "Amount", "0.000", false, "number")}
     ${input("taxPercent", "Tax %", "0", false, "number")}
-    ${select("currency", "Currency", ["KWD", "USD", "SAR"], "KWD")}
+    ${select("currency", "Currency", ["KWD", "AED", "USD"], "KWD")}
+    <input type="hidden" name="chargeLines" value="[]" />
+    <section class="charge-line-builder" data-charge-line-builder>
+      <div class="charge-line-entry">
+        ${select("lineChargeType", "Charge Type", chargeTypeOptions())}
+        ${input("lineAmount", "Amount", "0.000", false, "number")}
+        <button type="button" class="secondary-button" data-dialog-action="add-charge-line">Add</button>
+      </div>
+      <div class="charge-line-list" data-charge-lines-list></div>
+      <p class="empty-state">Add one or more charge lines to the same receipt/reference number.</p>
+    </section>
     ${input("attachmentName", "Attachment Upload", "")}
     ${select("status", "Status", chargeStatusOptions(), isAdminSession() ? "Approved" : "Pending Approval")}
     ${textarea("remarks", "Remarks", "")}
   `;
+}
+
+function bindChargeLineBuilder() {
+  const builder = dialogBody.querySelector("[data-charge-line-builder]");
+  if (!builder) return;
+  const hiddenField = dialogBody.querySelector("input[name='chargeLines']");
+  const typeField = dialogBody.querySelector("select[name='lineChargeType']");
+  const amountField = dialogBody.querySelector("input[name='lineAmount']");
+  const list = builder.querySelector("[data-charge-lines-list]");
+  const lines = [];
+
+  const sync = () => {
+    hiddenField.value = JSON.stringify(lines);
+    const total = lines.reduce((sum, line) => sum + Number(line.amount || 0), 0);
+    list.innerHTML = lines.length
+      ? `${lines
+          .map(
+            (line, index) => `<div class="charge-line-row">
+              <span>${escapeHtml(line.chargeType)}</span>
+              <strong>${money(line.amount)}</strong>
+              <button type="button" class="ghost-button" data-remove-charge-line="${index}">Remove</button>
+            </div>`
+          )
+          .join("")}<div class="charge-line-total"><span>Total Added</span><strong>${money(total)}</strong></div>`
+      : `<p class="empty-state">No charge lines added yet.</p>`;
+  };
+
+  builder.addEventListener("click", (event) => {
+    const addButton = event.target.closest("[data-dialog-action='add-charge-line']");
+    if (addButton) {
+      const amount = Number(amountField.value || 0);
+      if (!amount || amount <= 0) {
+        notifyDenied("Line not added", "Enter an amount greater than zero.");
+        return;
+      }
+      lines.push({ chargeType: typeField.value, amount });
+      amountField.value = "0.000";
+      sync();
+      return;
+    }
+
+    const removeButton = event.target.closest("[data-remove-charge-line]");
+    if (removeButton) {
+      lines.splice(Number(removeButton.dataset.removeChargeLine), 1);
+      sync();
+    }
+  });
+
+  sync();
 }
 
 function consolidationShipmentPicker(initialJobs = "", currentLoadNo = "") {
@@ -3000,51 +3059,81 @@ async function createCharge(data) {
     return false;
   }
   const invoiceNo = existingInvoiceNo || data.invoiceNo || "";
-  const amount = Number(data.amount || 0);
+  const chargeLines = parseChargeLines(data);
+  if (!chargeLines.length) {
+    notifyDenied("Charge denied", "Add at least one charge line before saving.");
+    return false;
+  }
   const taxPercent = Number(data.taxPercent || 0);
-  const newTotal = amount + amount * (taxPercent / 100);
+  const newTotal = chargeLines.reduce((sum, line) => {
+    const amount = Number(line.amount || 0);
+    return sum + amount + amount * (taxPercent / 100);
+  }, 0);
   const existingTotal = existingCharges.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
   const projectedProfit = Number(shipmentItem.sell || 0) - Number(shipmentItem.buyCost || 0) - existingTotal - newTotal;
   if (projectedProfit < 0) {
     notifyDenied("Charge denied", `This charge puts shipment ${data.shipmentNo} in loss (${money(projectedProfit)}).`);
     return false;
   }
+  const receiptNo = data.referenceNo || data.refNo;
   const request = !isAdmin
     ? await submitAdminRequest(
         "Additional Charges",
         data.refNo,
         "New additional charge submitted for approval.",
-        `chargeType: -> ${data.chargeType} | amount: -> ${data.amount} | taxPercent: -> ${data.taxPercent} | shipmentNo: -> ${data.shipmentNo}`,
+        `receipt: -> ${receiptNo} | lines: -> ${chargeLines.map((line) => `${line.chargeType} ${line.amount}`).join(", ")} | taxPercent: -> ${data.taxPercent} | shipmentNo: -> ${data.shipmentNo}`,
         "Additional Charge Approval"
       )
     : null;
 
-  const record = additionalCharge(
-    data.refNo,
-    data.shipmentNo,
-    data.chargeDate || today(),
-    data.chargeType,
-    data.chargeBasis,
-    data.supplier,
-    data.referenceNo || "",
-    invoiceNo,
-    amount,
-    taxPercent,
-    data.currency || "KWD",
-    data.remarks || "",
-    data.attachmentName || "",
-    isAdmin ? data.status || "Approved" : "Pending Approval",
-    sessionUser,
-    isAdmin ? sessionUser : "",
-    request?.requestNo || "",
-    sessionUser
+  const records = chargeLines.map((line, index) =>
+    additionalCharge(
+      chargeLineRef(data.refNo, index, chargeLines.length),
+      data.shipmentNo,
+      data.chargeDate || today(),
+      line.chargeType,
+      line.chargeBasis || "Per Shipment",
+      data.supplier,
+      receiptNo,
+      invoiceNo,
+      Number(line.amount || 0),
+      taxPercent,
+      data.currency || "KWD",
+      data.remarks || "",
+      data.attachmentName || "",
+      isAdmin ? data.status || "Approved" : "Pending Approval",
+      sessionUser,
+      isAdmin ? sessionUser : "",
+      request?.requestNo || "",
+      sessionUser
+    )
   );
 
-  state.additionalCharges.unshift(record);
-  await postRecord("charge", record);
+  state.additionalCharges.unshift(...records);
+  await Promise.all(records.map((record) => postRecord("charge", record)));
   addHistory(isAdmin ? "Created additional charge" : "Submitted additional charge", data.refNo);
-  notifySuccess(isAdmin ? "Charge saved" : "Charge submitted", `${data.refNo} was ${isAdmin ? "saved" : "sent for approval"}.`);
+  notifySuccess(isAdmin ? "Charge receipt saved" : "Charge receipt submitted", `${data.refNo} saved with ${records.length} line(s).`);
   return true;
+}
+
+function parseChargeLines(data) {
+  try {
+    const parsed = JSON.parse(data.chargeLines || "[]");
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((line) => ({ chargeType: line.chargeType, amount: Number(line.amount || 0), chargeBasis: line.chargeBasis || "Per Shipment" }))
+        .filter((line) => line.chargeType && line.amount > 0);
+    }
+  } catch {}
+
+  if (data.chargeType && Number(data.amount || 0) > 0) {
+    return [{ chargeType: data.chargeType, amount: Number(data.amount || 0), chargeBasis: data.chargeBasis || "Per Shipment" }];
+  }
+  return [];
+}
+
+function chargeLineRef(baseRef, index, count) {
+  return count <= 1 ? baseRef : `${baseRef}-${String(index + 1).padStart(2, "0")}`;
 }
 
 async function createInvoice(data) {

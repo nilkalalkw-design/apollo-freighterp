@@ -658,7 +658,7 @@ label {
 .receipt-line,
 .receipt-total {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   gap: 8px;
   align-items: center;
   padding: 8px 0;
@@ -668,6 +668,36 @@ label {
 .receipt-total {
   grid-template-columns: minmax(0, 1fr) auto;
   font-size: 0.95rem;
+}
+
+.charge-line-builder {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fbff;
+}
+
+.charge-line-entry,
+.charge-line-row,
+.charge-line-total {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.charge-line-row,
+.charge-line-total {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.charge-line-total {
+  grid-template-columns: minmax(0, 1fr) auto;
+  font-weight: 700;
 }
 
 table {

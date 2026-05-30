@@ -905,6 +905,26 @@ app.put("/api/:resource/:id", async (request, response, next) => {
   }
 });
 
+app.delete("/api/audit", async (_request, response, next) => {
+  try {
+    const result = await query("delete from audit_log returning id");
+    response.json({
+      ok: true,
+      deleted: result.rowCount
+    });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) {
+      return response.json({
+        ok: true,
+        mode: "demo",
+        deleted: 0
+      });
+    }
+
+    return next(error);
+  }
+});
+
 app.delete("/api/:resource/:id", async (request, response, next) => {
   const resourceName = request.params.resource;
   const config = resources[resourceName];
