@@ -90,7 +90,11 @@ function rememberSession(sessionOrUserName) {
     JSON.stringify({
       userName: session.userName,
       role: session.role || "Operations",
-      branchAccess: session.branchAccess || "Branch 1"
+      branchAccess: session.branchAccess || "Branch 1",
+      canViewAllEntry: Boolean(session.canViewAllEntry || (session.role || "").toLowerCase() === "admin"),
+      canViewOnlySelfEntry: Boolean(session.canViewOnlySelfEntry),
+      canEditAllEntry: Boolean(session.canEditAllEntry || (session.role || "").toLowerCase() === "admin"),
+      canViewUpdatedHistory: Boolean(session.canViewUpdatedHistory)
     })
   );
 }
@@ -154,6 +158,10 @@ function seedState() {
       companyName: "APOLLO FREIGHT SOLUTIONS",
       shipmentNumberFormat: "AFS-SI###",
       invoiceNumberFormat: "INV-YY###",
+      consolidationNumberFormat: "CON-YY###",
+      customerNumberFormat: "CUS-###",
+      additionalChargeNumberFormat: "CHG-YY###",
+      supplierNumberFormat: "TRN-###",
       defaultVolumetricDivisor: "5000",
       requirePodBeforeInvoice: "Yes",
       branches: "Kuwait 1, Dubai 2"
@@ -193,25 +201,26 @@ function shipment(
   transitDays = 3,
   shipmentDirection = "Export",
   shipmentService = "AE",
-  shipmentServiceOther = ""
+  shipmentServiceOther = "",
+  createdBy = currentUserName()
 ) {
-  return { jobNo, branch, customer, origin, destination, status, pieces, actualKg, cbm, chargeableKg, sell, buyCost, podStatus, invoiceStatus, bookingDate, airwayBillNo, tariffNo, transitDays, shipmentDirection, shipmentService, shipmentServiceOther };
+  return { jobNo, branch, customer, origin, destination, status, pieces, actualKg, cbm, chargeableKg, sell, buyCost, podStatus, invoiceStatus, bookingDate, airwayBillNo, tariffNo, transitDays, shipmentDirection, shipmentService, shipmentServiceOther, createdBy };
 }
 
-function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, manifestStatus = "Not Generated", lastManifestRequestNo = "") {
-  return { loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo };
+function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, manifestStatus = "Not Generated", lastManifestRequestNo = "", createdBy = currentUserName()) {
+  return { loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, createdBy };
 }
 
-function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch) {
-  return { code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdDate: new Date().toISOString().slice(0, 10) };
+function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName()) {
+  return { code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy, createdDate: new Date().toISOString().slice(0, 10) };
 }
 
-function tariff(tariffNo, customer, origin, destination, mainSection, weightSection, rateType, rate, minCharge) {
-  return { tariffNo, customer, origin, destination, mainSection, weightSection, rateType, rate, minCharge, volumetricDivisor: 5000, effectiveFrom: "2026-01-01", effectiveTo: "2026-12-31" };
+function tariff(tariffNo, customer, origin, destination, mainSection, weightSection, rateType, rate, minCharge, createdBy = currentUserName()) {
+  return { tariffNo, customer, origin, destination, mainSection, weightSection, rateType, rate, minCharge, volumetricDivisor: 5000, effectiveFrom: "2026-01-01", effectiveTo: "2026-12-31", createdBy };
 }
 
-function documentRow(documentNo, linkedNo, type, status, date, owner) {
-  return { documentNo, linkedNo, type, status, date, owner };
+function documentRow(documentNo, linkedNo, type, status, date, owner, fileName = "", createdBy = currentUserName()) {
+  return { documentNo, linkedNo, type, status, date, owner, fileName, createdBy };
 }
 
 function additionalCharge(
@@ -231,7 +240,8 @@ function additionalCharge(
   status,
   requestedBy,
   approvedBy,
-  approvalNotes
+  approvalNotes,
+  createdBy = currentUserName()
 ) {
   const taxAmount = Number(amount || 0) * (Number(taxPercent || 0) / 100);
   const totalAmount = Number(amount || 0) + taxAmount;
@@ -254,12 +264,13 @@ function additionalCharge(
     status,
     requestedBy,
     approvedBy,
-    approvalNotes
+    approvalNotes,
+    createdBy
   };
 }
 
-function invoice(invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date) {
-  return { invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, grossProfit: revenue - supplierCost };
+function invoice(invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, createdBy = currentUserName()) {
+  return { invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, grossProfit: revenue - supplierCost, createdBy };
 }
 
 function user(
@@ -279,8 +290,8 @@ function user(
   return { userName, email, role, accountStatus, branchAccess, canViewAllEntry, canViewOnlySelfEntry, canEditAllEntry, canViewUpdatedHistory, password, notes, createdDate };
 }
 
-function audit(dateTime, userName, action, reference) {
-  return { dateTime, user: userName, action, reference };
+function audit(dateTime, userName, action, reference, id = "") {
+  return { id, dateTime, user: userName, action, reference };
 }
 
 function adminRequest(requestNo, requestType, targetModule, referenceNo, requestedBy, status, date, details, proposedValues, approvedBy = "", approvalNotes = "") {
@@ -341,6 +352,12 @@ function normalizeState(stored) {
         fromDate: "",
         toDate: "",
         ...((stored.ui || {}).chargeFilters || {})
+      },
+      auditFilters: {
+        query: "",
+        fromDate: "",
+        toDate: "",
+        ...((stored.ui || {}).auditFilters || {})
       }
     }
   };
@@ -406,6 +423,22 @@ function nextInvoiceNumber() {
   return configuredNumber(state.settings.invoiceNumberFormat, state.invoices, "invoiceNo", "INV");
 }
 
+function nextConsolidationNumber() {
+  return configuredNumber(state.settings.consolidationNumberFormat, state.loads, "loadNo", "CON");
+}
+
+function nextCustomerNumber() {
+  return configuredNumber(state.settings.customerNumberFormat, state.customers, "code", "CUS");
+}
+
+function nextSupplierNumber() {
+  return configuredNumber(state.settings.supplierNumberFormat, state.suppliers, "code", "TRN");
+}
+
+function nextAdditionalChargeNumber() {
+  return configuredNumber(state.settings.additionalChargeNumberFormat, state.additionalCharges, "refNo", "CHG");
+}
+
 function branchOptions() {
   const branches = String(state.settings.branches || "")
     .split(",")
@@ -459,7 +492,7 @@ function playBeep() {
 }
 
 function addHistory(action, reference) {
-  const record = audit(new Date().toISOString().slice(0, 16).replace("T", " "), "admin", action, reference);
+  const record = audit(new Date().toISOString().slice(0, 16).replace("T", " "), currentUserName(), action, reference);
   state.audit.unshift(record);
   postRecord("audit", record);
   saveState();
@@ -475,9 +508,7 @@ function recalculateLoad(loadItem) {
 }
 
 function boot() {
-  moduleNav.innerHTML = modules
-    .map(([name]) => `<button type="button" data-module="${escapeHtml(name)}">${escapeHtml(name)}</button>`)
-    .join("");
+  renderModuleNav();
 
   moduleNav.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-module]");
@@ -516,6 +547,56 @@ function boot() {
 
 function isAdminSession() {
   return (currentSession()?.role || "").toLowerCase() === "admin";
+}
+
+function visibleModules() {
+  if (isAdminSession()) return modules;
+  const allowed = new Set([
+    "Dashboard",
+    "Shipments / Jobs",
+    "Consolidation",
+    "Customers",
+    "Suppliers / Transporters",
+    "Documents",
+    "Tariffs / Rate Master",
+    "Additional Charges",
+    "Reports"
+  ]);
+  return modules.filter(([name]) => allowed.has(name));
+}
+
+function renderModuleNav() {
+  moduleNav.innerHTML = visibleModules()
+    .map(([name]) => `<button type="button" data-module="${escapeHtml(name)}">${escapeHtml(name)}</button>`)
+    .join("");
+}
+
+function currentUserName() {
+  return currentSession()?.userName || "operations";
+}
+
+function canViewAllData() {
+  const session = currentSession();
+  return isAdminSession() || Boolean(session?.canViewAllEntry);
+}
+
+function ownedByCurrentUser(row) {
+  if (canViewAllData()) return true;
+  const userName = currentUserName().toLowerCase();
+  const owners = [
+    row.createdBy,
+    row.created_by,
+    row.requestedBy,
+    row.requested_by,
+    row.owner,
+    row.user,
+    row.userName
+  ].map((value) => String(value || "").toLowerCase());
+  return owners.includes(userName);
+}
+
+function visibleRows(rows) {
+  return rows.filter(ownedByCurrentUser);
 }
 
 function notify(status, title, detail = "") {
@@ -613,6 +694,7 @@ function showLogin() {
 function showApp() {
   loginScreen.classList.add("is-hidden");
   appShell.classList.remove("is-hidden");
+  renderModuleNav();
   updateUserContext();
   syncFromApi();
   render();
@@ -713,7 +795,8 @@ function apiShipment(row) {
     Number(row.transit_days || 0),
     row.shipment_direction || "Export",
     row.shipment_service || "AE",
-    row.shipment_service_other || ""
+    row.shipment_service_other || "",
+    row.created_by || "admin"
   );
 }
 
@@ -727,22 +810,23 @@ function apiLoad(row) {
     row.status,
     row.job_numbers || "",
     row.manifest_status || "Not Generated",
-    row.last_manifest_request_no || ""
+    row.last_manifest_request_no || "",
+    row.created_by || "admin"
   );
   recalculateLoad(item);
   return item;
 }
 
 function apiCustomer(row) {
-  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch);
+  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin");
 }
 
 function apiSupplier(row) {
-  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch);
+  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin");
 }
 
 function apiTariff(row) {
-  const item = tariff(row.tariff_no, row.customer, row.origin, row.destination, row.main_section, row.weight_section, row.rate_type, Number(row.rate || 0), Number(row.min_charge || 0));
+  const item = tariff(row.tariff_no, row.customer, row.origin, row.destination, row.main_section, row.weight_section, row.rate_type, Number(row.rate || 0), Number(row.min_charge || 0), row.created_by || "admin");
   item.volumetricDivisor = Number(row.volumetric_divisor || 5000);
   item.effectiveFrom = String(row.effective_from || today()).slice(0, 10);
   item.effectiveTo = String(row.effective_to || today()).slice(0, 10);
@@ -751,7 +835,7 @@ function apiTariff(row) {
 }
 
 function apiDocument(row) {
-  const item = documentRow(row.document_no, row.linked_no, row.type, row.status, String(row.date || today()).slice(0, 10), row.owner);
+  const item = documentRow(row.document_no, row.linked_no, row.type, row.status, String(row.date || today()).slice(0, 10), row.owner, row.file_name || "", row.owner || "admin");
   item.fileName = row.file_name || "";
   item.storageUrl = row.storage_url || "";
   return item;
@@ -775,12 +859,13 @@ function apiAdditionalCharge(row) {
     row.status || "Draft",
     row.requested_by || "",
     row.approved_by || "",
-    row.approval_notes || ""
+    row.approval_notes || "",
+    row.created_by || row.requested_by || "admin"
   );
 }
 
 function apiInvoice(row) {
-  return invoice(row.invoice_no, row.customer, row.shipment_no, Number(row.revenue || 0), Number(row.supplier_cost || 0), row.status, String(row.date || today()).slice(0, 10));
+  return invoice(row.invoice_no, row.customer, row.shipment_no, Number(row.revenue || 0), Number(row.supplier_cost || 0), row.status, String(row.date || today()).slice(0, 10), row.created_by || "admin");
 }
 
 function apiUser(row) {
@@ -829,6 +914,7 @@ function apiAdminRequest(row) {
 
 function apiAudit(row) {
   return {
+    id: row.id,
     dateTime: String(row.date_time || "").replace("T", " ").slice(0, 16),
     user: row.user_name,
     action: row.action,
@@ -842,6 +928,10 @@ function apiSettings(row) {
     companyName: row.company_name || state.settings.companyName,
     shipmentNumberFormat: row.shipment_number_format || state.settings.shipmentNumberFormat,
     invoiceNumberFormat: row.invoice_number_format || state.settings.invoiceNumberFormat,
+    consolidationNumberFormat: row.consolidation_number_format || state.settings.consolidationNumberFormat,
+    customerNumberFormat: row.customer_number_format || state.settings.customerNumberFormat,
+    additionalChargeNumberFormat: row.additional_charge_number_format || state.settings.additionalChargeNumberFormat,
+    supplierNumberFormat: row.supplier_number_format || state.settings.supplierNumberFormat,
     defaultVolumetricDivisor: row.default_volumetric_divisor || state.settings.defaultVolumetricDivisor,
     requirePodBeforeInvoice: row.require_pod_before_invoice || state.settings.requirePodBeforeInvoice,
     branches: row.branches || state.settings.branches
@@ -849,6 +939,9 @@ function apiSettings(row) {
 }
 
 function render() {
+  if (!visibleModules().some(([name]) => name === activeModule)) {
+    activeModule = "Dashboard";
+  }
   const module = modules.find(([name]) => name === activeModule) || modules[0];
   pageEyebrow.textContent = module[0];
   pageTitle.textContent = module[0];
@@ -899,13 +992,24 @@ function updateDateFilterStatus() {
 }
 
 function renderDashboard() {
-  const rows = filteredRows(state.shipments);
+  const rows = filteredRows(visibleRows(state.shipments));
   const open = rows.filter((row) => ["Draft", "Booked"].includes(row.status)).length;
   const transit = rows.filter((row) => row.status === "In-Transit").length;
   const pod = rows.filter((row) => row.podStatus !== "Uploaded").length;
   const unbilled = rows.filter((row) => ["Unbilled", "Missing rate"].includes(row.invoiceStatus)).length;
   const pendingRequests = pendingRequestCount();
   const pendingCharges = state.additionalCharges.filter((row) => row.status === "Pending Approval").length;
+  if (!isAdminSession()) {
+    return `
+      <section class="kpi-grid">
+        ${kpi("Open Shipments", open, "Your draft and booked jobs")}
+        ${kpi("In Transit", transit, "Your shipments moving")}
+        ${kpi("Pending POD", pod, "Need delivery proof")}
+        ${kpi("Unbilled", unbilled, "Your jobs ready for billing")}
+        ${kpi("Pending Requests", pendingRequests, "Your pending approvals")}
+      </section>
+      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${table("shipment", rows, shipmentColumns())}</section>`;
+  }
   return `
     <section class="kpi-grid">
       ${kpi("Open Shipments", open, "Draft and booked jobs")}
@@ -954,7 +1058,7 @@ function adminDeletePanel(type, label, note = "") {
 }
 
 function renderShipments() {
-  const rows = filteredRows(state.shipments);
+  const rows = filteredRows(visibleRows(state.shipments));
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Shipment Register", "Editable records")} ${table("shipment", rows, shipmentColumns())}</article>
@@ -968,7 +1072,7 @@ function renderShipments() {
 }
 
 function renderConsolidation() {
-  const rows = filteredRows(state.loads).map((row) => {
+  const rows = filteredRows(visibleRows(state.loads)).map((row) => {
     recalculateLoad(row);
     return row;
   });
@@ -1003,7 +1107,7 @@ function renderParties(key, label) {
 }
 
 function renderTariffs() {
-  const rows = filteredRows(state.tariffs);
+  const rows = filteredRows(visibleRows(state.tariffs));
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Rate Master", "Tariffs")} ${table("tariff", rows, tariffColumns())}</article>
@@ -1013,7 +1117,7 @@ function renderTariffs() {
 }
 
 function renderDocuments() {
-  const rows = filteredRows(state.documents);
+  const rows = filteredRows(visibleRows(state.documents));
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Document Library", "Attachments")} ${table("document", rows, documentColumns())}</article>
@@ -1034,6 +1138,7 @@ function renderAdditionalCharges() {
       </article>
       <article class="panel">${panelHeader("Shipment Cost Summary", "Profitability")}
         ${summaryCard(summary)}
+        ${chargeReceiptPanel(selectedShipmentNo)}
         <div class="action-stack">
           ${newRecordSelectorMarkup("charge")}
           <div class="action-row">
@@ -1052,7 +1157,7 @@ function renderAdditionalCharges() {
 }
 
 function renderInvoices() {
-  const rows = filteredRows(state.invoices);
+  const rows = filteredRows(visibleRows(state.invoices));
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Invoice Register", "Billing")} ${table("invoice", rows, invoiceColumns())}</article>
@@ -1062,7 +1167,7 @@ function renderInvoices() {
 }
 
 function renderPod() {
-  const rows = filteredRows(state.shipments.filter((row) => row.podStatus !== "Uploaded" || row.status !== "Closed"));
+  const rows = filteredRows(visibleRows(state.shipments).filter((row) => row.podStatus !== "Uploaded" || row.status !== "Closed"));
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("POD Pending / Delivery Board", "Delivery")} ${table("shipment", rows, shipmentColumns())}</article>
@@ -1071,8 +1176,32 @@ function renderPod() {
     ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for POD-related shipment cleanup.")}`;
 }
 
+function chargeReceiptPanel(shipmentNo) {
+  const charges = state.additionalCharges.filter((row) => row.shipmentNo === shipmentNo);
+  if (!shipmentNo) return `<p class="empty-state">Select a shipment to view charge receipt lines.</p>`;
+  const invoiceNo = charges.find((row) => row.invoiceNo)?.invoiceNo || "Not assigned";
+  const total = charges.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
+  const rows = charges.length
+    ? charges
+        .map(
+          (row) => `<div class="receipt-line">
+            <span>${escapeHtml(row.chargeType)}</span>
+            <strong>${money(row.totalAmount)}</strong>
+            <button type="button" class="ghost-button" data-action="open" data-type="charge" data-id="${escapeHtml(row.refNo)}">Edit</button>
+            ${isAdminSession() ? `<button type="button" class="danger-button" data-action="delete-record-direct" data-type="charge" data-id="${escapeHtml(row.refNo)}">Delete</button>` : ""}
+          </div>`
+        )
+        .join("")
+    : `<p class="empty-state">No charge lines added for this shipment yet.</p>`;
+  return `<section class="receipt-box">
+    <div class="panel-header"><div><p class="eyebrow">One Shipment / One Invoice</p><h2>${escapeHtml(invoiceNo)}</h2></div></div>
+    ${rows}
+    <div class="receipt-total"><span>Total Receipt Amount</span><strong>${money(total)}</strong></div>
+  </section>`;
+}
+
 function renderShipmentStatus() {
-  const rows = filteredRows(state.shipments);
+  const rows = filteredRows(visibleRows(state.shipments));
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Shipment Status Register", "Status board")} ${table("shipment", rows, shipmentColumns())}</article>
@@ -1095,7 +1224,7 @@ function renderShipmentStatus() {
 }
 
 function renderReports() {
-  const rows = filteredRows(state.shipments);
+  const rows = filteredRows(visibleRows(state.shipments));
   const revenue = rows.reduce((sum, row) => sum + Number(row.sell || 0), 0);
   const cost = rows.reduce((sum, row) => sum + Number(row.buyCost || 0), 0);
   const preview = state.ui.reportPreview;
@@ -1123,6 +1252,7 @@ function renderSettings() {
     return `<section class="panel">${panelHeader("Access Denied", "Admin")}<p class="empty-state">Only admin users can access user management and settings.</p></section>`;
   }
 
+  const settingsOpen = Boolean(state.ui.showSettingsForm);
   return `
     ${adminTopRequestsPanel()}
     <section class="split-grid wide-left">
@@ -1132,16 +1262,23 @@ function renderSettings() {
     ${adminDeletePanel("user", "User Account", "Deleting a user removes the login from the live database. The current logged-in admin cannot delete itself.")}
     <section class="split-grid">
       <article class="panel">${panelHeader("Company Settings", "System")}
-        <form class="stack-form" data-form="settings">
+        <div class="action-row">
+          <button type="button" data-action="toggle-settings">${settingsOpen ? "Close Settings" : "Open / Update Settings"}</button>
+        </div>
+        ${settingsOpen ? `<form class="stack-form" data-form="settings">
           ${input("companyName", "Company Name", state.settings.companyName)}
           ${input("shipmentNumberFormat", "Shipment Number Format", state.settings.shipmentNumberFormat)}
           ${input("invoiceNumberFormat", "Invoice Number Format", state.settings.invoiceNumberFormat)}
+          ${input("consolidationNumberFormat", "Consolidation Number Format", state.settings.consolidationNumberFormat)}
+          ${input("customerNumberFormat", "New Customer Number Format", state.settings.customerNumberFormat)}
+          ${input("additionalChargeNumberFormat", "Additional Charges Number Format", state.settings.additionalChargeNumberFormat)}
+          ${input("supplierNumberFormat", "Supplier / Transporter Number Format", state.settings.supplierNumberFormat)}
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${input("branches", "Branches", state.settings.branches)}
-          <p class="empty-state">Next shipment number: ${escapeHtml(nextShipmentNumber())} | Next invoice number: ${escapeHtml(nextInvoiceNumber())}</p>
+          <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | consolidation: ${escapeHtml(nextConsolidationNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
-        </form>
+        </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
       </article>
       <article class="panel">${panelHeader("Pending Approvals", "Admin")}
         <div class="alert-list">
@@ -1153,7 +1290,21 @@ function renderSettings() {
 }
 
 function renderAudit() {
-  return `<section class="panel">${panelHeader("Audit Trail", "History")} ${table("audit", filteredRows(state.audit), auditColumns())}</section>`;
+  if (!isAdminSession()) {
+    return `<section class="panel">${panelHeader("Access Denied", "Admin")}<p class="empty-state">Only admin users can access audit log.</p></section>`;
+  }
+  const rows = filteredAuditRows();
+  return `<section class="panel">${panelHeader("Audit Trail", "History")}
+    <div class="report-toolbar">
+      ${input("auditQuery", "Search Log", state.ui.auditFilters?.query || "")}
+      ${input("auditFromDate", "From", state.ui.auditFilters?.fromDate || "", false, "date")}
+      ${input("auditToDate", "To", state.ui.auditFilters?.toDate || "", false, "date")}
+      <button type="button" data-action="filter-audit">Filter</button>
+      ${deleteSelectorMarkup("audit", "Log To Delete")}
+      <button type="button" class="danger-button" data-action="delete-audit-log">Delete Log</button>
+    </div>
+    <div class="audit-scroll">${table("audit", rows, auditColumns())}</div>
+  </section>`;
 }
 
 function moduleActionPanel(title, type, note, extra = "") {
@@ -1490,7 +1641,7 @@ function normalizeConsolidationJobs(jobNumbers, currentLoadNo = "") {
 
 function filteredAdditionalCharges() {
   const filters = state.ui.chargeFilters || {};
-  return filteredRows(state.additionalCharges).filter((row) => {
+  return filteredRows(visibleRows(state.additionalCharges)).filter((row) => {
     const shipmentMatch = !filters.shipmentNo || row.shipmentNo.toLowerCase().includes(String(filters.shipmentNo).toLowerCase());
     const typeMatch = !filters.chargeType || filters.chargeType === "All" || row.chargeType === filters.chargeType;
     const supplierMatch = !filters.supplier || filters.supplier === "All" || row.supplier === filters.supplier;
@@ -1498,6 +1649,18 @@ function filteredAdditionalCharges() {
     const fromMatch = !filters.fromDate || row.chargeDate >= filters.fromDate;
     const toMatch = !filters.toDate || row.chargeDate <= filters.toDate;
     return shipmentMatch && typeMatch && supplierMatch && statusMatch && fromMatch && toMatch;
+  });
+}
+
+function filteredAuditRows() {
+  const filters = state.ui.auditFilters || {};
+  return filteredRows(state.audit).filter((row) => {
+    const query = String(filters.query || "").trim().toLowerCase();
+    const textMatch = !query || Object.values(row).join(" ").toLowerCase().includes(query);
+    const date = recordDate(row);
+    const fromMatch = !filters.fromDate || !date || date >= filters.fromDate;
+    const toMatch = !filters.toDate || !date || date <= filters.toDate;
+    return textMatch && fromMatch && toMatch;
   });
 }
 
@@ -1648,23 +1811,23 @@ function rowId(type, row) {
     settings: "settingsKey",
     unblock: "requestNo",
     adminRequest: "requestNo",
-    audit: "reference"
+    audit: "id"
   };
   return row[keys[type]] || "";
 }
 
 function collectionFor(type) {
   const collections = {
-    shipment: state.shipments,
-    load: state.loads,
-    pod: state.shipments,
-    status: state.shipments,
+    shipment: visibleRows(state.shipments),
+    load: visibleRows(state.loads),
+    pod: visibleRows(state.shipments),
+    status: visibleRows(state.shipments),
     customers: state.customers,
     suppliers: state.suppliers,
-    tariff: state.tariffs,
-    document: state.documents,
-    charge: state.additionalCharges,
-    invoice: state.invoices,
+    tariff: visibleRows(state.tariffs),
+    document: visibleRows(state.documents),
+    charge: visibleRows(state.additionalCharges),
+    invoice: visibleRows(state.invoices),
     user: state.users,
     settings: [state.settings],
     unblock: state.unblockRequests,
@@ -1711,6 +1874,11 @@ async function handleModuleClick(event) {
     return;
   }
 
+  if (action === "delete-record-direct") {
+    await deleteRecordById(type, id);
+    return;
+  }
+
   if (action === "request-load-manifest") {
     await requestLoadManifest(id);
     return;
@@ -1737,13 +1905,30 @@ async function handleModuleClick(event) {
   }
 
   if (action === "margin-report") {
-    const margin = filteredRows(state.shipments).reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0);
+    const margin = filteredRows(visibleRows(state.shipments)).reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0);
     window.alert(`Current margin: ${money(margin)}`);
     return;
   }
 
   if (action === "filter-charges") {
     applyChargeFilters();
+    return;
+  }
+
+  if (action === "toggle-settings") {
+    state.ui.showSettingsForm = !state.ui.showSettingsForm;
+    saveState();
+    render();
+    return;
+  }
+
+  if (action === "filter-audit") {
+    applyAuditFilters();
+    return;
+  }
+
+  if (action === "delete-audit-log") {
+    await deleteAuditLog();
     return;
   }
 }
@@ -1849,9 +2034,9 @@ function detailFieldOptions(type, key, record) {
   };
 
   if (key === "customer") return state.customers.map((row) => row.name);
-  if (key === "tariffNo") return state.tariffs.map((row) => row.tariffNo);
+  if (key === "tariffNo") return visibleRows(state.tariffs).map((row) => row.tariffNo);
   if (key === "supplier") return state.suppliers.map((row) => row.name);
-  if (key === "shipmentNo" || key === "linkedNo") return state.shipments.map((row) => row.jobNo);
+  if (key === "shipmentNo" || key === "linkedNo") return visibleRows(state.shipments).map((row) => row.jobNo);
   if (type === "load" && key === "jobNumbers") return [];
   return common[key] || [];
 }
@@ -2012,7 +2197,7 @@ function openStatusDialog(jobNo = "") {
     title: jobNo ? `Shipment Status - ${jobNo}` : "Shipment Status Update",
     typeLabel: "Status",
     body: `
-      ${selectFrom("jobNo", "Job No", state.shipments.map((row) => row.jobNo), shipmentItem?.jobNo || "")}
+      ${selectFrom("jobNo", "Job No", visibleRows(state.shipments).map((row) => row.jobNo), shipmentItem?.jobNo || "")}
       ${select("status", "Shipment Status", statusOptions(), shipmentItem?.status || "Booked")}
       ${select("podStatus", "POD Status", ["Pending", "Uploaded", "Missing", "Disputed", "Approved"], shipmentItem?.podStatus || "Pending")}
       ${select("invoiceStatus", "Invoice Status", ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue"], shipmentItem?.invoiceStatus || "Unbilled")}
@@ -2034,7 +2219,7 @@ function openPodDialog(jobNo = "") {
     title: jobNo ? `POD / Delivery - ${jobNo}` : "Delivery Update",
     typeLabel: "POD",
     body: `
-      ${selectFrom("jobNo", "Shipment No", state.shipments.map((row) => row.jobNo), jobNo || state.shipments[0]?.jobNo || "")}
+      ${selectFrom("jobNo", "Shipment No", visibleRows(state.shipments).map((row) => row.jobNo), jobNo || visibleRows(state.shipments)[0]?.jobNo || "")}
       ${input("receiver", "Receiver", "Receiver Name")}
     `,
     saveLabel: "Mark Delivered + Upload POD",
@@ -2094,7 +2279,7 @@ function dialogConfigFor(type) {
       typeLabel: "Consolidation",
       saveLabel: "Create Consolidation",
       body: `
-        ${input("loadNo", "Consolidation No", nextNumber("CON", state.loads, "loadNo"), true)}
+        ${input("loadNo", "Consolidation No", nextConsolidationNumber(), true)}
         ${input("tripDate", "Trip Date", today(), false, "date")}
         ${input("route", "Route", "Kuwait - Riyadh")}
         ${input("transporter", "Transporter", "Al Dana Transport")}
@@ -2132,11 +2317,12 @@ function dialogConfigFor(type) {
       saveLabel: "Save Document Tag",
       body: `
         ${input("documentNo", "Document No", nextNumber("DOC", state.documents, "documentNo"), true)}
-        ${selectFrom("linkedNo", "Attach To", state.shipments.map((row) => row.jobNo))}
+        ${selectFrom("linkedNo", "Attach To", visibleRows(state.shipments).map((row) => row.jobNo))}
         ${select("type", "Document Type", ["Waybill", "LR", "CMR", "Commercial Invoice", "Packing List", "POD", "Supplier Invoice"])}
         ${select("status", "Status", ["Uploaded", "Attached", "Missing", "Issued", "Stored", "Replaced"])}
         ${input("date", "Date", today(), false, "date")}
-        ${input("owner", "Owner", currentSession()?.userName || "operations")}
+        ${input("owner", "Owner", currentUserName())}
+        <label>Upload File<input name="fileUpload" type="file" accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf" /></label>
       `,
       onSave: createDocument
     },
@@ -2154,7 +2340,7 @@ function dialogConfigFor(type) {
       body: `
         ${input("invoiceNo", "Invoice No", nextInvoiceNumber(), true)}
         ${selectFrom("customer", "Customer", state.customers.map((row) => row.name))}
-        ${selectFrom("shipmentNo", "Shipment", state.shipments.map((row) => row.jobNo))}
+        ${selectFrom("shipmentNo", "Shipment", visibleRows(state.shipments).map((row) => row.jobNo))}
         ${input("revenue", "Revenue", "100.000", false, "number")}
         ${input("supplierCost", "Supplier Cost", "70.000", false, "number")}
         ${select("status", "Status", ["Draft", "Approved", "Sent", "Paid", "Overdue"])}
@@ -2167,7 +2353,7 @@ function dialogConfigFor(type) {
       typeLabel: "POD",
       saveLabel: "Mark Delivered + Upload POD",
       body: `
-        ${selectFrom("jobNo", "Shipment No", state.shipments.map((row) => row.jobNo))}
+        ${selectFrom("jobNo", "Shipment No", visibleRows(state.shipments).map((row) => row.jobNo))}
         ${input("receiver", "Receiver", "Receiver Name")}
       `,
       onSave: updatePod
@@ -2177,7 +2363,7 @@ function dialogConfigFor(type) {
       typeLabel: "Status",
       saveLabel: "Update Shipment Status",
       body: `
-        ${selectFrom("jobNo", "Job No", state.shipments.map((row) => row.jobNo))}
+        ${selectFrom("jobNo", "Job No", visibleRows(state.shipments).map((row) => row.jobNo))}
         ${select("status", "Shipment Status", statusOptions())}
         ${select("podStatus", "POD Status", ["Pending", "Uploaded", "Missing", "Disputed", "Approved"])}
         ${select("invoiceStatus", "Invoice Status", ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue"])}
@@ -2203,7 +2389,7 @@ function partyDialogConfig(key, label) {
     typeLabel: label,
     saveLabel: `Create ${label}`,
     body: `
-      ${input("code", `${label} Code`, key === "customers" ? nextNumber("CUS", state.customers, "code") : nextNumber("TRN", state.suppliers, "code"), true)}
+      ${input("code", `${label} Code`, key === "customers" ? nextCustomerNumber() : nextSupplierNumber(), true)}
       ${input("name", "Name", "")}
       ${input("locationOrLane", "Lane / Location", "")}
       ${input("email", "Contact Email", "", false, "email")}
@@ -2224,7 +2410,7 @@ function shipmentDialogBody() {
     ${select("shipmentService", "Shipment Service", shipmentServiceOptions("Export"), "AE")}
     ${input("shipmentServiceOther", "Other Service / WHC Remark", "")}
     ${selectFrom("customer", "Customer", state.customers.map((row) => row.name))}
-    ${selectFrom("tariffNo", "Applied Tariff", state.tariffs.map((row) => row.tariffNo))}
+    ${selectFrom("tariffNo", "Applied Tariff", visibleRows(state.tariffs).map((row) => row.tariffNo))}
     ${input("origin", "Origin", "Kuwait City")}
     ${input("destination", "Destination", "Riyadh")}
     ${input("pieces", "Pieces / Pallets", "1", false, "number")}
@@ -2258,8 +2444,8 @@ function userDialogBody() {
 function chargeDialogBody() {
   const invoiceOptions = ["", ...state.invoices.map((row) => row.invoiceNo)];
   return `
-    ${input("refNo", "Ref No", nextNumber("CHG", state.additionalCharges, "refNo"), true)}
-    ${selectFrom("shipmentNo", "Shipment No", state.shipments.map((row) => row.jobNo))}
+    ${input("refNo", "Receipt / Reference No", nextAdditionalChargeNumber(), true)}
+    ${selectFrom("shipmentNo", "Shipment No", visibleRows(state.shipments).map((row) => row.jobNo))}
     ${input("chargeDate", "Charge Date", today(), false, "date")}
     ${select("chargeType", "Charge Type", chargeTypeOptions())}
     ${select("chargeBasis", "Charge Basis", chargeBasisOptions())}
@@ -2377,6 +2563,16 @@ function applyChargeFilters() {
   render();
 }
 
+function applyAuditFilters() {
+  state.ui.auditFilters = {
+    query: dialogSafeValue("auditQuery"),
+    fromDate: dialogSafeValue("auditFromDate"),
+    toDate: dialogSafeValue("auditToDate")
+  };
+  saveState();
+  render();
+}
+
 function dialogSafeValue(name, fallback = "") {
   return moduleContent.querySelector(`[name='${name}']`)?.value || fallback;
 }
@@ -2431,7 +2627,7 @@ function previewReport() {
 }
 
 function reportRows(reportType) {
-  const rows = filteredRows(state.shipments);
+  const rows = filteredRows(visibleRows(state.shipments));
   if (reportType === "Open / in-transit / delivered") {
     return rows.filter((row) => ["Booked", "In-Transit", "Delivered"].includes(row.status));
   }
@@ -2780,7 +2976,8 @@ async function createTariff(data) {
 }
 
 async function createDocument(data) {
-  const record = documentRow(data.documentNo, data.linkedNo, data.type, data.status, data.date, data.owner);
+  const uploadedName = data.fileUpload && typeof data.fileUpload === "object" ? data.fileUpload.name || "" : "";
+  const record = documentRow(data.documentNo, data.linkedNo, data.type, data.status, data.date, data.owner || currentUserName(), uploadedName, currentUserName());
   state.documents.unshift(record);
   await postRecord("document", record);
   addHistory("Tagged document", data.documentNo);
@@ -2791,6 +2988,27 @@ async function createDocument(data) {
 async function createCharge(data) {
   const sessionUser = currentSession()?.userName || "operations";
   const isAdmin = isAdminSession();
+  const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
+  if (!shipmentItem) {
+    notifyFailed("Charge failed", "Select a valid shipment first.");
+    return false;
+  }
+  const existingCharges = state.additionalCharges.filter((row) => row.shipmentNo === data.shipmentNo);
+  const existingInvoiceNo = existingCharges.find((row) => row.invoiceNo)?.invoiceNo || "";
+  if (existingInvoiceNo && data.invoiceNo && data.invoiceNo !== existingInvoiceNo) {
+    notifyDenied("Charge denied", `Shipment ${data.shipmentNo} already uses invoice ${existingInvoiceNo}.`);
+    return false;
+  }
+  const invoiceNo = existingInvoiceNo || data.invoiceNo || "";
+  const amount = Number(data.amount || 0);
+  const taxPercent = Number(data.taxPercent || 0);
+  const newTotal = amount + amount * (taxPercent / 100);
+  const existingTotal = existingCharges.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
+  const projectedProfit = Number(shipmentItem.sell || 0) - Number(shipmentItem.buyCost || 0) - existingTotal - newTotal;
+  if (projectedProfit < 0) {
+    notifyDenied("Charge denied", `This charge puts shipment ${data.shipmentNo} in loss (${money(projectedProfit)}).`);
+    return false;
+  }
   const request = !isAdmin
     ? await submitAdminRequest(
         "Additional Charges",
@@ -2809,16 +3027,17 @@ async function createCharge(data) {
     data.chargeBasis,
     data.supplier,
     data.referenceNo || "",
-    data.invoiceNo || "",
-    Number(data.amount || 0),
-    Number(data.taxPercent || 0),
+    invoiceNo,
+    amount,
+    taxPercent,
     data.currency || "KWD",
     data.remarks || "",
     data.attachmentName || "",
     isAdmin ? data.status || "Approved" : "Pending Approval",
     sessionUser,
     isAdmin ? sessionUser : "",
-    request?.requestNo || ""
+    request?.requestNo || "",
+    sessionUser
   );
 
   state.additionalCharges.unshift(record);
@@ -3007,12 +3226,51 @@ async function deleteSelectedRecord(type) {
   const affectedShipments = type === "invoice"
     ? state.shipments.filter((shipmentItem) => shipmentItem.invoiceStatus === id)
     : [];
+  const deleted = await deleteRecord(type, id);
+  if (!deleted) return;
   removeLocalRecord(type, id);
-  await deleteRecord(type, id);
   await Promise.all(affectedShipments.map((shipmentItem) => persistRecord("shipment", shipmentItem)));
   addHistory(`Deleted ${typeLabel(type)}`, id);
   saveState();
   notifySuccess("Record deleted", `${id} was deleted successfully.`);
+  render();
+}
+
+async function deleteRecordById(type, id) {
+  if (!isAdminSession()) {
+    notifyDenied("Delete denied", "Only admin users can delete records.");
+    return;
+  }
+  if (!id) {
+    notifyDenied("Delete denied", `Select a ${typeLabel(type)} to delete.`);
+    return;
+  }
+  if (!window.confirm(`Delete ${typeLabel(type)} ${id}?`)) return;
+  const deleted = await deleteRecord(type, id);
+  if (!deleted) return;
+  removeLocalRecord(type, id);
+  addHistory(`Deleted ${typeLabel(type)}`, id);
+  saveState();
+  notifySuccess("Record deleted", `${id} was deleted successfully.`);
+  render();
+}
+
+async function deleteAuditLog() {
+  if (!isAdminSession()) {
+    notifyDenied("Delete denied", "Only admin users can delete audit logs.");
+    return;
+  }
+  const id = selectedDeleteId("audit");
+  if (!id) {
+    notifyDenied("Delete denied", "Select a log entry to delete.");
+    return;
+  }
+  if (!window.confirm(`Delete audit log ${id}?`)) return;
+  const deleted = await deleteRecord("audit", id);
+  if (!deleted) return;
+  state.audit = state.audit.filter((row) => String(rowId("audit", row)) !== String(id));
+  saveState();
+  notifySuccess("Audit log deleted", `Log ${id} was deleted successfully.`);
   render();
 }
 
@@ -3042,6 +3300,14 @@ async function deleteShipmentById(jobNo) {
   const linkedInvoices = state.invoices.filter((row) => row.shipmentNo === jobNo);
   const linkedCharges = state.additionalCharges.filter((row) => row.shipmentNo === jobNo);
 
+  const shipmentDeleted = await deleteRecord("shipment", jobNo);
+  if (!shipmentDeleted) return;
+  await Promise.all([
+    ...linkedDocuments.map((row) => deleteRecord("document", row.documentNo)),
+    ...linkedInvoices.map((row) => deleteRecord("invoice", row.invoiceNo)),
+    ...linkedCharges.map((row) => deleteRecord("charge", row.refNo))
+  ]);
+
   state.shipments = state.shipments.filter((row) => row.jobNo !== jobNo);
   state.documents = state.documents.filter((row) => row.linkedNo !== jobNo);
   state.invoices = state.invoices.filter((row) => row.shipmentNo !== jobNo);
@@ -3057,13 +3323,6 @@ async function deleteShipmentById(jobNo) {
     recalculateLoad(loadItem);
     await persistRecord("load", loadItem);
   }
-
-  await deleteRecord("shipment", jobNo);
-  await Promise.all([
-    ...linkedDocuments.map((row) => deleteRecord("document", row.documentNo)),
-    ...linkedInvoices.map((row) => deleteRecord("invoice", row.invoiceNo)),
-    ...linkedCharges.map((row) => deleteRecord("charge", row.refNo))
-  ]);
 
   addHistory("Deleted shipment", jobNo);
   saveState();

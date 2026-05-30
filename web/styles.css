@@ -637,6 +637,39 @@ label {
   overflow-x: auto;
 }
 
+.audit-scroll {
+  max-height: 520px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.audit-scroll .table-wrap {
+  min-width: 760px;
+}
+
+.receipt-box {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fbff;
+}
+
+.receipt-line,
+.receipt-total {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.receipt-total {
+  grid-template-columns: minmax(0, 1fr) auto;
+  font-size: 0.95rem;
+}
+
 table {
   width: 100%;
   min-width: 760px;

@@ -90,6 +90,7 @@ create table if not exists customers (
 
 alter table customers add column if not exists credit_limit numeric(12, 3) not null default 0;
 alter table customers add column if not exists notes text not null default '';
+alter table customers add column if not exists created_by text not null default 'system';
 alter table customers add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists suppliers (
@@ -110,6 +111,7 @@ create table if not exists suppliers (
 );
 
 alter table suppliers add column if not exists credit_limit numeric(12, 3) not null default 0;
+alter table suppliers add column if not exists created_by text not null default 'system';
 
 create table if not exists tariffs (
     id bigserial primary key,
@@ -251,11 +253,26 @@ create table if not exists app_settings (
     company_name text not null default 'APOLLO FREIGHT SOLUTIONS',
     shipment_number_format text not null default 'AFS-SI###',
     invoice_number_format text not null default 'INV-YY###',
+    consolidation_number_format text not null default 'CON-YY###',
+    customer_number_format text not null default 'CUS-###',
+    additional_charge_number_format text not null default 'CHG-YY###',
+    supplier_number_format text not null default 'TRN-###',
     default_volumetric_divisor text not null default '5000',
     require_pod_before_invoice text not null default 'Yes',
     branches text not null default 'Kuwait 1, Dubai 2',
     updated_at timestamptz not null default now()
 );
+
+alter table additional_charges add column if not exists created_by text not null default 'system';
+
+alter table tariffs add column if not exists created_by text not null default 'system';
+alter table documents add column if not exists created_by text not null default 'system';
+alter table invoices add column if not exists created_by text not null default 'system';
+
+alter table app_settings add column if not exists consolidation_number_format text not null default 'CON-YY###';
+alter table app_settings add column if not exists customer_number_format text not null default 'CUS-###';
+alter table app_settings add column if not exists additional_charge_number_format text not null default 'CHG-YY###';
+alter table app_settings add column if not exists supplier_number_format text not null default 'TRN-###';
 
 create table if not exists shipment_status_history (
     id bigserial primary key,

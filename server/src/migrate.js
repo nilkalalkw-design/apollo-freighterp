@@ -22,6 +22,14 @@ async function runMigrations({ logger = console } = {}) {
   const files = listSqlFiles();
 
   for (const fileName of files) {
+    if (fileName === "002_seed.sql") {
+      const seeded = await query("select exists (select 1 from app_users limit 1) as seeded");
+      if (seeded.rows[0]?.seeded) {
+        logger.log("Skipping 002_seed.sql because live data already exists.");
+        continue;
+      }
+    }
+
     const sql = normalizeSql(fs.readFileSync(path.join(sqlDir, fileName), "utf8"));
     logger.log(`Applying ${fileName}`);
     await query(sql);

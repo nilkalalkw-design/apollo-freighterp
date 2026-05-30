@@ -304,7 +304,8 @@ const resources = {
       field("volumetric_divisor", ["volumetricDivisor", "volumetric_divisor"]),
       field("effective_from", ["effectiveFrom", "effective_from"]),
       field("effective_to", ["effectiveTo", "effective_to"]),
-      field("status")
+      field("status"),
+      field("created_by", ["createdBy", "created_by"])
     ]
   },
   documents: {
@@ -320,7 +321,8 @@ const resources = {
       field("owner"),
       field("file_name", ["fileName", "file_name"]),
       field("storage_url", ["storageUrl", "storage_url"]),
-      field("notes")
+      field("notes"),
+      field("created_by", ["createdBy", "created_by"])
     ]
   },
   invoices: {
@@ -336,7 +338,8 @@ const resources = {
       field("status"),
       field("date"),
       field("due_date", ["dueDate", "due_date"]),
-      field("notes")
+      field("notes"),
+      field("created_by", ["createdBy", "created_by"])
     ],
     readonlyFields: ["gross_profit"]
   },
@@ -389,7 +392,8 @@ const resources = {
       field("details"),
       field("proposed_values", ["proposedValues", "proposed_values"]),
       field("approved_by", ["approvedBy", "approved_by"]),
-      field("approval_notes", ["approvalNotes", "approval_notes"])
+      field("approval_notes", ["approvalNotes", "approval_notes"]),
+      field("created_by", ["createdBy", "created_by"])
     ]
   },
   "additional-charges": {
@@ -419,7 +423,7 @@ const resources = {
   },
   audit: {
     table: "audit_log",
-    key: null,
+    key: "id",
     order: "date_time desc",
     metaFields: [],
     fields: [
@@ -440,6 +444,10 @@ const resources = {
       field("company_name", ["companyName", "company_name"]),
       field("shipment_number_format", ["shipmentNumberFormat", "shipment_number_format"]),
       field("invoice_number_format", ["invoiceNumberFormat", "invoice_number_format"]),
+      field("consolidation_number_format", ["consolidationNumberFormat", "consolidation_number_format"]),
+      field("customer_number_format", ["customerNumberFormat", "customer_number_format"]),
+      field("additional_charge_number_format", ["additionalChargeNumberFormat", "additional_charge_number_format"]),
+      field("supplier_number_format", ["supplierNumberFormat", "supplier_number_format"]),
       field("default_volumetric_divisor", ["defaultVolumetricDivisor", "default_volumetric_divisor"]),
       field("require_pod_before_invoice", ["requirePodBeforeInvoice", "require_pod_before_invoice"]),
       field("branches")
@@ -466,7 +474,8 @@ function partyResource(table) {
       field("is_account_overdue", ["isAccountOverdue", "is_account_overdue"]),
       field("branch"),
       field("credit_limit", ["creditLimit", "credit_limit"]),
-      field("notes")
+      field("notes"),
+      field("created_by", ["createdBy", "created_by"])
     ]
   };
 }
@@ -551,7 +560,8 @@ async function getRows(resourceName, config) {
 
 async function loginUser(identifier, password) {
   const result = await query(
-    `select user_name, email, role, account_status, branch_access
+    `select user_name, email, role, account_status, branch_access,
+            can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history
      from app_users
      where (lower(user_name) = lower($1) or lower(email) = lower($1))
        and password = $2
@@ -791,7 +801,11 @@ app.post("/api/login", async (request, response, next) => {
         userName: row.user_name,
         email: row.email,
         role: row.role,
-        branchAccess: row.branch_access
+        branchAccess: row.branch_access,
+        canViewAllEntry: row.can_view_all_entry,
+        canViewOnlySelfEntry: row.can_view_only_self_entry,
+        canEditAllEntry: row.can_edit_all_entry,
+        canViewUpdatedHistory: row.can_view_updated_history
       }
     });
   } catch (error) {
