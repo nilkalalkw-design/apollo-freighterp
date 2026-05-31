@@ -6,6 +6,7 @@ dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 const port = Number.parseInt(process.env.PORT || "4000", 10);
 const defaultAllowedOrigin = (process.env.NODE_ENV || "development") === "production" ? "https://apollo-freighterp.vercel.app" : "*";
 const databaseSources = [
+  ["NEON_DATABASE_URL", process.env.NEON_DATABASE_URL],
   ["DATABASE_URL", process.env.DATABASE_URL],
   ["POSTGRES_URL", process.env.POSTGRES_URL],
   ["POSTGRESQL_URL", process.env.POSTGRESQL_URL],

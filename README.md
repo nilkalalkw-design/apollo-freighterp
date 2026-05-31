@@ -10,7 +10,7 @@ Web console and Render API for land freight shipment operations.
 
 - Backend API: `server/` on Render
 - Web console: `web/` on Vercel
-- Database: a separate Render PostgreSQL database
+- Database: Neon PostgreSQL, with the existing Render PostgreSQL fallback still supported
 
 Keep this project fully isolated from any older live project:
 
@@ -36,7 +36,7 @@ Keep this project fully isolated from any older live project:
 
 ## Current Version
 
-This build uses the live Render API and PostgreSQL database for shipments, consolidations, customers, suppliers, tariffs, documents, invoices, additional charges, users, admin requests, settings, and audit data.
+This build uses the live Render API and PostgreSQL database for shipments, consolidations, customers, suppliers, tariffs, documents, invoices, additional charges, users, admin requests, settings, and audit data. For production, set `NEON_DATABASE_URL` in Render to use Neon.
 
 ## Test Login
 
@@ -45,11 +45,11 @@ This build uses the live Render API and PostgreSQL database for shipments, conso
 
 ## Render And Vercel
 
-Render deploys the API and database from the root `render.yaml`.
+Render deploys the API from the root `render.yaml`.
 
 Vercel deploys the static web console from `web/`.
 
-Important: create the Render deployment from the repo-root Blueprint. If the API service is created manually, Render will not auto-create the PostgreSQL database or attach `DATABASE_URL`.
+Important: set `NEON_DATABASE_URL` in Render with the Neon pooled PostgreSQL connection string. If `NEON_DATABASE_URL` is not set, the service falls back to `DATABASE_URL` or the Render database configured by the Blueprint.
 
 Recommended GitHub deployment settings:
 
@@ -67,6 +67,7 @@ Live deployment URLs:
 GitHub: https://github.com/nilkalalkw-design/apollo-freighterp
 Render API: https://apollo-freighterp-f9kt.onrender.com
 Vercel Web: https://apollo-freighterp.vercel.app
+Neon DB: set in Render as NEON_DATABASE_URL
 ```
 
 The new backend is in `server/`, and the web console is in `web/`.
