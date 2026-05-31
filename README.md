@@ -10,7 +10,7 @@ Web console and Render API for land freight shipment operations.
 
 - Backend API: `server/` on Render
 - Web console: `web/` on Vercel
-- Database: Neon PostgreSQL, with the existing Render PostgreSQL fallback still supported
+- Database: Neon PostgreSQL
 
 Keep this project fully isolated from any older live project:
 
@@ -36,7 +36,7 @@ Keep this project fully isolated from any older live project:
 
 ## Current Version
 
-This build uses the live Render API and PostgreSQL database for shipments, consolidations, customers, suppliers, tariffs, documents, invoices, additional charges, users, admin requests, settings, and audit data. For production, set `NEON_DATABASE_URL` in Render to use Neon.
+This build uses the live Render API and Neon PostgreSQL database for shipments, consolidations, customers, suppliers, tariffs, documents, invoices, additional charges, users, admin requests, settings, and audit data.
 
 ## Test Login
 
@@ -49,7 +49,7 @@ Render deploys the API from the root `render.yaml`.
 
 Vercel deploys the static web console from `web/`.
 
-Important: set `NEON_DATABASE_URL` in Render with the Neon pooled PostgreSQL connection string. If `NEON_DATABASE_URL` is not set, the service falls back to `DATABASE_URL` or the Render database configured by the Blueprint.
+Important: set `NEON_DATABASE_URL` in Render with the Neon pooled PostgreSQL connection string. Use the pooled Neon URL and keep `sslmode=require`.
 
 Recommended GitHub deployment settings:
 
@@ -67,7 +67,7 @@ Live deployment URLs:
 GitHub: https://github.com/nilkalalkw-design/apollo-freighterp
 Render API: https://apollo-freighterp-f9kt.onrender.com
 Vercel Web: https://apollo-freighterp.vercel.app
-Neon DB: set in Render as NEON_DATABASE_URL
+Neon DB: set in Render as `NEON_DATABASE_URL`
 ```
 
 The new backend is in `server/`, and the web console is in `web/`.
