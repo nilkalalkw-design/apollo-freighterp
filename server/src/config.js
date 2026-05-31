@@ -14,6 +14,15 @@ const databaseSources = [
   ["RENDER_DATABASE_URL", process.env.RENDER_DATABASE_URL]
 ];
 const databaseConfig = databaseSources.find(([, value]) => typeof value === "string" && value.trim());
+const databaseUrlValue = databaseConfig?.[1]?.trim() || "";
+const databaseHost = (() => {
+  try {
+    return databaseUrlValue ? new URL(databaseUrlValue).hostname : "";
+  } catch {
+    return "";
+  }
+})();
+const isNeonDatabase = databaseHost.includes("neon.tech");
 const allowedOrigins = (process.env.ALLOWED_ORIGIN || defaultAllowedOrigin)
   .split(",")
   .map((value) => value.trim())
@@ -22,8 +31,10 @@ const allowedOrigins = (process.env.ALLOWED_ORIGIN || defaultAllowedOrigin)
 module.exports = {
   port: Number.isNaN(port) ? 4000 : port,
   nodeEnv: process.env.NODE_ENV || "development",
-  databaseUrl: databaseConfig?.[1]?.trim() || "",
+  databaseUrl: databaseUrlValue,
   databaseUrlSource: databaseConfig?.[0] || "",
+  databaseHost,
+  isNeonDatabase,
   allowedOrigin: process.env.ALLOWED_ORIGIN || defaultAllowedOrigin,
   allowedOrigins,
   autoMigrate: process.env.AUTO_MIGRATE !== "false"

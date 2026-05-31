@@ -49,7 +49,7 @@ Render deploys the API from the root `render.yaml`.
 
 Vercel deploys the static web console from `web/`.
 
-Important: set `NEON_DATABASE_URL` in Render with the Neon pooled PostgreSQL connection string. Use the pooled Neon URL and keep `sslmode=require`.
+Important: set the Neon pooled PostgreSQL connection string in Render. Preferred key is `NEON_DATABASE_URL`; using `DATABASE_URL` also works. Use the pooled Neon URL and keep `sslmode=require`.
 
 Recommended GitHub deployment settings:
 

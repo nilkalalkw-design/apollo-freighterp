@@ -4,7 +4,7 @@ const fs = require("fs");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const path = require("path");
-const { allowedOrigins, autoMigrate, databaseUrl, databaseUrlSource, port } = require("./config");
+const { allowedOrigins, autoMigrate, databaseHost, databaseUrl, databaseUrlSource, isNeonDatabase, port } = require("./config");
 const { query, testConnection } = require("./db");
 const { runMigrations } = require("./migrate");
 
@@ -742,6 +742,8 @@ app.get("/api/health", async (_request, response) => {
       mode: ready ? "database" : "setup",
       databaseConfigured: runtimeStatus.databaseConfigured,
       databaseUrlSource: runtimeStatus.databaseUrlSource,
+      databaseHost,
+      isNeonDatabase,
       allowedOrigins,
       autoMigrate: runtimeStatus.autoMigrate,
       migration: runtimeStatus.migration,
@@ -758,6 +760,8 @@ app.get("/api/health", async (_request, response) => {
       mode: "demo",
       databaseConfigured: runtimeStatus.databaseConfigured,
       databaseUrlSource: runtimeStatus.databaseUrlSource,
+      databaseHost,
+      isNeonDatabase,
       allowedOrigins,
       autoMigrate: runtimeStatus.autoMigrate,
       migration: runtimeStatus.migration,
