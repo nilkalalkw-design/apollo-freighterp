@@ -32,11 +32,14 @@
             <form id="loginForm" class="login-form">
               <label>
                 User name
-                <input name="userName" autocomplete="username" value="admin" required />
+                <input name="userName" autocomplete="username" value="" required />
               </label>
               <label>
                 Password
-                <input name="password" type="password" autocomplete="current-password" value="admin123" required />
+                <span class="password-input-wrap">
+                  <input name="password" type="password" autocomplete="current-password" value="" required />
+                  <button type="button" class="password-toggle" data-toggle-password aria-label="Show password" title="Show password">View</button>
+                </span>
               </label>
               <p id="loginMessage" class="form-message" role="status"></p>
               <button type="submit">Login</button>

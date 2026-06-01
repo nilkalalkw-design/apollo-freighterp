@@ -34,26 +34,34 @@ insert into tariffs (
     destination,
     main_section,
     weight_section,
+    min_up_to,
     rate_type,
     rate,
     min_charge,
+    additional_charges_json,
+    additional_charges_total,
+    grand_total,
     volumetric_divisor,
     effective_from,
     effective_to,
     status
 )
 values
-    ('TAR-1001', 'Gulf Retail Trading', 'Kuwait City', 'Riyadh', 'FTL', 'Minimum', 'Per KG', 0.420, 35.000, 5000, '2026-01-01', '2026-12-31', 'Active'),
-    ('TAR-1002', 'Desert Medical Supplies', 'Shuwaikh', 'Dammam', 'LTL', 'Up to 300 KG', 'Per CBM', 18.000, 55.000, 5000, '2026-01-01', '2026-12-31', 'Active')
+    ('TAR-1001', 'Gulf Retail Trading', 'Kuwait City', 'Riyadh', 'FTL', 'Minimum', '100 KG', 'Per KG', 0.420, 35.000, '[]', 0.000, 35.000, 5000, '2026-01-01', '2026-12-31', 'Active'),
+    ('TAR-1002', 'Desert Medical Supplies', 'Shuwaikh', 'Dammam', 'LTL', 'Up to 300 KG', '300 KG', 'Per CBM', 18.000, 55.000, '[]', 0.000, 55.000, 5000, '2026-01-01', '2026-12-31', 'Active')
 on conflict (tariff_no) do update set
     customer = excluded.customer,
     origin = excluded.origin,
     destination = excluded.destination,
     main_section = excluded.main_section,
     weight_section = excluded.weight_section,
+    min_up_to = excluded.min_up_to,
     rate_type = excluded.rate_type,
     rate = excluded.rate,
     min_charge = excluded.min_charge,
+    additional_charges_json = excluded.additional_charges_json,
+    additional_charges_total = excluded.additional_charges_total,
+    grand_total = excluded.grand_total,
     volumetric_divisor = excluded.volumetric_divisor,
     effective_from = excluded.effective_from,
     effective_to = excluded.effective_to,
@@ -81,13 +89,15 @@ insert into shipments (
     shipment_direction,
     shipment_service,
     shipment_service_other,
+    volume_category,
+    chargeable_divisor,
     created_by
 )
 values
-    ('AFS-2605001', 'Branch 1', 'Gulf Retail Trading', 'Kuwait City', 'Riyadh', 'Booked', 14, 820.000, 5.200, 1040.000, 485.000, 330.000, 'Pending', 'Unbilled', '2026-05-05', 'AWB-2605001', 'TAR-1001', 3, 'Export', 'AE', '', 'admin'),
-    ('AFS-2605002', 'Branch 2', 'Desert Medical Supplies', 'Shuwaikh', 'Dammam', 'In-Transit', 8, 410.000, 2.100, 420.000, 215.000, 150.000, 'Pending', 'Unbilled', '2026-05-05', 'AWB-2605002', 'TAR-1002', 2, 'Import', 'AI', '', 'operations'),
-    ('AFS-2605003', 'Branch 1', 'Al Noor Projects', 'Ahmadi', 'Doha', 'Delivered', 22, 1250.000, 7.800, 1560.000, 780.000, 590.000, 'Missing', 'Unbilled', '2026-05-04', 'AWB-2605003', 'TAR-1001', 4, 'Export', 'LE', '', 'operations'),
-    ('AFS-2605004', 'Branch 1', 'Gulf Retail Trading', 'Kuwait City', 'Riyadh', 'Invoiced', 4, 160.000, 0.900, 180.000, 95.000, 70.000, 'Uploaded', 'INV-260001', '2026-05-02', 'AWB-2605004', 'TAR-1001', 3, 'WHC', 'WHC Remark', 'Warehouse handling and cross-docking', 'billing')
+    ('AFS-2605001', 'Branch 1', 'Gulf Retail Trading', 'Kuwait City', 'Riyadh', 'Booked', 14, 820.000, 5.200, 1040.000, 485.000, 330.000, 'Pending', 'Unbilled', '2026-05-05', 'AWB-2605001', 'TAR-1001', 3, 'Export', 'AE', '', 'Land', 250.000, 'admin'),
+    ('AFS-2605002', 'Branch 2', 'Desert Medical Supplies', 'Shuwaikh', 'Dammam', 'In-Transit', 8, 410.000, 2.100, 420.000, 215.000, 150.000, 'Pending', 'Unbilled', '2026-05-05', 'AWB-2605002', 'TAR-1002', 2, 'Import', 'AI', '', 'Land', 250.000, 'operations'),
+    ('AFS-2605003', 'Branch 1', 'Al Noor Projects', 'Ahmadi', 'Doha', 'Delivered', 22, 1250.000, 7.800, 1560.000, 780.000, 590.000, 'Missing', 'Unbilled', '2026-05-04', 'AWB-2605003', 'TAR-1001', 4, 'Export', 'LE', '', 'Sea', 333.000, 'operations'),
+    ('AFS-2605004', 'Branch 1', 'Gulf Retail Trading', 'Kuwait City', 'Riyadh', 'Invoiced', 4, 160.000, 0.900, 180.000, 95.000, 70.000, 'Uploaded', 'INV-260001', '2026-05-02', 'AWB-2605004', 'TAR-1001', 3, 'WHC', 'WHC Remark', 'Warehouse handling and cross-docking', 'Air', 167.000, 'billing')
 on conflict (job_no) do update set
     branch = excluded.branch,
     customer_name = excluded.customer_name,
@@ -108,7 +118,9 @@ on conflict (job_no) do update set
     transit_days = excluded.transit_days,
     shipment_direction = excluded.shipment_direction,
     shipment_service = excluded.shipment_service,
-    shipment_service_other = excluded.shipment_service_other;
+    shipment_service_other = excluded.shipment_service_other,
+    volume_category = excluded.volume_category,
+    chargeable_divisor = excluded.chargeable_divisor;
 
 insert into consolidations (
     load_no,
@@ -174,6 +186,7 @@ insert into app_users (
     role,
     account_status,
     branch_access,
+    section_access,
     password,
     can_view_all_entry,
     can_view_only_self_entry,
@@ -182,10 +195,20 @@ insert into app_users (
     notes
 )
 values
-    ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'admin123', true, true, true, true, 'System temporary admin'),
-    ('ops-branch1', 'operations.branch1@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', 'ops123', false, true, false, false, 'Can create and track Branch 1 shipments'),
-    ('billing-branch2', 'billing.branch2@apollofreightsolution.com', 'Billing', 'Active', 'Branch 2', 'billing123', true, false, true, true, 'Invoice and finance access for Branch 2')
-on conflict (user_name) do nothing;
+    ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'All', 'admin123', true, true, true, true, 'System temporary admin'),
+    ('ops-branch1', 'operations.branch1@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', 'Dashboard, Shipments / Jobs, Consolidation, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'ops123', false, true, false, false, 'Can create and track Branch 1 shipments'),
+    ('billing-branch2', 'billing.branch2@apollofreightsolution.com', 'Billing', 'Active', 'Branch 2', 'Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports', 'billing123', true, false, true, true, 'Invoice and finance access for Branch 2')
+on conflict (user_name) do update set
+    email = excluded.email,
+    role = excluded.role,
+    account_status = excluded.account_status,
+    branch_access = excluded.branch_access,
+    section_access = excluded.section_access,
+    can_view_all_entry = excluded.can_view_all_entry,
+    can_view_only_self_entry = excluded.can_view_only_self_entry,
+    can_edit_all_entry = excluded.can_edit_all_entry,
+    can_view_updated_history = excluded.can_view_updated_history,
+    notes = excluded.notes;
 
 insert into unblock_requests (request_no, customer_name, requested_by, reason, status, date)
 values
@@ -267,10 +290,11 @@ insert into app_settings (
     invoice_number_format,
     default_volumetric_divisor,
     require_pod_before_invoice,
-    branches
+    branches,
+    dropdown_options
 )
 values
-    ('default', 'APOLLO FREIGHT SOLUTIONS', 'AFS-SI###', 'INV-YY###', '5000', 'Yes', 'Kuwait 1, Dubai 2')
+    ('default', 'APOLLO FREIGHT SOLUTIONS', 'AFS-SI###', 'INV-YY###', '5000', 'Yes', 'Kuwait 1, Dubai 2', '{}')
 on conflict (settings_key) do nothing;
 
 insert into audit_log (date_time, user_name, action, reference, details)

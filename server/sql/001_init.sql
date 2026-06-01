@@ -21,6 +21,8 @@ create table if not exists shipments (
     shipment_direction text not null default 'Export',
     shipment_service text not null default 'AE',
     shipment_service_other text not null default '',
+    volume_category text not null default 'Land',
+    chargeable_divisor numeric(12, 3) not null default 250,
     notes text not null default '',
     created_by text not null default 'system',
     created_at timestamptz not null default now(),
@@ -41,6 +43,8 @@ alter table shipments add column if not exists transit_days integer not null def
 alter table shipments add column if not exists shipment_direction text not null default 'Export';
 alter table shipments add column if not exists shipment_service text not null default 'AE';
 alter table shipments add column if not exists shipment_service_other text not null default '';
+alter table shipments add column if not exists volume_category text not null default 'Land';
+alter table shipments add column if not exists chargeable_divisor numeric(12, 3) not null default 250;
 alter table shipments add column if not exists notes text not null default '';
 alter table shipments add column if not exists created_by text not null default 'system';
 alter table shipments add column if not exists updated_at timestamptz not null default now();
@@ -121,9 +125,13 @@ create table if not exists tariffs (
     destination text not null default '',
     main_section text not null default 'FTL',
     weight_section text not null default 'Minimum',
-    rate_type text not null default 'Per KG',
+    min_up_to text not null default '',
     rate numeric(12, 3) not null default 0,
     min_charge numeric(12, 3) not null default 0,
+    additional_charges_json text not null default '[]',
+    additional_charges_total numeric(12, 3) not null default 0,
+    grand_total numeric(12, 3) not null default 0,
+    rate_type text not null default 'Per KG',
     volumetric_divisor integer not null default 5000,
     effective_from date not null default current_date,
     effective_to date not null default (current_date + interval '1 year'),
@@ -131,6 +139,11 @@ create table if not exists tariffs (
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
+
+alter table tariffs add column if not exists min_up_to text not null default '';
+alter table tariffs add column if not exists additional_charges_json text not null default '[]';
+alter table tariffs add column if not exists additional_charges_total numeric(12, 3) not null default 0;
+alter table tariffs add column if not exists grand_total numeric(12, 3) not null default 0;
 
 create table if not exists documents (
     id bigserial primary key,
@@ -170,6 +183,7 @@ create table if not exists app_users (
     role text not null default 'Operations',
     account_status text not null default 'Active',
     branch_access text not null default 'Branch 1',
+    section_access text not null default 'All',
     password text not null default '',
     can_view_all_entry boolean not null default true,
     can_view_only_self_entry boolean not null default false,
@@ -181,6 +195,7 @@ create table if not exists app_users (
 );
 
 alter table app_users add column if not exists password text not null default '';
+alter table app_users add column if not exists section_access text not null default 'All';
 
 create table if not exists unblock_requests (
     id bigserial primary key,
@@ -260,6 +275,7 @@ create table if not exists app_settings (
     default_volumetric_divisor text not null default '5000',
     require_pod_before_invoice text not null default 'Yes',
     branches text not null default 'Kuwait 1, Dubai 2',
+    dropdown_options text not null default '{}',
     updated_at timestamptz not null default now()
 );
 
@@ -273,6 +289,7 @@ alter table app_settings add column if not exists consolidation_number_format te
 alter table app_settings add column if not exists customer_number_format text not null default 'CUS-###';
 alter table app_settings add column if not exists additional_charge_number_format text not null default 'CHG-YY###';
 alter table app_settings add column if not exists supplier_number_format text not null default 'TRN-###';
+alter table app_settings add column if not exists dropdown_options text not null default '{}';
 
 create table if not exists shipment_status_history (
     id bigserial primary key,

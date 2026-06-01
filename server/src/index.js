@@ -47,6 +47,8 @@ const demoRows = {
       shipment_direction: "Export",
       shipment_service: "AE",
       shipment_service_other: "",
+      volume_category: "Land",
+      chargeable_divisor: 250,
       created_at: new Date().toISOString()
     }
   ],
@@ -107,9 +109,13 @@ const demoRows = {
       destination: "Riyadh",
       main_section: "FTL",
       weight_section: "Minimum",
+      min_up_to: "100 KG",
       rate_type: "Per KG",
       rate: 0.42,
       min_charge: 35,
+      additional_charges_json: "[]",
+      additional_charges_total: 0,
+      grand_total: 35,
       volumetric_divisor: 5000,
       effective_from: "2026-01-01",
       effective_to: "2026-12-31",
@@ -149,6 +155,7 @@ const demoRows = {
       role: "Admin",
       account_status: "Active",
       branch_access: "Both",
+      section_access: "All",
       password: "admin123",
       can_view_all_entry: true,
       can_view_only_self_entry: true,
@@ -227,7 +234,8 @@ const demoRows = {
       invoice_number_format: "INV-YY###",
       default_volumetric_divisor: "5000",
       require_pod_before_invoice: "Yes",
-      branches: "Kuwait 1, Dubai 2"
+      branches: "Kuwait 1, Dubai 2",
+      dropdown_options: "{}"
     }
   ]
 };
@@ -259,6 +267,8 @@ const resources = {
       field("shipment_direction", ["shipmentDirection", "shipment_direction"]),
       field("shipment_service", ["shipmentService", "shipment_service"]),
       field("shipment_service_other", ["shipmentServiceOther", "shipment_service_other"]),
+      field("volume_category", ["volumeCategory", "volume_category"]),
+      field("chargeable_divisor", ["chargeableDivisor", "chargeable_divisor"]),
       field("notes"),
       field("created_by", ["createdBy", "created_by"])
     ]
@@ -298,9 +308,13 @@ const resources = {
       field("destination"),
       field("main_section", ["mainSection", "main_section"]),
       field("weight_section", ["weightSection", "weight_section"]),
+      field("min_up_to", ["minUpTo", "min_up_to"]),
       field("rate_type", ["rateType", "rate_type"]),
       field("rate"),
       field("min_charge", ["minCharge", "min_charge"]),
+      field("additional_charges_json", ["additionalChargesJson", "additional_charges_json"]),
+      field("additional_charges_total", ["additionalChargesTotal", "additional_charges_total"]),
+      field("grand_total", ["grandTotal", "grand_total"]),
       field("volumetric_divisor", ["volumetricDivisor", "volumetric_divisor"]),
       field("effective_from", ["effectiveFrom", "effective_from"]),
       field("effective_to", ["effectiveTo", "effective_to"]),
@@ -354,6 +368,7 @@ const resources = {
       field("role"),
       field("account_status", ["accountStatus", "account_status"]),
       field("branch_access", ["branchAccess", "branch_access"]),
+      field("section_access", ["sectionAccess", "section_access"]),
       field("password"),
       field("can_view_all_entry", ["canViewAllEntry", "can_view_all_entry"]),
       field("can_view_only_self_entry", ["canViewOnlySelfEntry", "can_view_only_self_entry"]),
@@ -450,7 +465,8 @@ const resources = {
       field("supplier_number_format", ["supplierNumberFormat", "supplier_number_format"]),
       field("default_volumetric_divisor", ["defaultVolumetricDivisor", "default_volumetric_divisor"]),
       field("require_pod_before_invoice", ["requirePodBeforeInvoice", "require_pod_before_invoice"]),
-      field("branches")
+      field("branches"),
+      field("dropdown_options", ["dropdownOptionsJson", "dropdown_options"])
     ]
   }
 };
@@ -560,7 +576,7 @@ async function getRows(resourceName, config) {
 
 async function loginUser(identifier, password) {
   const result = await query(
-    `select user_name, email, role, account_status, branch_access,
+    `select user_name, email, role, account_status, branch_access, section_access,
             can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history
      from app_users
      where (lower(user_name) = lower($1) or lower(email) = lower($1))
@@ -806,6 +822,7 @@ app.post("/api/login", async (request, response, next) => {
         email: row.email,
         role: row.role,
         branchAccess: row.branch_access,
+        sectionAccess: row.section_access,
         canViewAllEntry: row.can_view_all_entry,
         canViewOnlySelfEntry: row.can_view_only_self_entry,
         canEditAllEntry: row.can_edit_all_entry,
@@ -821,7 +838,8 @@ app.post("/api/login", async (request, response, next) => {
             userName: "admin",
             email: "admin@apollofreightsolution.com",
             role: "Admin",
-            branchAccess: "Both"
+            branchAccess: "Both",
+            sectionAccess: "All"
           }
         });
       }

@@ -276,6 +276,25 @@ label {
   gap: 14px;
 }
 
+.password-input-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.password-input-wrap input {
+  min-width: 0;
+}
+
+.password-toggle {
+  min-width: 70px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--blue-soft);
+  color: var(--ink);
+}
+
 .form-message,
 .reset-message {
   min-height: 20px;
@@ -676,6 +695,27 @@ label {
   border-radius: 8px;
   padding: 12px;
   background: #f8fbff;
+}
+
+.tariff-charge-builder {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fbff;
+}
+
+.tariff-charge-entry {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 150px 110px auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.tariff-charges-table {
+  min-width: 720px;
 }
 
 .charge-line-entry,
@@ -1155,6 +1195,11 @@ th {
   }
 
   .job-list-row {
+    grid-template-columns: 1fr;
+  }
+
+  .tariff-charge-entry,
+  .password-input-wrap {
     grid-template-columns: 1fr;
   }
 
