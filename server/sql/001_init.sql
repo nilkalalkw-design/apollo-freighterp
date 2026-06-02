@@ -200,6 +200,9 @@ alter table app_users add column if not exists section_access text not null defa
 create table if not exists unblock_requests (
     id bigserial primary key,
     request_no text not null unique,
+    request_type text not null default 'Unblock',
+    target_type text not null default 'Customer',
+    reference_no text not null default '',
     customer_name text not null default '',
     requested_by text not null default '',
     reason text not null default '',
@@ -278,6 +281,10 @@ create table if not exists app_settings (
     dropdown_options text not null default '{}',
     updated_at timestamptz not null default now()
 );
+
+alter table unblock_requests add column if not exists request_type text not null default 'Unblock';
+alter table unblock_requests add column if not exists target_type text not null default 'Customer';
+alter table unblock_requests add column if not exists reference_no text not null default '';
 
 alter table additional_charges add column if not exists created_by text not null default 'system';
 

@@ -168,6 +168,9 @@ const demoRows = {
     {
       id: 1,
       request_no: "REQ-2605001",
+      request_type: "Unblock",
+      target_type: "Customer",
+      reference_no: "CUS-002",
       customer_name: "Desert Medical Supplies",
       requested_by: "operations",
       reason: "Credit release requested",
@@ -383,6 +386,9 @@ const resources = {
     order: "date desc, created_at desc",
     fields: [
       field("request_no", ["requestNo", "request_no"], true),
+      field("request_type", ["requestType", "request_type"]),
+      field("target_type", ["targetType", "target_type"]),
+      field("reference_no", ["referenceNo", "reference_no"]),
       field("customer_name", ["customerName", "customer_name"]),
       field("requested_by", ["requestedBy", "requested_by"]),
       field("reason"),

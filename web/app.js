@@ -144,7 +144,7 @@ function seedState() {
       user("billing-branch2", "billing.branch2@apollofreightsolution.com", "Billing", "Active", "Branch 2", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Branch 2")
     ],
     unblockRequests: [
-      { requestNo: "REQ-2605001", customerName: "Desert Medical Supplies", requestedBy: "operations", reason: "Credit release requested", status: "Pending", date: today }
+      { requestNo: "REQ-2605001", requestType: "Unblock", targetType: "Customer", referenceNo: "CUS-002", customerName: "Desert Medical Supplies", requestedBy: "operations", reason: "Credit release requested", status: "Pending", date: today, notes: "" }
     ],
     adminRequests: [
       adminRequest("ADM-2605001", "Manifest Approval", "Consolidation", "CON-260502", "operations", "Pending", today, "Operations requested approval for consolidation edits before dispatch.", "Route: Kuwait - Dammam | Status: Planned | Jobs: AFS-2605002")
@@ -955,11 +955,16 @@ function apiUser(row) {
 function apiUnblockRequest(row) {
   return {
     requestNo: row.request_no,
+    requestType: row.request_type || "Unblock",
+    targetType: row.target_type || "Customer",
+    referenceNo: row.reference_no || "",
     customerName: row.customer_name,
     requestedBy: row.requested_by,
     reason: row.reason,
     status: row.status,
-    date: String(row.date || today()).slice(0, 10)
+    date: String(row.date || today()).slice(0, 10),
+    approvedBy: row.approved_by || "",
+    notes: row.notes || ""
   };
 }
 
@@ -1104,11 +1109,11 @@ function renderDashboard() {
 function adminTopRequestsPanel() {
   if (!isAdminSession()) return "";
   return `<section class="split-grid admin-request-strip">
-    <article class="panel">${panelHeader("Customer Block / Unblock Requests", "Admin")}
-      ${table("unblock", filteredRows(state.unblockRequests), unblockColumns())}
+    <article class="panel">${panelHeader("Block / Unblock Requests", "Admin")}
+      ${safeTable("unblock", filteredRows(state.unblockRequests || []), unblockColumns(), "No block or unblock requests are loaded yet.")}
     </article>
     <article class="panel">${panelHeader("Admin Requests", "Approval")}
-      ${table("adminRequest", filteredRows(state.adminRequests), adminRequestColumns())}
+      ${safeTable("adminRequest", filteredRows(state.adminRequests || []), adminRequestColumns(), "No admin requests are loaded yet.")}
     </article>
   </section>`;
 }
@@ -1133,7 +1138,7 @@ function renderShipments() {
         "New button opens the shipment popup window.",
         "Load uses the selected saved shipment from the list.",
         "Shipment type controls service options: Import, Export, WHC, and Consolidation service."
-      ]))}
+      ]) + blockRequestControls("shipment", "Shipment"))}
     </section>
     ${adminDeletePanel("shipment", "Shipment", "Deleting a shipment also removes linked consolidation references, documents, invoices, and additional charges.")}`;
 }
@@ -1168,7 +1173,7 @@ function renderParties(key, label) {
       ${moduleActionPanel(`${label} Actions`, key, `Open separate New and Load windows for ${label.toLowerCase()} records.`, actionChecklist([
         "New creates a fresh master-data entry window.",
         "Load opens an existing record to review or update."
-      ]))}
+      ]) + blockRequestControls(key, label))}
     </section>
     ${adminDeletePanel(key, label)}`;
 }
@@ -1178,7 +1183,7 @@ function renderTariffs() {
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Rate Master", "Tariffs")} ${table("tariff", rows, tariffColumns())}</article>
-      ${moduleActionPanel("Tariff Actions", "tariff", "Maintain tariff cards from separate New and Load popups just like the desktop layout.")}
+      ${moduleActionPanel("Tariff Actions", "tariff", "Maintain tariff cards from separate New and Load popups just like the desktop layout.", documentActionControls("tariff", "Tariff"))}
     </section>
     ${adminDeletePanel("tariff", "Tariff")}`;
 }
@@ -1228,7 +1233,7 @@ function renderInvoices() {
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Invoice Register", "Billing")} ${table("invoice", rows, invoiceColumns())}</article>
-      ${moduleActionPanel("Invoice Actions", "invoice", "Keep invoice creation and load/update in separate popup windows.")}
+      ${moduleActionPanel("Invoice Actions", "invoice", "Keep invoice creation and load/update in separate popup windows.", documentActionControls("invoice", "Bill"))}
     </section>
     ${adminDeletePanel("invoice", "Invoice")}`;
 }
@@ -1391,6 +1396,28 @@ function moduleActionPanel(title, type, note, extra = "") {
       ${extra}
     </div>
   </article>`;
+}
+
+function blockRequestControls(type, label) {
+  const rows = collectionFor(type);
+  return `<div class="action-stack">
+    ${loadSelectorMarkup(type, `${label} To Request`)}
+    <div class="action-row">
+      <button type="button" class="secondary-button" data-action="request-block" data-type="${escapeHtml(type)}">Block Request</button>
+      <button type="button" class="secondary-button" data-action="request-unblock" data-type="${escapeHtml(type)}">Unblock Request</button>
+    </div>
+    <p class="empty-state">${rows.length ? "Requests are sent to admin and shown in User Management / Settings." : `No ${label.toLowerCase()} records available for request.`}</p>
+  </div>`;
+}
+
+function documentActionControls(type, label) {
+  return `<div class="action-stack">
+    ${loadSelectorMarkup(type, `${label} To Generate`)}
+    <div class="action-row">
+      <button type="button" class="secondary-button" data-action="generate-document" data-type="${escapeHtml(type)}">Generate ${escapeHtml(label)}</button>
+      <button type="button" class="secondary-button" data-action="export-document" data-type="${escapeHtml(type)}">Save / Export</button>
+    </div>
+  </div>`;
 }
 
 function newRecordSelectorMarkup(type, label = "New Entry Option") {
@@ -1607,6 +1634,14 @@ function table(type, rows, columns, showLoad = true) {
   return `<div class="table-wrap"><table><thead><tr>${columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("")}${header}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
+function safeTable(type, rows, columns, fallbackText) {
+  try {
+    return table(type, Array.isArray(rows) ? rows : [], columns);
+  } catch (error) {
+    return `<div class="report-preview-empty"><p class="empty-state">${escapeHtml(fallbackText)} ${escapeHtml(error?.message || "")}</p></div>`;
+  }
+}
+
 function tableRow(type, row, index, columns, showLoad = true) {
   const id = rowId(type, row);
   const actionCell = showLoad ? `<td>${tableActionButton(type, id)}</td>` : "";
@@ -1616,6 +1651,10 @@ function tableRow(type, row, index, columns, showLoad = true) {
 function tableActionButton(type, id) {
   if (type === "load") {
     return `<button class="ghost-button" data-action="view-load" data-id="${escapeHtml(id)}">View Jobs</button>`;
+  }
+
+  if (type === "unblock" || type === "adminRequest") {
+    return `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Review</button>`;
   }
 
   return `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Load</button>`;
@@ -1927,7 +1966,7 @@ function userColumns() {
 }
 
 function unblockColumns() {
-  return [["requestNo", "Request"], ["customerName", "Customer"], ["requestedBy", "Requested By"], ["reason", "Reason"], ["status", "Status"], ["date", "Date"]];
+  return [["requestNo", "Request"], ["requestType", "Type"], ["targetType", "Target"], ["referenceNo", "Reference"], ["customerName", "Name"], ["requestedBy", "Requested By"], ["reason", "Reason"], ["status", "Status"], ["date", "Date"]];
 }
 
 function adminRequestColumns() {
@@ -2019,6 +2058,16 @@ async function handleModuleClick(event) {
 
   if (action === "delete-record-direct") {
     await deleteRecordById(type, id);
+    return;
+  }
+
+  if (action === "request-block" || action === "request-unblock") {
+    await submitBlockRequest(type, selectedRecordId(type), action === "request-block" ? "Block" : "Unblock");
+    return;
+  }
+
+  if (action === "generate-document" || action === "export-document") {
+    generateRecordDocument(type, selectedRecordId(type), action === "export-document");
     return;
   }
 
@@ -2126,6 +2175,11 @@ function openRecord(type, id) {
     return;
   }
 
+  if (type === "unblock") {
+    openBlockRequestDialog(record);
+    return;
+  }
+
   editing = { type, id, record };
   dialogState = null;
   dialogType.textContent = `${type} record`;
@@ -2141,6 +2195,16 @@ function openRecord(type, id) {
   if (type === "load") bindConsolidationJobPicker();
   bindDialogPasswordToggles();
   recordDialog.showModal();
+}
+
+function duplicateRecordExists(type, id) {
+  const normalized = String(id || "").trim().toLowerCase();
+  if (!normalized) return false;
+  return collectionFor(type).some((row) => String(rowId(type, row) || "").trim().toLowerCase() === normalized);
+}
+
+function notifyDuplicate(id) {
+  notifyDenied("Already used", `${id} is already used. Enter a different serial number.`);
 }
 
 function detailFieldControl(type, key, value, record) {
@@ -2617,6 +2681,36 @@ function userDialogBody() {
   `;
 }
 
+function openBlockRequestDialog(record) {
+  openDialog({
+    title: record.requestNo,
+    typeLabel: "Block / Unblock Request",
+    body: `
+      <label>Request Type<input value="${escapeHtml(record.requestType || "Unblock")}" readonly /></label>
+      <label>Target<input value="${escapeHtml(record.targetType || "Customer")}" readonly /></label>
+      <label>Reference<input value="${escapeHtml(record.referenceNo || record.customerName)}" readonly /></label>
+      <label>Requested By<input value="${escapeHtml(record.requestedBy)}" readonly /></label>
+      <label>Status<input value="${escapeHtml(record.status)}" readonly /></label>
+      <label>Reason<textarea rows="4" readonly>${escapeHtml(record.reason)}</textarea></label>
+      <label>Approval Notes<textarea name="approvalNotes" rows="4">${escapeHtml(record.notes || "")}</textarea></label>
+    `,
+    saveLabel: "Approve Request",
+    secondaryLabel: "Reject Request",
+    async onSave() {
+      const data = collectFormValues(dialogBody.closest("form"));
+      await approveBlockRequest(record, data.approvalNotes || "");
+      recordDialog.close();
+      render();
+    },
+    async onSecondary() {
+      const data = collectFormValues(dialogBody.closest("form"));
+      await rejectBlockRequest(record, data.approvalNotes || "");
+      recordDialog.close();
+      render();
+    }
+  });
+}
+
 function chargeDialogBody() {
   const invoiceOptions = ["", ...state.invoices.map((row) => row.invoiceNo)];
   return `
@@ -3080,6 +3174,111 @@ function downloadCsv(preview) {
   URL.revokeObjectURL(link.href);
 }
 
+function generateRecordDocument(type, id, download = false) {
+  const record = collectionFor(type).find((row) => rowId(type, row) === id);
+  if (!record) {
+    notifyDenied("Document not generated", "Select a saved record first.");
+    return;
+  }
+  const html = type === "invoice" ? invoiceDocumentHtml(record) : tariffDocumentHtml(record);
+  const fileName = `${type === "invoice" ? "bill" : "tariff"}-${rowId(type, record)}.html`.toLowerCase();
+  if (download) {
+    downloadHtml(fileName, html);
+    notifySuccess("Export ready", `${rowId(type, record)} was exported.`);
+    return;
+  }
+  openPrintableDocument(html);
+}
+
+function invoiceDocumentHtml(record) {
+  const shipmentItem = state.shipments.find((row) => row.jobNo === record.shipmentNo);
+  return documentShell(
+    `Bill ${record.invoiceNo}`,
+    `
+      <h1>Bill / Invoice</h1>
+      <section class="meta">
+        <p><strong>Invoice No</strong><span>${escapeHtml(record.invoiceNo)}</span></p>
+        <p><strong>Date</strong><span>${escapeHtml(record.date)}</span></p>
+        <p><strong>Customer</strong><span>${escapeHtml(record.customer)}</span></p>
+        <p><strong>Shipment No</strong><span>${escapeHtml(record.shipmentNo)}</span></p>
+        <p><strong>Status</strong><span>${escapeHtml(record.status)}</span></p>
+      </section>
+      <table><tbody>
+        <tr><th>Origin</th><td>${escapeHtml(shipmentItem?.origin || "")}</td><th>Destination</th><td>${escapeHtml(shipmentItem?.destination || "")}</td></tr>
+        <tr><th>Revenue</th><td>${money(record.revenue)}</td><th>Supplier Cost</th><td>${money(record.supplierCost)}</td></tr>
+        <tr><th>Gross Profit</th><td colspan="3">${money(record.grossProfit)}</td></tr>
+      </tbody></table>
+    `
+  );
+}
+
+function tariffDocumentHtml(record) {
+  const charges = parseTariffChargeLines(record.additionalChargesJson || "[]");
+  return documentShell(
+    `Tariff ${record.tariffNo}`,
+    `
+      <h1>Tariff</h1>
+      <section class="meta">
+        <p><strong>Tariff Number</strong><span>${escapeHtml(record.tariffNo)}</span></p>
+        <p><strong>Customer</strong><span>${escapeHtml(record.customer)}</span></p>
+        <p><strong>Origin</strong><span>${escapeHtml(record.origin)}</span></p>
+        <p><strong>Destination</strong><span>${escapeHtml(record.destination)}</span></p>
+        <p><strong>Main Section</strong><span>${escapeHtml(record.mainSection)}</span></p>
+        <p><strong>Weight Section</strong><span>${escapeHtml(record.weightSection)}</span></p>
+        <p><strong>Minimum Up To</strong><span>${escapeHtml(record.minUpTo)}</span></p>
+        <p><strong>Rate</strong><span>${money(record.rate)}</span></p>
+        <p><strong>Minimum Charge</strong><span>${money(record.minCharge)}</span></p>
+      </section>
+      <h2>Additional Charges</h2>
+      ${tariffChargeTable(charges, Number(record.additionalChargesTotal || 0), Number(record.grandTotal || 0))}
+    `
+  );
+}
+
+function documentShell(title, body) {
+  return `<!doctype html>
+  <html>
+    <head>
+      <title>${escapeHtml(title)}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 32px; color: #16202a; }
+        h1 { margin: 0 0 18px; }
+        h2 { margin-top: 24px; }
+        .meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
+        .meta p { display: grid; gap: 4px; margin: 0; padding: 10px; border: 1px solid #dde4ec; }
+        strong, th { color: #687582; text-transform: uppercase; font-size: 11px; text-align: left; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { border: 1px solid #dde4ec; padding: 9px; }
+        @media print { button { display: none; } body { margin: 18mm; } }
+      </style>
+    </head>
+    <body>
+      <button onclick="window.print()">Print / Save PDF</button>
+      ${body}
+    </body>
+  </html>`;
+}
+
+function openPrintableDocument(html) {
+  const printWindow = window.open("", "_blank", "width=1000,height=800");
+  if (!printWindow) {
+    notifyDenied("Popup blocked", "Allow popups to preview the document.");
+    return;
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+}
+
+function downloadHtml(fileName, html) {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 async function submitAdminRequest(targetModule, referenceNo, details, proposedValues, requestType = "Change Request") {
   const request = adminRequest(
     nextNumber("ADM", state.adminRequests, "requestNo"),
@@ -3095,6 +3294,77 @@ async function submitAdminRequest(targetModule, referenceNo, details, proposedVa
   state.adminRequests.unshift(request);
   await postRecord("adminRequest", request);
   return request;
+}
+
+async function submitBlockRequest(type, id, requestType) {
+  const record = collectionFor(type).find((row) => rowId(type, row) === id);
+  if (!record) {
+    notifyDenied("Request not sent", "Select a saved record first.");
+    return false;
+  }
+  const targetType = type === "shipment" ? "Shipment" : type === "suppliers" ? "Supplier" : "Customer";
+  const displayName = record.customer || record.name || id;
+  const request = {
+    requestNo: nextNumber("REQ", state.unblockRequests, "requestNo"),
+    requestType,
+    targetType,
+    referenceNo: id,
+    customerName: displayName,
+    requestedBy: currentUserName(),
+    reason: `${requestType} requested for ${targetType.toLowerCase()} ${id}`,
+    status: "Pending",
+    date: today(),
+    approvedBy: "",
+    notes: ""
+  };
+  state.unblockRequests.unshift(request);
+  await postRecord("unblock", request);
+  addHistory(`Submitted ${requestType.toLowerCase()} request`, `${targetType} ${id}`);
+  saveState();
+  notifySuccess("Request sent", `${requestType} request for ${id} was sent to admin.`);
+  render();
+  return true;
+}
+
+async function approveBlockRequest(request, approvalNotes = "") {
+  request.status = "Approved";
+  request.approvedBy = currentUserName();
+  request.notes = approvalNotes;
+  await applyBlockRequestToRecord(request);
+  await persistRecord("unblock", request);
+  addHistory(`Approved ${String(request.requestType || "").toLowerCase()} request`, request.referenceNo || request.customerName);
+  saveState();
+}
+
+async function rejectBlockRequest(request, approvalNotes = "") {
+  request.status = "Rejected";
+  request.approvedBy = currentUserName();
+  request.notes = approvalNotes;
+  await persistRecord("unblock", request);
+  addHistory(`Rejected ${String(request.requestType || "").toLowerCase()} request`, request.referenceNo || request.customerName);
+  saveState();
+}
+
+async function applyBlockRequestToRecord(request) {
+  const isBlock = String(request.requestType || "").toLowerCase() === "block";
+  const target = String(request.targetType || "").toLowerCase();
+  const id = request.referenceNo || request.customerName;
+  if (target === "shipment") {
+    const shipmentItem = state.shipments.find((row) => row.jobNo === id);
+    if (shipmentItem) {
+      shipmentItem.status = isBlock ? "Blocked" : "Booked";
+      await persistRecord("shipment", shipmentItem);
+    }
+    return;
+  }
+
+  const collectionKey = target === "supplier" ? "suppliers" : "customers";
+  const record = state[collectionKey].find((row) => row.code === id || row.name === id);
+  if (record) {
+    record.status = isBlock ? "Blocked" : "Active";
+    record.isAccountOverdue = isBlock;
+    await persistRecord(collectionKey, record);
+  }
 }
 
 async function approveAdminRequest(request, approvalNotes = "") {
@@ -3252,6 +3522,10 @@ async function handleModuleSubmit(event) {
 }
 
 async function createShipment(data) {
+  if (duplicateRecordExists("shipment", data.jobNo)) {
+    notifyDuplicate(data.jobNo);
+    return false;
+  }
   const record = shipment(
     data.jobNo,
     data.branch,
@@ -3285,6 +3559,10 @@ async function createShipment(data) {
 }
 
 async function createLoad(data) {
+  if (duplicateRecordExists("load", data.loadNo)) {
+    notifyDuplicate(data.loadNo);
+    return false;
+  }
   const jobs = normalizeConsolidationJobs(data.jobNumbers);
   if (!jobs.length) {
     notifyDenied("Consolidation not created", "Add at least one unassigned shipment with service type Consolidation.");
@@ -3300,6 +3578,10 @@ async function createLoad(data) {
 }
 
 async function createParty(key, data) {
+  if (duplicateRecordExists(key, data.code)) {
+    notifyDuplicate(data.code);
+    return false;
+  }
   const record = party(data.code, data.name, data.locationOrLane, data.email, data.terms, data.status, false, data.branch);
   state[key].unshift(record);
   await postRecord(key, record);
@@ -3352,6 +3634,10 @@ async function createUser(data) {
 }
 
 async function createTariff(data) {
+  if (duplicateRecordExists("tariff", data.tariffNo)) {
+    notifyDuplicate(data.tariffNo);
+    return false;
+  }
   const record = tariff(
     data.tariffNo,
     data.customer,
@@ -3374,6 +3660,10 @@ async function createTariff(data) {
 }
 
 async function createDocument(data) {
+  if (duplicateRecordExists("document", data.documentNo)) {
+    notifyDuplicate(data.documentNo);
+    return false;
+  }
   const uploadedName = data.fileUpload && typeof data.fileUpload === "object" ? data.fileUpload.name || "" : "";
   const record = documentRow(data.documentNo, data.linkedNo, data.type, data.status, data.date, data.owner || currentUserName(), uploadedName, currentUserName());
   state.documents.unshift(record);
@@ -3384,6 +3674,10 @@ async function createDocument(data) {
 }
 
 async function createCharge(data) {
+  if (duplicateRecordExists("charge", data.refNo)) {
+    notifyDuplicate(data.refNo);
+    return false;
+  }
   const sessionUser = currentSession()?.userName || "operations";
   const isAdmin = isAdminSession();
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
@@ -3476,6 +3770,10 @@ function chargeLineRef(baseRef, index, count) {
 }
 
 async function createInvoice(data) {
+  if (duplicateRecordExists("invoice", data.invoiceNo)) {
+    notifyDuplicate(data.invoiceNo);
+    return false;
+  }
   const record = invoice(data.invoiceNo, data.customer, data.shipmentNo, Number(data.revenue), Number(data.supplierCost), data.status, data.date);
   state.invoices.unshift(record);
   await postRecord("invoice", record);

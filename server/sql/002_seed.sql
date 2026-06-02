@@ -210,10 +210,13 @@ on conflict (user_name) do update set
     can_view_updated_history = excluded.can_view_updated_history,
     notes = excluded.notes;
 
-insert into unblock_requests (request_no, customer_name, requested_by, reason, status, date)
+insert into unblock_requests (request_no, request_type, target_type, reference_no, customer_name, requested_by, reason, status, date)
 values
-    ('REQ-2605001', 'Desert Medical Supplies', 'operations', 'Credit release requested', 'Pending', '2026-05-05')
+    ('REQ-2605001', 'Unblock', 'Customer', 'CUS-002', 'Desert Medical Supplies', 'operations', 'Credit release requested', 'Pending', '2026-05-05')
 on conflict (request_no) do update set
+    request_type = excluded.request_type,
+    target_type = excluded.target_type,
+    reference_no = excluded.reference_no,
     customer_name = excluded.customer_name,
     requested_by = excluded.requested_by,
     reason = excluded.reason,
