@@ -653,7 +653,23 @@ label {
 }
 
 .table-wrap {
-  overflow-x: auto;
+  max-height: min(620px, calc(100vh - 260px));
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.table-wrap table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid var(--line-strong);
+  background: #fff;
 }
 
 .audit-scroll {
@@ -1048,13 +1064,44 @@ th {
 
 .job-list-row {
   display: grid;
-  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto;
   gap: 12px;
-  align-items: center;
+  align-items: start;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fbfdff;
+}
+
+.job-list-main,
+.job-list-detail-grid {
+  min-width: 0;
+}
+
+.job-list-main {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.job-list-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.job-list-detail-grid span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.job-list-detail-grid strong {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
 }
 
 .record-dialog {
@@ -1149,6 +1196,10 @@ th {
   .filter-status {
     grid-column: 1 / -1;
   }
+
+  .job-list-detail-grid {
+    grid-template-columns: repeat(3, minmax(120px, 1fr));
+  }
 }
 
 @media (max-width: 920px) {
@@ -1196,6 +1247,10 @@ th {
 
   .job-list-row {
     grid-template-columns: 1fr;
+  }
+
+  .job-list-detail-grid {
+    grid-template-columns: repeat(2, minmax(110px, 1fr));
   }
 
   .tariff-charge-entry,

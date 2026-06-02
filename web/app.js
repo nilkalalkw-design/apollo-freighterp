@@ -1503,8 +1503,22 @@ function consolidationJobRow(loadNo, jobNo) {
   }
 
   return `<div class="job-list-row">
-    <button type="button" class="ghost-button inline-link" data-action="open" data-type="shipment" data-id="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button>
-    <span>${escapeHtml(shipmentItem.customer)} | ${escapeHtml(shipmentItem.status)} | ${escapeHtml(shipmentItem.destination)}</span>
+    <div class="job-list-main">
+      <button type="button" class="ghost-button inline-link" data-action="open" data-type="shipment" data-id="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button>
+      <span class="status-badge neutral">${escapeHtml(shipmentItem.status)}</span>
+    </div>
+    <div class="job-list-detail-grid">
+      <span><strong>Customer</strong>${escapeHtml(shipmentItem.customer)}</span>
+      <span><strong>Route</strong>${escapeHtml(shipmentItem.origin)} to ${escapeHtml(shipmentItem.destination)}</span>
+      <span><strong>Service</strong>${escapeHtml(shipmentItem.shipmentDirection)} / ${escapeHtml(shipmentItem.shipmentService)}</span>
+      <span><strong>Pieces</strong>${escapeHtml(shipmentItem.pieces)}</span>
+      <span><strong>Actual KG</strong>${money(shipmentItem.actualKg)}</span>
+      <span><strong>CBM</strong>${money(shipmentItem.cbm)}</span>
+      <span><strong>Chargeable KG</strong>${money(shipmentItem.chargeableKg)}</span>
+      <span><strong>POD</strong>${escapeHtml(shipmentItem.podStatus)}</span>
+      <span><strong>Invoice</strong>${escapeHtml(shipmentItem.invoiceStatus)}</span>
+      <span><strong>Sell / Cost</strong>${money(shipmentItem.sell)} / ${money(shipmentItem.buyCost)}</span>
+    </div>
     ${removeButton}
   </div>`;
 }
