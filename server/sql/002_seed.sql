@@ -289,6 +289,7 @@ on conflict (ref_no) do update set
 insert into app_settings (
     settings_key,
     company_name,
+    company_logo_url,
     shipment_number_format,
     invoice_number_format,
     default_volumetric_divisor,
@@ -297,7 +298,7 @@ insert into app_settings (
     dropdown_options
 )
 values
-    ('default', 'APOLLO FREIGHT SOLUTIONS', 'AFS-SI###', 'INV-YY###', '5000', 'Yes', 'Kuwait 1, Dubai 2', '{}')
+    ('default', 'APOLLO FREIGHT SOLUTIONS', '', 'AFS-SI###', 'INV-YY###', '5000', 'Yes', 'Kuwait 1, Dubai 2', '{}')
 on conflict (settings_key) do nothing;
 
 insert into audit_log (date_time, user_name, action, reference, details)

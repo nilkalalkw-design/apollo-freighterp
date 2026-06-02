@@ -233,6 +233,7 @@ const demoRows = {
       id: 1,
       settings_key: "default",
       company_name: "APOLLO FREIGHT SOLUTIONS",
+      company_logo_url: "",
       shipment_number_format: "AFS-SI###",
       invoice_number_format: "INV-YY###",
       default_volumetric_divisor: "5000",
@@ -463,6 +464,7 @@ const resources = {
     fields: [
       field("settings_key", ["settingsKey", "settings_key"]),
       field("company_name", ["companyName", "company_name"]),
+      field("company_logo_url", ["companyLogoUrl", "company_logo_url"]),
       field("shipment_number_format", ["shipmentNumberFormat", "shipment_number_format"]),
       field("invoice_number_format", ["invoiceNumberFormat", "invoice_number_format"]),
       field("consolidation_number_format", ["consolidationNumberFormat", "consolidation_number_format"]),

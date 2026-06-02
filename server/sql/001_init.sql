@@ -269,6 +269,7 @@ create table if not exists app_settings (
     id bigserial primary key,
     settings_key text not null unique default 'default',
     company_name text not null default 'APOLLO FREIGHT SOLUTIONS',
+    company_logo_url text not null default '',
     shipment_number_format text not null default 'AFS-SI###',
     invoice_number_format text not null default 'INV-YY###',
     consolidation_number_format text not null default 'CON-YY###',
@@ -296,6 +297,7 @@ alter table app_settings add column if not exists consolidation_number_format te
 alter table app_settings add column if not exists customer_number_format text not null default 'CUS-###';
 alter table app_settings add column if not exists additional_charge_number_format text not null default 'CHG-YY###';
 alter table app_settings add column if not exists supplier_number_format text not null default 'TRN-###';
+alter table app_settings add column if not exists company_logo_url text not null default '';
 alter table app_settings add column if not exists dropdown_options text not null default '{}';
 
 create table if not exists shipment_status_history (

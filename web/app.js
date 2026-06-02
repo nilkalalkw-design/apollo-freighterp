@@ -156,6 +156,7 @@ function seedState() {
     settings: {
       settingsKey: "default",
       companyName: "APOLLO FREIGHT SOLUTIONS",
+      companyLogoUrl: "",
       shipmentNumberFormat: "AFS-SI###",
       invoiceNumberFormat: "INV-YY###",
       consolidationNumberFormat: "CON-YY###",
@@ -998,6 +999,7 @@ function apiSettings(row) {
   return {
     settingsKey: row.settings_key || state.settings.settingsKey || "default",
     companyName: row.company_name || state.settings.companyName,
+    companyLogoUrl: row.company_logo_url || state.settings.companyLogoUrl || "",
     shipmentNumberFormat: row.shipment_number_format || state.settings.shipmentNumberFormat,
     invoiceNumberFormat: row.invoice_number_format || state.settings.invoiceNumberFormat,
     consolidationNumberFormat: row.consolidation_number_format || state.settings.consolidationNumberFormat,
@@ -1341,6 +1343,7 @@ function renderSettings() {
         </div>
         ${settingsOpen ? `<form class="stack-form" data-form="settings">
           ${input("companyName", "Company Name", state.settings.companyName)}
+          ${input("companyLogoUrl", "Company Logo URL", state.settings.companyLogoUrl || "")}
           ${input("shipmentNumberFormat", "Shipment Number Format", state.settings.shipmentNumberFormat)}
           ${input("invoiceNumberFormat", "Invoice Number Format", state.settings.invoiceNumberFormat)}
           ${input("consolidationNumberFormat", "Consolidation Number Format", state.settings.consolidationNumberFormat)}
@@ -2942,7 +2945,10 @@ function parseTariffChargeLines(value) {
   }
 }
 
-function tariffChargeTable(lines, total, grandTotal) {
+function tariffChargeTable(lines, total, grandTotal, showActions = true) {
+  const actionHeader = showActions ? "<th>Button</th>" : "";
+  const footerAction = showActions ? "<th></th>" : "";
+  const emptyColspan = showActions ? 6 : 5;
   const rows = lines.length
     ? lines.map((line, index) => `<tr>
         <td>${index + 1}</td>
@@ -2950,15 +2956,15 @@ function tariffChargeTable(lines, total, grandTotal) {
         <td>${money(line.quotation)}</td>
         <td>${escapeHtml(line.units)}</td>
         <td>${money(line.total)}</td>
-        <td><button type="button" class="ghost-button" data-remove-tariff-charge="${index}">Remove</button></td>
+        ${showActions ? `<td><button type="button" class="ghost-button" data-remove-tariff-charge="${index}">Remove</button></td>` : ""}
       </tr>`).join("")
-    : `<tr><td colspan="6" class="empty-state">No additional charges added.</td></tr>`;
+    : `<tr><td colspan="${emptyColspan}" class="empty-state">No additional charges added.</td></tr>`;
   return `<div class="table-wrap"><table class="tariff-charges-table">
-    <thead><tr><th>Sr no</th><th>Description</th><th>Quotation per unit</th><th>Units</th><th>Total</th><th>Button</th></tr></thead>
+    <thead><tr><th>Sr no</th><th>Description</th><th>Quotation per unit</th><th>Units</th><th>Total</th>${actionHeader}</tr></thead>
     <tbody>${rows}</tbody>
     <tfoot>
-      <tr><th colspan="4">Total for additional charges</th><th>${money(total)}</th><th></th></tr>
-      <tr><th colspan="4">Grand total</th><th>${money(grandTotal)}</th><th></th></tr>
+      <tr><th colspan="4">Total for additional charges</th><th>${money(total)}</th>${footerAction}</tr>
+      <tr><th colspan="4">Grand total</th><th>${money(grandTotal)}</th>${footerAction}</tr>
     </tfoot>
   </table></div>`;
 }
@@ -3194,8 +3200,22 @@ function invoiceDocumentHtml(record) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === record.shipmentNo);
   return documentShell(
     `Bill ${record.invoiceNo}`,
+    "Tax Invoice / Bill",
+    record.invoiceNo,
+    record.date,
     `
-      <h1>Bill / Invoice</h1>
+      <section class="document-summary">
+        <div>
+          <span>Bill To</span>
+          <strong>${escapeHtml(record.customer)}</strong>
+          <small>Shipment ${escapeHtml(record.shipmentNo)}</small>
+        </div>
+        <div>
+          <span>Amount</span>
+          <strong>${money(record.revenue)}</strong>
+          <small>Status: ${escapeHtml(record.status)}</small>
+        </div>
+      </section>
       <section class="meta">
         <p><strong>Invoice No</strong><span>${escapeHtml(record.invoiceNo)}</span></p>
         <p><strong>Date</strong><span>${escapeHtml(record.date)}</span></p>
@@ -3216,8 +3236,22 @@ function tariffDocumentHtml(record) {
   const charges = parseTariffChargeLines(record.additionalChargesJson || "[]");
   return documentShell(
     `Tariff ${record.tariffNo}`,
+    "Tariff Quotation",
+    record.tariffNo,
+    today(),
     `
-      <h1>Tariff</h1>
+      <section class="document-summary">
+        <div>
+          <span>Customer</span>
+          <strong>${escapeHtml(record.customer)}</strong>
+          <small>${escapeHtml(record.origin)} to ${escapeHtml(record.destination)}</small>
+        </div>
+        <div>
+          <span>Grand Total</span>
+          <strong>${money(record.grandTotal)}</strong>
+          <small>Minimum charge ${money(record.minCharge)}</small>
+        </div>
+      </section>
       <section class="meta">
         <p><strong>Tariff Number</strong><span>${escapeHtml(record.tariffNo)}</span></p>
         <p><strong>Customer</strong><span>${escapeHtml(record.customer)}</span></p>
@@ -3230,31 +3264,84 @@ function tariffDocumentHtml(record) {
         <p><strong>Minimum Charge</strong><span>${money(record.minCharge)}</span></p>
       </section>
       <h2>Additional Charges</h2>
-      ${tariffChargeTable(charges, Number(record.additionalChargesTotal || 0), Number(record.grandTotal || 0))}
+      ${tariffChargeTable(charges, Number(record.additionalChargesTotal || 0), Number(record.grandTotal || 0), false)}
     `
   );
 }
 
-function documentShell(title, body) {
+function documentShell(title, documentLabel, documentNo, documentDate, body) {
+  const printedAt = new Date().toLocaleString();
+  const generatedBy = currentUserName();
+  const companyName = state.settings.companyName || "APOLLO FREIGHT SOLUTIONS";
+  const logoUrl = String(state.settings.companyLogoUrl || "").trim();
+  const logoMarkup = logoUrl
+    ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(companyName)} logo" />`
+    : `<span>AFS</span>`;
   return `<!doctype html>
   <html>
     <head>
       <title>${escapeHtml(title)}</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 32px; color: #16202a; }
-        h1 { margin: 0 0 18px; }
-        h2 { margin-top: 24px; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #edf2f7; color: #172033; font-family: Arial, sans-serif; }
+        .page { max-width: 920px; min-height: 100vh; margin: 0 auto; background: #fff; box-shadow: 0 20px 55px rgba(22, 32, 51, .16); }
+        .toolbar { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; background: #f8fafc; border-bottom: 1px solid #dbe5ef; }
+        button { border: 0; border-radius: 6px; padding: 10px 14px; background: #165c7d; color: #fff; font-weight: 700; cursor: pointer; }
+        .document-head { display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 28px 34px; color: #fff; background: linear-gradient(135deg, #114b67, #1f7a8c); }
+        .brand { display: flex; align-items: center; gap: 16px; }
+        .logo { display: grid; place-items: center; width: 74px; height: 74px; border-radius: 12px; background: #fff; color: #165c7d; font-size: 22px; font-weight: 800; overflow: hidden; }
+        .logo img { width: 100%; height: 100%; object-fit: contain; padding: 8px; }
+        h1 { margin: 0; font-size: 28px; letter-spacing: 0; }
+        .brand p, .doc-meta p { margin: 4px 0 0; color: #dceef4; }
+        .doc-meta { text-align: right; min-width: 210px; }
+        .doc-meta strong { display: block; color: #fff; font-size: 20px; }
+        main { padding: 28px 34px 34px; }
+        .document-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 22px; }
+        .document-summary div { padding: 18px; border-left: 5px solid #1f7a8c; background: #f5f9fb; }
+        .document-summary span, .meta strong, th, .signature span { color: #5d6c7b; text-transform: uppercase; font-size: 11px; font-weight: 800; letter-spacing: 0; }
+        .document-summary strong { display: block; margin-top: 7px; color: #172033; font-size: 22px; }
+        .document-summary small { display: block; margin-top: 5px; color: #607080; }
+        h2 { margin: 26px 0 8px; color: #114b67; }
         .meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
-        .meta p { display: grid; gap: 4px; margin: 0; padding: 10px; border: 1px solid #dde4ec; }
-        strong, th { color: #687582; text-transform: uppercase; font-size: 11px; text-align: left; }
+        .meta p { display: grid; gap: 5px; margin: 0; padding: 12px; border: 1px solid #dbe5ef; background: #fbfdff; }
         table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-        th, td { border: 1px solid #dde4ec; padding: 9px; }
-        @media print { button { display: none; } body { margin: 18mm; } }
+        th { background: #eaf3f7; text-align: left; }
+        th, td { border: 1px solid #dbe5ef; padding: 10px; }
+        tfoot th { background: #f4f8fb; color: #172033; font-size: 13px; }
+        .signature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 48px; }
+        .signature { min-height: 86px; border-top: 1px solid #718093; padding-top: 10px; }
+        .signature strong { display: block; margin-top: 5px; }
+        .footer-note { margin-top: 26px; padding-top: 14px; border-top: 1px solid #dbe5ef; color: #607080; font-size: 12px; text-align: center; }
+        @media print { body { background: #fff; } .toolbar { display: none; } .page { max-width: none; box-shadow: none; } main { padding-bottom: 18mm; } }
       </style>
     </head>
     <body>
-      <button onclick="window.print()">Print / Save PDF</button>
-      ${body}
+      <div class="page">
+        <div class="toolbar"><button onclick="window.print()">Print / Save PDF</button></div>
+        <header class="document-head">
+          <div class="brand">
+            <div class="logo">${logoMarkup}</div>
+            <div>
+              <h1>${escapeHtml(companyName)}</h1>
+              <p>Freight, logistics and customs documentation</p>
+            </div>
+          </div>
+          <div class="doc-meta">
+            <strong>${escapeHtml(documentLabel)}</strong>
+            <p>No: ${escapeHtml(documentNo)}</p>
+            <p>Date: ${escapeHtml(documentDate)}</p>
+          </div>
+        </header>
+        <main>
+          ${body}
+          <section class="signature-grid">
+            <div class="signature"><span>Generated By</span><strong>${escapeHtml(generatedBy)}</strong></div>
+            <div class="signature"><span>Receiver Sign</span><strong>&nbsp;</strong></div>
+            <div class="signature"><span>Authorized Signature</span><strong>&nbsp;</strong></div>
+          </section>
+          <p class="footer-note">Printed date and time: ${escapeHtml(printedAt)}</p>
+        </main>
+      </div>
     </body>
   </html>`;
 }
