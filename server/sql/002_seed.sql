@@ -1,11 +1,12 @@
-insert into customers (code, name, location_or_lane, email, terms, status, is_account_overdue, branch, credit_limit)
+insert into customers (code, name, location_or_lane, full_address, email, terms, status, is_account_overdue, branch, credit_limit)
 values
-    ('CUS-001', 'Gulf Retail Trading', 'Kuwait City', 'ops@gulf-retail.example', '30 days', 'Active', false, 'Branch 1', 5000),
-    ('CUS-002', 'Desert Medical Supplies', 'Shuwaikh', 'logistics@desert-med.example', '15 days', 'Active', true, 'Branch 2', 2500),
-    ('CUS-003', 'Al Noor Projects', 'Ahmadi', 'cargo@alnoor.example', '45 days', 'Active', false, 'Branch 1', 7500)
+    ('CUS-001', 'Gulf Retail Trading', 'Kuwait City', 'Kuwait City, Kuwait', 'ops@gulf-retail.example', '30 days', 'Active', false, 'Branch 1', 5000),
+    ('CUS-002', 'Desert Medical Supplies', 'Shuwaikh', 'Shuwaikh Industrial Area, Kuwait', 'logistics@desert-med.example', '15 days', 'Active', true, 'Branch 2', 2500),
+    ('CUS-003', 'Al Noor Projects', 'Ahmadi', 'Ahmadi, Kuwait', 'cargo@alnoor.example', '45 days', 'Active', false, 'Branch 1', 7500)
 on conflict (code) do update set
     name = excluded.name,
     location_or_lane = excluded.location_or_lane,
+    full_address = excluded.full_address,
     email = excluded.email,
     terms = excluded.terms,
     status = excluded.status,
@@ -196,7 +197,7 @@ insert into app_users (
 )
 values
     ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'All', 'admin123', true, true, true, true, 'System temporary admin'),
-    ('ops-branch1', 'operations.branch1@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', 'Dashboard, Shipments / Jobs, Consolidation, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'ops123', false, true, false, false, 'Can create and track Branch 1 shipments'),
+    ('ops-branch1', 'operations.branch1@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', 'Dashboard, Shipment / Airway, Consolidation, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'ops123', false, true, false, false, 'Can create and track Branch 1 shipments'),
     ('billing-branch2', 'billing.branch2@apollofreightsolution.com', 'Billing', 'Active', 'Branch 2', 'Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports', 'billing123', true, false, true, true, 'Invoice and finance access for Branch 2')
 on conflict (user_name) do update set
     email = excluded.email,

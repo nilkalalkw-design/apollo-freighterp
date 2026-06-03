@@ -4,7 +4,7 @@ const SESSION_KEY = "apollofreighterp-session";
 
 const modules = [
   ["Dashboard", "Live operational summary for land freight consolidation"],
-  ["Shipments / Jobs", "Create, price, track, duplicate, and close cargo jobs"],
+  ["Shipment / Airway", "Create, track, duplicate, and close cargo shipments and airway bills"],
   ["Consolidation", "Build trips, manifests, and loading lists"],
   ["Customers", "Customer master data and account controls"],
   ["Suppliers / Transporters", "Supplier and transporter lane master"],
@@ -140,7 +140,7 @@ function seedState() {
     ],
     users: [
       user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All", true, true, true, true, "admin123", "System temporary admin"),
-      user("ops-branch1", "operations.branch1@apollofreightsolution.com", "Operations", "Active", "Branch 1", "Dashboard, Shipments / Jobs, Consolidation, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Branch 1 shipments"),
+      user("ops-branch1", "operations.branch1@apollofreightsolution.com", "Operations", "Active", "Branch 1", "Dashboard, Shipment / Airway, Consolidation, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Branch 1 shipments"),
       user("billing-branch2", "billing.branch2@apollofreightsolution.com", "Billing", "Active", "Branch 2", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Branch 2")
     ],
     unblockRequests: [
@@ -216,8 +216,8 @@ function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumber
   return { loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, createdBy };
 }
 
-function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName()) {
-  return { code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy, createdDate: new Date().toISOString().slice(0, 10) };
+function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName(), fullAddress = "") {
+  return { code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, fullAddress, createdBy, createdDate: new Date().toISOString().slice(0, 10) };
 }
 
 function tariff(tariffNo, customer, origin, destination, mainSection, weightSection, minUpTo, rate, minCharge, additionalChargesJson = "[]", additionalChargesTotal = 0, grandTotal = 0, createdBy = currentUserName()) {
@@ -578,14 +578,14 @@ function visibleModules() {
     const allowedSections = new Set(
       configured
         .split(",")
-        .map((item) => item.trim())
+        .map((item) => normalizeModuleName(item.trim()))
         .filter(Boolean)
     );
     return modules.filter(([name]) => allowedSections.has(name));
   }
   const allowed = new Set([
     "Dashboard",
-    "Shipments / Jobs",
+    "Shipment / Airway",
     "Consolidation",
     "Customers",
     "Suppliers / Transporters",
@@ -594,6 +594,10 @@ function visibleModules() {
     "Reports"
   ]);
   return modules.filter(([name]) => allowed.has(name));
+}
+
+function normalizeModuleName(name) {
+  return name === "Shipments / Jobs" ? "Shipment / Airway" : name;
 }
 
 function renderModuleNav() {
@@ -670,7 +674,7 @@ function notifyFailed(title, detail = "") {
 }
 
 function openShipmentWorkspace() {
-  activeModule = "Shipments / Jobs";
+  activeModule = "Shipment / Airway";
   render();
   setTimeout(() => {
     openNewDialog("shipment");
@@ -871,11 +875,11 @@ function apiLoad(row) {
 }
 
 function apiCustomer(row) {
-  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin");
+  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin", row.full_address || "");
 }
 
 function apiSupplier(row) {
-  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin");
+  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin", row.full_address || "");
 }
 
 function apiTariff(row) {
@@ -1033,7 +1037,7 @@ function render() {
 
   const renderers = {
     Dashboard: renderDashboard,
-    "Shipments / Jobs": renderShipments,
+    "Shipment / Airway": renderShipments,
     Consolidation: renderConsolidation,
     Customers: () => renderParties("customers", "Customer"),
     "Suppliers / Transporters": () => renderParties("suppliers", "Supplier / Transporter"),
@@ -1336,7 +1340,7 @@ function renderSettings() {
       ${moduleActionPanel("User / Permission Actions", "user", "Admin users can open separate New and Load windows for staff accounts and permissions.")}
     </section>
     ${adminDeletePanel("user", "User Account", "Deleting a user removes the login from the live database. The current logged-in admin cannot delete itself.")}
-    <section class="split-grid">
+    <section class="split-grid single-panel">
       <article class="panel">${panelHeader("Company Settings", "System")}
         <div class="action-row">
           <button type="button" data-action="toggle-settings">${settingsOpen ? "Close Settings" : "Open / Update Settings"}</button>
@@ -1356,12 +1360,6 @@ function renderSettings() {
           <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | consolidation: ${escapeHtml(nextConsolidationNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
-      </article>
-      <article class="panel">${panelHeader("Pending Approvals", "Admin")}
-        <div class="alert-list">
-          ${alert("Pending admin requests", `${state.adminRequests.filter((row) => row.status === "Pending").length} request(s) waiting for approval.`)}
-          ${alert("Pending unblock requests", `${state.unblockRequests.filter((row) => row.status === "Pending").length} request(s) waiting for approval.`)}
-        </div>
       </article>
     </section>`;
 }
@@ -1385,12 +1383,15 @@ function renderAudit() {
 }
 
 function moduleActionPanel(title, type, note, extra = "") {
+  const newButtons = type === "shipment"
+    ? `<button type="button" data-action="new-record" data-type="shipment">New Shipment</button><button type="button" class="secondary-button" data-action="new-record" data-type="shipment">New Airway</button>`
+    : `<button type="button" data-action="new-record" data-type="${escapeHtml(type)}">New</button>`;
   return `<article class="panel">${panelHeader(title, "New / Load")}
     <div class="action-stack">
       <p class="empty-state">${escapeHtml(note)}</p>
       ${newRecordSelectorMarkup(type)}
       <div class="action-row">
-        <button type="button" data-action="new-record" data-type="${escapeHtml(type)}">New</button>
+        ${newButtons}
       </div>
       ${loadSelectorMarkup(type)}
       <div class="action-row">
@@ -1434,7 +1435,7 @@ function newRecordSelectorMarkup(type, label = "New Entry Option") {
 
 function newRecordOptions(type) {
   const labels = {
-    shipment: "New Shipment",
+    shipment: "New Shipment / Airway",
     load: "New Consolidation",
     customers: "New Customer",
     suppliers: "New Supplier / Transporter",
@@ -1477,7 +1478,7 @@ function deleteSelectorMarkup(type, label = "Record To Delete") {
 
 function loadOptionLabel(type, row) {
   if (type === "shipment" || type === "status" || type === "pod") {
-    return `${row.jobNo} | ${row.customer} | ${row.status}`;
+    return shipmentOptionLabel(row);
   }
 
   if (type === "load") {
@@ -1497,6 +1498,14 @@ function loadOptionLabel(type, row) {
   }
 
   return rowId(type, row);
+}
+
+function shipmentOptions() {
+  return visibleRows(state.shipments).map((row) => ({ value: row.jobNo, label: shipmentOptionLabel(row) }));
+}
+
+function shipmentOptionLabel(row) {
+  return `${row.jobNo} | ${row.customer} | ${row.origin} to ${row.destination}`;
 }
 
 function consolidationJobsPanel(loadItem) {
@@ -1848,8 +1857,8 @@ function textarea(name, label, value = "", readonly = false, rows = 4) {
   return `<label>${escapeHtml(label)}<textarea name="${escapeHtml(name)}" rows="${rows}" ${readonly ? "readonly" : ""}>${escapeHtml(value)}</textarea></label>`;
 }
 
-function checkbox(name, label, checked = false) {
-  return `<label class="checkbox-field"><input name="${escapeHtml(name)}" type="checkbox" ${checked ? "checked" : ""} /><span>${escapeHtml(label)}</span></label>`;
+function checkbox(name, label, checked = false, value = "on") {
+  return `<label class="checkbox-field"><input name="${escapeHtml(name)}" type="checkbox" value="${escapeHtml(value)}" ${checked ? "checked" : ""} /><span>${escapeHtml(label)}</span></label>`;
 }
 
 function select(name, label, options, selected = options[0]) {
@@ -1857,7 +1866,15 @@ function select(name, label, options, selected = options[0]) {
 }
 
 function selectFrom(name, label, options, value = options[0] || "") {
-  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(value)}" /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(option)}"></option>`).join("")}</datalist></label>`;
+  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(optionValue(value))}" /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
+}
+
+function optionValue(option) {
+  return typeof option === "object" && option ? option.value || "" : option || "";
+}
+
+function optionLabel(option) {
+  return typeof option === "object" && option ? option.label || option.value || "" : option || "";
 }
 
 function dropdownOptions(key, defaults = []) {
@@ -1945,7 +1962,7 @@ function loadColumns() {
 }
 
 function partyColumns() {
-  return [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]];
+  return [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["fullAddress", "Full Address"], ["email", "Email"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]];
 }
 
 function tariffColumns() {
@@ -2213,6 +2230,9 @@ function notifyDuplicate(id) {
 function detailFieldControl(type, key, value, record) {
   const readonlyKeys = new Set(["jobNo", "loadNo", "code", "tariffNo", "documentNo", "invoiceNo", "refNo", "userName", "requestNo"]);
   const options = detailFieldOptions(type, key, record);
+  if (type === "shipment" && ["sell", "buyCost"].includes(key)) {
+    return "";
+  }
   if (type === "tariff" && key === "additionalChargesJson") {
     return tariffAdditionalChargesBuilder(value || "[]");
   }
@@ -2267,7 +2287,7 @@ function detailFieldOptions(type, key, record) {
   if (key === "weightSection") return dropdownOptions("weightSection", ["Minimum", "Up to 100 KG", "300 KG", "500 KG", "1000 KG", "More"]);
   if (key === "minUpTo") return dropdownOptions("minUpTo", ["Minimum", "100 KG", "300 KG", "500 KG", "1000 KG", "More"]);
   if (key === "supplier") return state.suppliers.map((row) => row.name);
-  if (key === "shipmentNo" || key === "linkedNo") return visibleRows(state.shipments).map((row) => row.jobNo);
+  if (key === "shipmentNo" || key === "linkedNo" || key === "jobNo") return shipmentOptions();
   if (type === "load" && key === "jobNumbers") return [];
   return common[key] || [];
 }
@@ -2431,7 +2451,7 @@ function openStatusDialog(jobNo = "") {
     title: jobNo ? `Shipment Status - ${jobNo}` : "Shipment Status Update",
     typeLabel: "Status",
     body: `
-      ${selectFrom("jobNo", "Job No", visibleRows(state.shipments).map((row) => row.jobNo), shipmentItem?.jobNo || "")}
+      ${selectFrom("jobNo", "Shipment No", shipmentOptions(), shipmentItem?.jobNo || "")}
       ${select("status", "Shipment Status", statusOptions(), shipmentItem?.status || "Booked")}
       ${select("podStatus", "POD Status", ["Pending", "Uploaded", "Missing", "Disputed", "Approved"], shipmentItem?.podStatus || "Pending")}
       ${select("invoiceStatus", "Invoice Status", ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue"], shipmentItem?.invoiceStatus || "Unbilled")}
@@ -2453,7 +2473,7 @@ function openPodDialog(jobNo = "") {
     title: jobNo ? `POD / Delivery - ${jobNo}` : "Delivery Update",
     typeLabel: "POD",
     body: `
-      ${selectFrom("jobNo", "Shipment No", visibleRows(state.shipments).map((row) => row.jobNo), jobNo || visibleRows(state.shipments)[0]?.jobNo || "")}
+      ${selectFrom("jobNo", "Shipment No", shipmentOptions(), jobNo || visibleRows(state.shipments)[0]?.jobNo || "")}
       ${input("receiver", "Receiver", "Receiver Name")}
     `,
     saveLabel: "Mark Delivered + Upload POD",
@@ -2556,7 +2576,7 @@ function dialogConfigFor(type) {
       saveLabel: "Save Document Tag",
       body: `
         ${input("documentNo", "Document No", nextNumber("DOC", state.documents, "documentNo"), true)}
-        ${selectFrom("linkedNo", "Attach To", visibleRows(state.shipments).map((row) => row.jobNo))}
+        ${selectFrom("linkedNo", "Attach To", shipmentOptions())}
         ${select("type", "Document Type", ["Waybill", "LR", "CMR", "Commercial Invoice", "Packing List", "POD", "Supplier Invoice"])}
         ${select("status", "Status", ["Uploaded", "Attached", "Missing", "Issued", "Stored", "Replaced"])}
         ${input("date", "Date", today(), false, "date")}
@@ -2580,20 +2600,22 @@ function dialogConfigFor(type) {
       body: `
         ${input("invoiceNo", "Invoice No", nextInvoiceNumber(), true)}
         ${selectFrom("customer", "Customer", state.customers.map((row) => row.name))}
-        ${selectFrom("shipmentNo", "Shipment", visibleRows(state.shipments).map((row) => row.jobNo))}
+        ${selectFrom("shipmentNo", "Shipment", shipmentOptions())}
+        ${input("tariffNo", "Assigned Tariff", "", true)}
         ${input("revenue", "Revenue", "100.000", false, "number")}
         ${input("supplierCost", "Supplier Cost", "70.000", false, "number")}
         ${select("status", "Status", ["Draft", "Approved", "Sent", "Paid", "Overdue"])}
         ${input("date", "Date", today(), false, "date")}
       `,
-      onSave: createInvoice
+      onSave: createInvoice,
+      afterOpen: bindInvoiceShipmentTariff
     },
     pod: {
       title: "Delivery Update",
       typeLabel: "POD",
       saveLabel: "Mark Delivered + Upload POD",
       body: `
-        ${selectFrom("jobNo", "Shipment No", visibleRows(state.shipments).map((row) => row.jobNo))}
+        ${selectFrom("jobNo", "Shipment No", shipmentOptions())}
         ${input("receiver", "Receiver", "Receiver Name")}
       `,
       onSave: updatePod
@@ -2603,7 +2625,7 @@ function dialogConfigFor(type) {
       typeLabel: "Status",
       saveLabel: "Update Shipment Status",
       body: `
-        ${selectFrom("jobNo", "Job No", visibleRows(state.shipments).map((row) => row.jobNo))}
+        ${selectFrom("jobNo", "Shipment No", shipmentOptions())}
         ${select("status", "Shipment Status", statusOptions())}
         ${select("podStatus", "POD Status", ["Pending", "Uploaded", "Missing", "Disputed", "Approved"])}
         ${select("invoiceStatus", "Invoice Status", ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue"])}
@@ -2632,6 +2654,7 @@ function partyDialogConfig(key, label) {
       ${input("code", `${label} Code`, key === "customers" ? nextCustomerNumber() : nextSupplierNumber(), true)}
       ${input("name", "Name", "")}
       ${input("locationOrLane", "Lane / Location", "")}
+      ${key === "customers" ? textarea("fullAddress", "Full Address / Shipping Delivery Address", "", false, 3) : ""}
       ${input("email", "Contact Email", "", false, "email")}
       ${select("terms", "Credit Limit Days", ["15 days", "30 days", "45 days"])}
       ${select("status", "Status", ["Active", "Inactive", "Blocked"])}
@@ -2643,7 +2666,7 @@ function partyDialogConfig(key, label) {
 
 function shipmentDialogBody() {
   return `
-    ${input("jobNo", "Job Number", nextShipmentNumber(), true)}
+    ${input("jobNo", "Shipment Number", nextShipmentNumber(), true)}
     ${input("airwayBillNo", "Airway Bill Number", nextNumber("AWB", state.shipments, "jobNo"))}
     ${select("branch", "Branch", branchOptions())}
     ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), "Export")}
@@ -2660,14 +2683,13 @@ function shipmentDialogBody() {
     ${input("cbm", "Volume CBM", "1.0", false, "number")}
     ${input("chargeableKg", "Chargeable Weight KG", "200", false, "number")}
     ${select("transitDays", "Transit Time in Days", Array.from({ length: 30 }, (_, index) => String(index + 1)), "3")}
-    ${input("sell", "Sell Price", "100.000", false, "number")}
-    ${input("buyCost", "Supplier Cost", "70.000", false, "number")}
     ${checkbox("invoiceAttached", "Invoice attached")}
     ${checkbox("packingListAttached", "PL attached")}
   `;
 }
 
 function userDialogBody() {
+  const checkedSections = new Set(["Dashboard", "Shipment / Airway", "Reports"]);
   return `
     ${input("userName", "User Name", "")}
     ${passwordField("password", "Password", "")}
@@ -2675,13 +2697,20 @@ function userDialogBody() {
     ${select("role", "User Role", roleOptions(), "Operations")}
     ${select("accountStatus", "User Account", accountStatusOptions(), "Active")}
     ${select("branchAccess", "Branch Access", branchAccessOptions(), branchOptions()[0])}
-    ${input("sectionAccess", "Section Access", "Dashboard, Shipments / Jobs, Reports")}
+    ${sectionAccessCheckboxes(checkedSections)}
     ${checkbox("canViewAllEntry", "User can view all entry")}
     ${checkbox("canViewOnlySelfEntry", "User can view only self entry", true)}
     ${checkbox("canEditAllEntry", "User can edit all entry")}
     ${checkbox("canViewUpdatedHistory", "User can view updated history", true)}
     ${input("notes", "Notes", "Created from admin panel")}
   `;
+}
+
+function sectionAccessCheckboxes(checkedSections = new Set()) {
+  return `<fieldset class="section-access-grid">
+    <legend>Menu Access Permissions</legend>
+    ${modules.map(([name]) => checkbox("sectionAccessList", name, checkedSections.has(name), name)).join("")}
+  </fieldset>`;
 }
 
 function openBlockRequestDialog(record) {
@@ -2718,7 +2747,7 @@ function chargeDialogBody() {
   const invoiceOptions = ["", ...state.invoices.map((row) => row.invoiceNo)];
   return `
     ${input("refNo", "Receipt / Reference No", nextAdditionalChargeNumber(), true)}
-    ${selectFrom("shipmentNo", "Shipment No", visibleRows(state.shipments).map((row) => row.jobNo))}
+    ${selectFrom("shipmentNo", "Shipment No", shipmentOptions())}
     ${input("chargeDate", "Charge Date", today(), false, "date")}
     ${selectFrom("supplier", "Supplier / Vendor", state.suppliers.map((row) => row.name))}
     ${input("referenceNo", "Reference No", "")}
@@ -3025,10 +3054,47 @@ function bindConsolidationJobPicker() {
 function collectFormValues(form) {
   const formData = new FormData(form);
   const data = Object.fromEntries(formData.entries());
+  if (form.querySelectorAll("input[name='sectionAccessList']").length) {
+    data.sectionAccess = formData.getAll("sectionAccessList").join(", ") || "Dashboard";
+  }
   form.querySelectorAll("input[type='checkbox'][name]").forEach((input) => {
+    if (input.name === "sectionAccessList") return;
     data[input.name] = input.checked;
   });
   return data;
+}
+
+function bindInvoiceShipmentTariff() {
+  const shipmentField = dialogBody.querySelector("input[name='shipmentNo']");
+  const customerField = dialogBody.querySelector("input[name='customer']");
+  const tariffField = dialogBody.querySelector("input[name='tariffNo']");
+  const revenueField = dialogBody.querySelector("input[name='revenue']");
+  const supplierCostField = dialogBody.querySelector("input[name='supplierCost']");
+  if (!shipmentField) return;
+
+  const sync = () => {
+    const shipmentItem = state.shipments.find((row) => row.jobNo === shipmentField.value);
+    if (!shipmentItem) return;
+    const tariffItem = assignedTariffForShipment(shipmentItem);
+    if (customerField) customerField.value = shipmentItem.customer || "";
+    if (tariffField) tariffField.value = shipmentItem.tariffNo || tariffItem?.tariffNo || "";
+    if (revenueField) revenueField.value = numericInputValue(tariffItem?.grandTotal || shipmentItem.sell || 0);
+    if (supplierCostField) supplierCostField.value = numericInputValue(shipmentItem.buyCost || 0);
+  };
+
+  shipmentField.addEventListener("input", sync);
+  shipmentField.addEventListener("change", sync);
+  sync();
+}
+
+function assignedTariffForShipment(shipmentItem) {
+  return state.tariffs.find((row) => row.tariffNo === shipmentItem?.tariffNo)
+    || state.tariffs.find((row) => row.customer === shipmentItem?.customer && row.origin === shipmentItem?.origin && row.destination === shipmentItem?.destination)
+    || null;
+}
+
+function numericInputValue(value) {
+  return Number(value || 0).toFixed(3);
 }
 
 function applyChargeFilters() {
@@ -3221,6 +3287,7 @@ function invoiceDocumentHtml(record) {
         <p><strong>Date</strong><span>${escapeHtml(record.date)}</span></p>
         <p><strong>Customer</strong><span>${escapeHtml(record.customer)}</span></p>
         <p><strong>Shipment No</strong><span>${escapeHtml(record.shipmentNo)}</span></p>
+        <p><strong>Assigned Tariff</strong><span>${escapeHtml(shipmentItem?.tariffNo || "")}</span></p>
         <p><strong>Status</strong><span>${escapeHtml(record.status)}</span></p>
       </section>
       <table><tbody>
@@ -3273,7 +3340,7 @@ function documentShell(title, documentLabel, documentNo, documentDate, body) {
   const printedAt = new Date().toLocaleString();
   const generatedBy = currentUserName();
   const companyName = state.settings.companyName || "APOLLO FREIGHT SOLUTIONS";
-  const logoUrl = String(state.settings.companyLogoUrl || "").trim();
+  const logoUrl = String(state.settings.companyLogoUrl || "").trim() || defaultDocumentLogoUrl();
   const logoMarkup = logoUrl
     ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(companyName)} logo" />`
     : `<span>AFS</span>`;
@@ -3287,14 +3354,14 @@ function documentShell(title, documentLabel, documentNo, documentDate, body) {
         .page { max-width: 920px; min-height: 100vh; margin: 0 auto; background: #fff; box-shadow: 0 20px 55px rgba(22, 32, 51, .16); }
         .toolbar { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; background: #f8fafc; border-bottom: 1px solid #dbe5ef; }
         button { border: 0; border-radius: 6px; padding: 10px 14px; background: #165c7d; color: #fff; font-weight: 700; cursor: pointer; }
-        .document-head { display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 28px 34px; color: #fff; background: linear-gradient(135deg, #114b67, #1f7a8c); }
+        .document-head { display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 28px 34px; color: #172033; background: #fff; border-top: 8px solid #1f7a8c; border-bottom: 1px solid #dbe5ef; }
         .brand { display: flex; align-items: center; gap: 16px; }
-        .logo { display: grid; place-items: center; width: 74px; height: 74px; border-radius: 12px; background: #fff; color: #165c7d; font-size: 22px; font-weight: 800; overflow: hidden; }
-        .logo img { width: 100%; height: 100%; object-fit: contain; padding: 8px; }
-        h1 { margin: 0; font-size: 28px; letter-spacing: 0; }
-        .brand p, .doc-meta p { margin: 4px 0 0; color: #dceef4; }
+        .logo { display: grid; place-items: center; width: 92px; height: 92px; border-radius: 12px; background: #fff; color: #165c7d; font-size: 22px; font-weight: 800; overflow: hidden; border: 1px solid #dbe5ef; }
+        .logo img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
+        h1 { margin: 0; color: #1f7a8c; font-size: 28px; letter-spacing: 0; }
+        .brand p, .doc-meta p { margin: 4px 0 0; color: #607080; }
         .doc-meta { text-align: right; min-width: 210px; }
-        .doc-meta strong { display: block; color: #fff; font-size: 20px; }
+        .doc-meta strong { display: block; color: #114b67; font-size: 20px; }
         main { padding: 28px 34px 34px; }
         .document-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 22px; }
         .document-summary div { padding: 18px; border-left: 5px solid #1f7a8c; background: #f5f9fb; }
@@ -3344,6 +3411,11 @@ function documentShell(title, documentLabel, documentNo, documentDate, body) {
       </div>
     </body>
   </html>`;
+}
+
+function defaultDocumentLogoUrl() {
+  if (!window.location?.origin || window.location.origin === "null") return "";
+  return `${window.location.origin}/web/assets/logo.png`;
 }
 
 function openPrintableDocument(html) {
@@ -3613,6 +3685,7 @@ async function createShipment(data) {
     notifyDuplicate(data.jobNo);
     return false;
   }
+  const tariffItem = state.tariffs.find((row) => row.tariffNo === data.tariffNo);
   const record = shipment(
     data.jobNo,
     data.branch,
@@ -3624,8 +3697,8 @@ async function createShipment(data) {
     Number(data.actualKg),
     Number(data.cbm),
     Number(data.chargeableKg),
-    Number(data.sell),
-    Number(data.buyCost),
+    Number(tariffItem?.grandTotal || tariffItem?.minCharge || 0),
+    0,
     "Pending",
     "Unbilled",
     today(),
@@ -3669,7 +3742,7 @@ async function createParty(key, data) {
     notifyDuplicate(data.code);
     return false;
   }
-  const record = party(data.code, data.name, data.locationOrLane, data.email, data.terms, data.status, false, data.branch);
+  const record = party(data.code, data.name, data.locationOrLane, data.email, data.terms, data.status, false, data.branch, currentUserName(), data.fullAddress || "");
   state[key].unshift(record);
   await postRecord(key, record);
   addHistory(`Created ${key}`, data.code);
@@ -3861,10 +3934,14 @@ async function createInvoice(data) {
     notifyDuplicate(data.invoiceNo);
     return false;
   }
-  const record = invoice(data.invoiceNo, data.customer, data.shipmentNo, Number(data.revenue), Number(data.supplierCost), data.status, data.date);
+  const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
+  const tariffItem = assignedTariffForShipment(shipmentItem);
+  const customer = shipmentItem?.customer || data.customer;
+  const revenue = Number(data.revenue || tariffItem?.grandTotal || shipmentItem?.sell || 0);
+  const supplierCost = Number(data.supplierCost || shipmentItem?.buyCost || 0);
+  const record = invoice(data.invoiceNo, customer, data.shipmentNo, revenue, supplierCost, data.status, data.date);
   state.invoices.unshift(record);
   await postRecord("invoice", record);
-  const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
   if (shipmentItem) shipmentItem.invoiceStatus = data.invoiceNo;
   addHistory("Generated invoice", data.invoiceNo);
   notifySuccess("Invoice saved", `${data.invoiceNo} was saved successfully.`);
