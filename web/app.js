@@ -5,7 +5,7 @@ const SESSION_KEY = "apollofreighterp-session";
 const modules = [
   ["Dashboard", "Live operational summary for land freight consolidation"],
   ["Shipment / Airway", "Create, track, duplicate, and close cargo shipments and airway bills"],
-  ["Consolidation", "Build trips, manifests, and loading lists"],
+  ["Manifest", "Build trips, manifests, and loading lists"],
   ["Customers", "Customer master data and account controls"],
   ["Suppliers / Transporters", "Supplier and transporter lane master"],
   ["Tariffs / Rate Master", "Customer, lane, service, vehicle, and surcharge rates"],
@@ -140,7 +140,7 @@ function seedState() {
     ],
     users: [
       user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All", true, true, true, true, "admin123", "System temporary admin"),
-      user("ops-branch1", "operations.branch1@apollofreightsolution.com", "Operations", "Active", "Branch 1", "Dashboard, Shipment / Airway, Consolidation, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Branch 1 shipments"),
+      user("ops-branch1", "operations.branch1@apollofreightsolution.com", "Operations", "Active", "Branch 1", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Branch 1 shipments"),
       user("billing-branch2", "billing.branch2@apollofreightsolution.com", "Billing", "Active", "Branch 2", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Branch 2")
     ],
     unblockRequests: [
@@ -613,7 +613,7 @@ function visibleModules() {
   const allowed = new Set([
     "Dashboard",
     "Shipment / Airway",
-    "Consolidation",
+    "Manifest",
     "Customers",
     "Suppliers / Transporters",
     "Documents",
@@ -624,7 +624,9 @@ function visibleModules() {
 }
 
 function normalizeModuleName(name) {
-  return name === "Shipments / Jobs" ? "Shipment / Airway" : name;
+  if (name === "Shipments / Jobs") return "Shipment / Airway";
+  if (name === "Consolidation") return "Manifest";
+  return name;
 }
 
 function renderModuleNav() {
@@ -1065,7 +1067,7 @@ function render() {
   const renderers = {
     Dashboard: renderDashboard,
     "Shipment / Airway": renderShipments,
-    Consolidation: renderConsolidation,
+    Manifest: renderConsolidation,
     Customers: () => renderParties("customers", "Consignee"),
     "Suppliers / Transporters": () => renderParties("suppliers", "Supplier / Transporter"),
     "Tariffs / Rate Master": renderTariffs,
@@ -1141,14 +1143,29 @@ function renderDashboard() {
 
 function adminTopRequestsPanel() {
   if (!isAdminSession()) return "";
-  return `<section class="split-grid admin-request-strip">
-    <article class="panel">${panelHeader("Block / Unblock Requests", "Admin")}
-      ${safeTable("unblock", filteredRows(state.unblockRequests || []), unblockColumns(), "No block or unblock requests are loaded yet.")}
-    </article>
-    <article class="panel">${panelHeader("Admin Requests", "Approval")}
-      ${safeTable("adminRequest", filteredRows(state.adminRequests || []), adminRequestColumns(), "No admin requests are loaded yet.")}
+  return `<section class="split-grid single-panel admin-request-strip">
+    <article class="panel">${panelHeader("All User Requests", "Admin")}
+      ${safeTable("userRequest", filteredRows(allUserRequests()), userRequestColumns(), "No user requests are loaded yet.")}
     </article>
   </section>`;
+}
+
+function allUserRequests() {
+  const blockRows = (state.unblockRequests || []).map((row) => ({
+    ...row,
+    sourceType: "unblock",
+    target: row.targetType || "Block / Unblock",
+    referenceNo: row.referenceNo || row.customerName || "",
+    details: row.reason || ""
+  }));
+  const adminRows = (state.adminRequests || []).map((row) => ({
+    ...row,
+    sourceType: "adminRequest",
+    target: row.targetModule || "Admin Request",
+    customerName: row.targetModule || "",
+    details: row.details || ""
+  }));
+  return [...blockRows, ...adminRows].sort((left, right) => String(right.date || "").localeCompare(String(left.date || "")));
 }
 
 function adminDeletePanel(type, label, note = "") {
@@ -1184,18 +1201,18 @@ function renderConsolidation() {
   const selectedLoad = rows.find((row) => row.loadNo === state.ui.selectedLoadNo) || null;
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Consolidation Register", "Loads / Trips")}
+      <article class="panel">${panelHeader("Manifest Register", "Loads / Trips")}
         ${table("load", rows, loadColumns())}
-        ${selectedLoad ? consolidationJobsPanel(selectedLoad) : `<div class="report-preview-empty"><p class="empty-state">Select a consolidation from the list to open the related job numbers below.</p></div>`}
+        ${selectedLoad ? consolidationJobsPanel(selectedLoad) : `<div class="report-preview-empty"><p class="empty-state">Select a manifest from the list to open the related job numbers below.</p></div>`}
       </article>
       ${moduleActionPanel("Manifest Actions", "load", "Generate, load, and update consolidation manifests from separate popup windows.", actionChecklist([
-        "Select a consolidation, then load it to review or edit.",
+        "Select a manifest, then load it to review or edit.",
         "New button opens a fresh manifest builder.",
-        "Click any job below the consolidation list to open that shipment.",
+        "Click any job below the manifest list to open that shipment.",
         "Non-admin manifest changes go to admin approval first."
       ]))}
     </section>
-    ${adminDeletePanel("load", "Consolidation", "Deleting a consolidation removes the trip/manifest only. Shipments stay available.")}`;
+    ${adminDeletePanel("load", "Manifest", "Deleting a manifest removes the trip/manifest only. Shipments stay available.")}`;
 }
 
 function renderParties(key, label) {
@@ -1463,7 +1480,7 @@ function newRecordSelectorMarkup(type, label = "New Entry Option") {
 function newRecordOptions(type) {
   const labels = {
     shipment: "New Shipment / Airway",
-    load: "New Consolidation",
+    load: "New Manifest",
     customers: "New Customer",
     suppliers: "New Supplier / Transporter",
     tariff: "New Tariff",
@@ -1544,7 +1561,7 @@ function consolidationJobsPanel(loadItem) {
   return `<section class="consolidation-jobs">
     <div class="panel-header">
       <div>
-        <p class="eyebrow">Selected Consolidation</p>
+        <p class="eyebrow">Selected Manifest</p>
         <h2>${escapeHtml(loadItem.loadNo)}</h2>
         <p class="empty-state">Manifest: ${escapeHtml(loadItem.manifestStatus || "Not Generated")}${loadItem.lastManifestRequestNo ? ` | Request: ${escapeHtml(loadItem.lastManifestRequestNo)}` : ""}</p>
       </div>
@@ -1552,7 +1569,7 @@ function consolidationJobsPanel(loadItem) {
         ${isAdminSession()
           ? `<button type="button" class="secondary-button" data-action="approve-load-manifest" data-id="${escapeHtml(loadItem.loadNo)}">Generate / Approve Manifest</button>`
           : `<button type="button" class="secondary-button" data-action="request-load-manifest" data-id="${escapeHtml(loadItem.loadNo)}">Send Manifest Request</button>`}
-        <button type="button" class="secondary-button" data-action="open" data-type="load" data-id="${escapeHtml(loadItem.loadNo)}">Edit Consolidation</button>
+        <button type="button" class="secondary-button" data-action="open" data-type="load" data-id="${escapeHtml(loadItem.loadNo)}">Edit Manifest</button>
       </div>
     </div>
     ${jobs.length ? `<div class="job-list-table">${jobs.map((jobNo) => consolidationJobRow(loadItem.loadNo, jobNo)).join("")}</div>` : `<p class="empty-state">No job numbers linked to this consolidation.</p>`}
@@ -1692,7 +1709,7 @@ function tableActionButton(type, id) {
     return `<button class="ghost-button" data-action="view-load" data-id="${escapeHtml(id)}">View Jobs</button>`;
   }
 
-  if (type === "unblock" || type === "adminRequest") {
+  if (type === "unblock" || type === "adminRequest" || type === "userRequest") {
     return `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Review</button>`;
   }
 
@@ -1889,7 +1906,11 @@ function checkbox(name, label, checked = false, value = "on") {
 }
 
 function select(name, label, options, selected = options[0]) {
-  return `<label>${escapeHtml(label)}<select name="${escapeHtml(name)}">${options.map((option) => `<option ${option === selected ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
+  const selectedValue = optionValue(selected);
+  return `<label>${escapeHtml(label)}<select name="${escapeHtml(name)}">${options.map((option) => {
+    const value = optionValue(option);
+    return `<option value="${escapeHtml(value)}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(optionLabel(option))}</option>`;
+  }).join("")}</select></label>`;
 }
 
 function selectFrom(name, label, options, value = options[0] || "") {
@@ -1910,7 +1931,7 @@ function dropdownOptions(key, defaults = []) {
 }
 
 function selectEditable(name, label, optionKey, defaults = [], selected = defaults[0] || "") {
-  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(optionKey)}Options" value="${escapeHtml(selected)}" data-dropdown-key="${escapeHtml(optionKey)}" /><datalist id="${escapeHtml(optionKey)}Options">${dropdownOptions(optionKey, defaults).map((option) => `<option value="${escapeHtml(option)}"></option>`).join("")}</datalist></label>`;
+  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(optionKey)}Options" value="${escapeHtml(optionValue(selected))}" data-dropdown-key="${escapeHtml(optionKey)}" /><datalist id="${escapeHtml(optionKey)}Options">${dropdownOptions(optionKey, defaults).map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
 }
 
 function rememberDropdownOptions(data) {
@@ -1987,7 +2008,7 @@ function shipmentColumns() {
 }
 
 function loadColumns() {
-  return [["loadNo", "Consolidation"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]];
+  return [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]];
 }
 
 function partyColumns() {
@@ -2022,6 +2043,10 @@ function adminRequestColumns() {
   return [["requestNo", "Request"], ["requestType", "Type"], ["targetModule", "Module"], ["referenceNo", "Reference"], ["requestedBy", "Requested By"], ["status", "Status"], ["date", "Date"]];
 }
 
+function userRequestColumns() {
+  return [["requestNo", "Request"], ["requestType", "Type"], ["target", "Section"], ["referenceNo", "Reference"], ["requestedBy", "Requested By"], ["status", "Status"], ["date", "Date"]];
+}
+
 function auditColumns() {
   return [["dateTime", "Date Time"], ["user", "User"], ["action", "Action"], ["reference", "Reference"]];
 }
@@ -2042,9 +2067,11 @@ function rowId(type, row) {
     settings: "settingsKey",
     unblock: "requestNo",
     adminRequest: "requestNo",
+    userRequest: "requestNo",
     audit: "id"
   };
-  return row[keys[type]] || "";
+  const id = row[keys[type]] || "";
+  return type === "userRequest" ? `${row.sourceType}:${id}` : id;
 }
 
 function collectionFor(type) {
@@ -2063,6 +2090,7 @@ function collectionFor(type) {
     settings: [state.settings],
     unblock: state.unblockRequests,
     adminRequest: state.adminRequests,
+    userRequest: allUserRequests(),
     audit: state.audit
   };
   return collections[type] || [];
@@ -2229,6 +2257,12 @@ function openRecord(type, id) {
     return;
   }
 
+  if (type === "userRequest") {
+    if (record.sourceType === "adminRequest") openAdminRequestDialog(record);
+    else openBlockRequestDialog(record);
+    return;
+  }
+
   editing = { type, id, record };
   dialogState = null;
   dialogType.textContent = `${type} record`;
@@ -2249,7 +2283,24 @@ function openRecord(type, id) {
 function duplicateRecordExists(type, id) {
   const normalized = String(id || "").trim().toLowerCase();
   if (!normalized) return false;
-  return collectionFor(type).some((row) => String(rowId(type, row) || "").trim().toLowerCase() === normalized);
+  return allCollectionFor(type).some((row) => String(rowId(type, row) || "").trim().toLowerCase() === normalized);
+}
+
+function allCollectionFor(type) {
+  const collections = {
+    shipment: state.shipments,
+    load: state.loads,
+    customers: state.customers,
+    suppliers: state.suppliers,
+    tariff: state.tariffs,
+    document: state.documents,
+    charge: state.additionalCharges,
+    invoice: state.invoices,
+    user: state.users,
+    unblock: state.unblockRequests,
+    adminRequest: state.adminRequests
+  };
+  return collections[type] || collectionFor(type);
 }
 
 function notifyDuplicate(id) {
@@ -2565,11 +2616,11 @@ function dialogConfigFor(type, mode = "") {
       }
     },
     load: {
-      title: "New Consolidation",
-      typeLabel: "Consolidation",
-      saveLabel: "Create Consolidation",
+      title: "New Manifest",
+      typeLabel: "Manifest",
+      saveLabel: "Create Manifest",
       body: `
-        ${input("loadNo", "Consolidation No", nextConsolidationNumber(), false)}
+        ${input("loadNo", "Manifest No", nextConsolidationNumber(), false)}
         ${input("tripDate", "Trip Date", today(), false, "date")}
         ${input("route", "Route", "Kuwait - Riyadh")}
         ${input("transporter", "Transporter", "Al Dana Transport")}
@@ -2712,7 +2763,7 @@ function shipmentDialogBody(mode = "shipment") {
     ${input("origin", "Origin", "Kuwait City")}
     ${input("destination", "Destination", "Riyadh")}
     ${input("pieces", isAirway ? "Number of Packages" : "Pieces / Pallets", "1", false, "number")}
-    ${input("actualKg", isAirway ? "Gross Weight" : "Actual Weight KG", "100", false, "number")}
+    ${isAirway ? `<input type="hidden" name="actualKg" value="0" />` : input("actualKg", "Actual Weight KG", "100", false, "number")}
     ${isAirway ? palletDimensionBuilder() : ""}
     ${select("volumeCategory", "Volume CBM Category", volumeCategoryOptions(), "1 CBM = 250 KG")}
     <input type="hidden" name="chargeableDivisor" value="250" />
@@ -2720,8 +2771,6 @@ function shipmentDialogBody(mode = "shipment") {
     ${input("chargeableKg", isAirway ? "Total Chargeable Weight KG" : "Chargeable Weight KG", "0", false, "number")}
     ${isAirway ? textarea("shipmentServiceOther", "Shipper Reference", "", false, 4) : select("transitDays", "Transit Time in Days", Array.from({ length: 30 }, (_, index) => String(index + 1)), "3")}
     ${isAirway ? `${input("tcnNumber", "TCN Number", "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>` : ""}
-    ${checkbox("invoiceAttached", "Invoice attached")}
-    ${checkbox("packingListAttached", "PL attached")}
   `;
 }
 
@@ -2877,19 +2926,22 @@ function bindChargeLineBuilder() {
 }
 
 function consolidationShipmentPicker(initialJobs = "", currentLoadNo = "") {
-  const shipmentOptions = availableConsolidationShipmentOptions(initialJobs, currentLoadNo);
+  const shipmentOptionIds = availableConsolidationShipmentOptions(initialJobs, currentLoadNo);
   return `<div class="dialog-picker" data-consolidation-picker>
     <input type="hidden" name="jobNumbers" value="${escapeHtml(initialJobs)}" />
-    <label>Add Shipment To Consolidation
+    <label>Add Shipment To Manifest
       <select data-consolidation-job-select>
-        ${shipmentOptions.map((jobNo) => `<option value="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</option>`).join("")}
+        ${shipmentOptionIds.map((jobNo) => {
+          const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
+          return `<option value="${escapeHtml(jobNo)}">${escapeHtml(shipmentItem ? shipmentOptionLabel(shipmentItem) : jobNo)}</option>`;
+        }).join("")}
       </select>
     </label>
     <div class="action-row">
       <button type="button" class="secondary-button" data-dialog-action="add-consolidation-job">Add Shipment</button>
     </div>
     <div class="selected-job-list" data-consolidation-jobs-list></div>
-    <p class="empty-state">${shipmentOptions.length ? "Only shipments saved with service type Consolidation are available. Already assigned shipments are hidden." : "No unassigned Consolidation service shipments are available."}</p>
+    <p class="empty-state">${shipmentOptionIds.length ? "Only shipments saved with service type Consolidation are available. Already assigned shipments are hidden." : "No unassigned Consolidation service shipments are available."}</p>
   </div>`;
 }
 
@@ -2967,7 +3019,7 @@ function bindPalletDimensionBuilder() {
 
   const sync = () => {
     const total = lines.reduce((sum, line) => sum + Number(line.total || 0), 0);
-    const roundedTotal = Math.ceil(total);
+    const roundedTotal = roundUpToHalf(total);
     hiddenField.value = JSON.stringify(lines);
     if (cbmField) cbmField.value = String(roundedTotal);
     const divisor = volumeDivisorFor(dialogBody.querySelector("[name='volumeCategory']")?.value);
@@ -3159,7 +3211,10 @@ function bindConsolidationJobPicker() {
   const syncSelectedJobs = () => {
     hiddenField.value = [...selectedJobs].join(", ");
     list.innerHTML = selectedJobs.size
-      ? [...selectedJobs].map((jobNo) => `<span class="job-chip selected-job-chip"><strong>${escapeHtml(jobNo)}</strong><button type="button" class="ghost-button" data-remove-consolidation-job="${escapeHtml(jobNo)}">Remove</button></span>`).join("")
+      ? [...selectedJobs].map((jobNo) => {
+          const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
+          return `<span class="job-chip selected-job-chip"><strong>${escapeHtml(jobNo)}</strong><small>${escapeHtml(shipmentItem ? `${shipmentItem.customer} | ${shipmentItem.origin} to ${shipmentItem.destination}` : "Shipment details not found")}</small><button type="button" class="ghost-button" data-remove-consolidation-job="${escapeHtml(jobNo)}">Remove</button></span>`;
+        }).join("")
       : `<p class="empty-state">No shipments added yet.</p>`;
   };
 
@@ -3470,7 +3525,7 @@ function tariffDocumentHtml(record) {
 
 function tcnDocumentHtml(record) {
   const pallets = parsePalletDimensions(record.palletDimensionsJson || "[]");
-  const totalCbm = Math.ceil(pallets.reduce((sum, line) => sum + Number(line.total || 0), 0));
+  const totalCbm = roundUpToHalf(pallets.reduce((sum, line) => sum + Number(line.total || 0), 0));
   return documentShell(
     `TCN ${record.tcnNumber}`,
     "TCN / Airway Bill",
@@ -3494,7 +3549,6 @@ function tcnDocumentHtml(record) {
         <p><strong>Date</strong><span>${escapeHtml(record.bookingDate || today())}</span></p>
         <p><strong>Pick Up Location</strong><span>${escapeHtml(record.tariffNo)}</span></p>
         <p><strong>Packages</strong><span>${escapeHtml(record.pieces)}</span></p>
-        <p><strong>Gross Weight</strong><span>${money(record.actualKg)} KG</span></p>
         <p><strong>Shipper Reference</strong><span>${escapeHtml(record.shipmentServiceOther || "")}</span></p>
       </section>
       ${palletDimensionPrintTable(pallets, totalCbm)}
@@ -3509,6 +3563,10 @@ function parsePalletDimensions(value) {
   } catch {
     return [];
   }
+}
+
+function roundUpToHalf(value) {
+  return Math.ceil(Number(value || 0) * 2) / 2;
 }
 
 function palletDimensionPrintTable(lines, roundedTotal) {
