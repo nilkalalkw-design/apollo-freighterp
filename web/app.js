@@ -143,16 +143,9 @@ function seedState() {
       user("ops-branch1", "operations.branch1@apollofreightsolution.com", "Operations", "Active", "Branch 1", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Branch 1 shipments"),
       user("billing-branch2", "billing.branch2@apollofreightsolution.com", "Billing", "Active", "Branch 2", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Branch 2")
     ],
-    unblockRequests: [
-      { requestNo: "REQ-2605001", requestType: "Unblock", targetType: "Customer", referenceNo: "CUS-002", customerName: "Desert Medical Supplies", requestedBy: "operations", reason: "Credit release requested", status: "Pending", date: today, notes: "" }
-    ],
-    adminRequests: [
-      adminRequest("ADM-2605001", "Manifest Approval", "Consolidation", "CON-260502", "operations", "Pending", today, "Operations requested approval for consolidation edits before dispatch.", "Route: Kuwait - Dammam | Status: Planned | Jobs: AFS-2605002")
-    ],
-    audit: [
-      audit("2026-05-05 09:15", "operations", "Created shipment", "AFS-2605001"),
-      audit("2026-05-05 10:05", "billing", "Generated invoice", "INV-260001")
-    ],
+    unblockRequests: [],
+    adminRequests: [],
+    audit: [],
     settings: {
       settingsKey: "default",
       companyName: "APOLLO FREIGHT SOLUTIONS",
@@ -183,6 +176,36 @@ function seedState() {
   };
 }
 
+function parseJsonMeta(value) {
+  const text = String(value || "").trim();
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function shipmentMetaNotes(data) {
+  return JSON.stringify({
+    billTo1: String(data.billTo1 || "").trim(),
+    billTo2: String(data.billTo2 || "").trim(),
+    manualChargeableKg: Number(data.manualChargeableKg || 0),
+    natureOfGoods: String(data.natureOfGoods || "").trim(),
+    tcnNumber: String(data.tcnNumber || "").trim(),
+    palletDimensionsJson: data.palletDimensionsJson || "[]",
+    entryMode: data.entryMode || "shipment"
+  });
+}
+
+function loadMetaNotes(data) {
+  return JSON.stringify({
+    driverName: String(data.driverName || "").trim(),
+    driverNumber: String(data.driverNumber || "").trim()
+  });
+}
+
 function shipment(
   jobNo,
   branch,
@@ -207,13 +230,49 @@ function shipment(
   shipmentServiceOther = "",
   volumeCategory = "Land",
   chargeableDivisor = 250,
-  createdBy = currentUserName()
+  createdBy = currentUserName(),
+  notes = ""
 ) {
-  return { jobNo, branch, customer, origin, destination, status, pieces, actualKg, cbm, chargeableKg, sell, buyCost, podStatus, invoiceStatus, bookingDate, airwayBillNo, tariffNo, transitDays, shipmentDirection, shipmentService, shipmentServiceOther, volumeCategory, chargeableDivisor, createdBy };
+  const meta = parseJsonMeta(notes);
+  return {
+    jobNo,
+    branch,
+    customer,
+    origin,
+    destination,
+    status,
+    pieces,
+    actualKg,
+    cbm,
+    chargeableKg,
+    sell,
+    buyCost,
+    podStatus,
+    invoiceStatus,
+    bookingDate,
+    airwayBillNo,
+    tariffNo,
+    transitDays,
+    shipmentDirection,
+    shipmentService,
+    shipmentServiceOther,
+    volumeCategory,
+    chargeableDivisor,
+    billTo1: meta.billTo1 || "",
+    billTo2: meta.billTo2 || "",
+    manualChargeableKg: Number(meta.manualChargeableKg || 0),
+    natureOfGoods: meta.natureOfGoods || "",
+    tcnNumber: meta.tcnNumber || "",
+    palletDimensionsJson: meta.palletDimensionsJson || "[]",
+    entryMode: meta.entryMode || (String(jobNo || "").startsWith("AWB") ? "airway" : "shipment"),
+    notes,
+    createdBy
+  };
 }
 
-function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, manifestStatus = "Not Generated", lastManifestRequestNo = "", createdBy = currentUserName()) {
-  return { loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, createdBy };
+function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, manifestStatus = "Not Generated", lastManifestRequestNo = "", createdBy = currentUserName(), notes = "") {
+  const meta = parseJsonMeta(notes);
+  return { loadNo, tripDate, route, transporter, vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
 }
 
 function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName(), fullAddress = "") {
@@ -881,7 +940,8 @@ function apiShipment(row) {
     row.shipment_service_other || "",
     row.volume_category || "Land",
     Number(row.chargeable_divisor || 250),
-    row.created_by || "admin"
+    row.created_by || "admin",
+    row.notes || ""
   );
   return item;
 }
@@ -897,7 +957,8 @@ function apiLoad(row) {
     row.job_numbers || "",
     row.manifest_status || "Not Generated",
     row.last_manifest_request_no || "",
-    row.created_by || "admin"
+    row.created_by || "admin",
+    row.notes || ""
   );
   recalculateLoad(item);
   return item;
@@ -1548,8 +1609,15 @@ function shipmentOptions() {
   return visibleRows(state.shipments).map((row) => ({ value: row.jobNo, label: shipmentOptionLabel(row) }));
 }
 
+function tariffOptionsForCustomer(customer) {
+  const name = String(customer || "").trim().toLowerCase();
+  return visibleRows(state.tariffs)
+    .filter((row) => !name || String(row.customer || "").trim().toLowerCase() === name)
+    .map((row) => ({ value: row.tariffNo, label: `${row.tariffNo} | ${row.customer} | ${row.origin} to ${row.destination}` }));
+}
+
 function shipmentOptionLabel(row) {
-  return `${row.jobNo} | ${row.customer} | ${row.origin} to ${row.destination}`;
+  return `${row.jobNo} | ${row.airwayBillNo || ""} | ${row.customer} | ${row.origin} to ${row.destination}`;
 }
 
 function consolidationJobsPanel(loadItem) {
@@ -2004,11 +2072,11 @@ function volumeDivisorFor(category) {
 }
 
 function shipmentColumns() {
-  return [["jobNo", "Job No"], ["customer", "Consignee"], ["shipmentDirection", "Type"], ["shipmentService", "Service"], ["status", "Status"], ["bookingDate", "Date"], ["invoiceStatus", "Invoice"]];
+  return [["jobNo", "Job No"], ["airwayBillNo", "AWB Number"], ["customer", "Consignee"], ["shipmentDirection", "Type"], ["shipmentService", "Service"], ["status", "Status"], ["bookingDate", "Date"], ["invoiceStatus", "Invoice"]];
 }
 
 function loadColumns() {
-  return [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]];
+  return [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]];
 }
 
 function partyColumns() {
@@ -2273,7 +2341,9 @@ function openRecord(type, id) {
     .map(([key, value]) => detailFieldControl(type, key, value, record))
     .join("");
   if (type === "shipment") bindShipmentDirectionDialog();
+  if (type === "shipment") bindShipmentCustomerTariffs();
   if (type === "shipment") bindVolumeCalculator();
+  if (type === "shipment") bindPalletDimensionBuilder();
   if (type === "tariff") bindTariffAdditionalCharges(record.additionalChargesJson || "[]");
   if (type === "load") bindConsolidationJobPicker();
   bindDialogPasswordToggles();
@@ -2313,11 +2383,23 @@ function detailFieldControl(type, key, value, record) {
   if (type === "shipment" && ["sell", "buyCost"].includes(key)) {
     return "";
   }
+  if (type === "shipment" && key === "actualKg" && record?.entryMode === "airway") {
+    return `<input type="hidden" name="actualKg" value="${escapeHtml(value ?? 0)}" />`;
+  }
+  if (["shipment", "load"].includes(type) && key === "notes") {
+    return "";
+  }
   if (type === "tariff" && key === "additionalChargesJson") {
     return tariffAdditionalChargesBuilder(value || "[]");
   }
   if (type === "tariff" && ["additionalChargesTotal", "grandTotal"].includes(key)) {
     return "";
+  }
+  if (type === "shipment" && key === "palletDimensionsJson") {
+    return palletDimensionBuilder(value || "[]");
+  }
+  if (type === "shipment" && key === "tcnNumber") {
+    return `${input(key, labelize(key), value ?? "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>`;
   }
   if (type === "user" && key === "password") {
     return passwordField(key, labelize(key), value ?? "");
@@ -2365,6 +2447,7 @@ function detailFieldOptions(type, key, record) {
   };
 
   if (key === "customer") return state.customers.map((row) => row.name);
+  if (key === "tariffNo" && type === "shipment" && record?.entryMode !== "airway") return tariffOptionsForCustomer(record.customer);
   if (key === "tariffNo") return visibleRows(state.tariffs).map((row) => row.tariffNo);
   if (key === "mainSection") return dropdownOptions("mainSection", ["FTL", "LTL"]);
   if (key === "weightSection") return dropdownOptions("weightSection", ["Minimum", "Up to 100 KG", "300 KG", "500 KG", "1000 KG", "More"]);
@@ -2396,6 +2479,13 @@ async function saveDialogRecord() {
       updatedRecord[key] = coerceValue(updatedRecord[key], data[key]);
     }
   });
+  if (editing.type === "shipment") {
+    if (!String(updatedRecord.billTo1 || "").trim() && !String(updatedRecord.billTo2 || "").trim()) {
+      notifyDenied("Bill To required", "Enter at least one Bill To value.");
+      return;
+    }
+    updatedRecord.notes = shipmentMetaNotes(updatedRecord);
+  }
   if (editing.type === "load") {
     const jobs = normalizeConsolidationJobs(updatedRecord.jobNumbers, editing.id);
     if (!jobs.length) {
@@ -2403,6 +2493,7 @@ async function saveDialogRecord() {
       return;
     }
     updatedRecord.jobNumbers = jobs.join(", ");
+    updatedRecord.notes = loadMetaNotes(updatedRecord);
     recalculateLoad(updatedRecord);
   }
 
@@ -2611,6 +2702,7 @@ function dialogConfigFor(type, mode = "") {
       onSave: createShipment,
       afterOpen: () => {
         bindShipmentDirectionDialog();
+        bindShipmentCustomerTariffs();
         bindVolumeCalculator();
         bindPalletDimensionBuilder();
       }
@@ -2625,6 +2717,8 @@ function dialogConfigFor(type, mode = "") {
         ${input("route", "Route", "Kuwait - Riyadh")}
         ${input("transporter", "Transporter", "Al Dana Transport")}
         ${input("vehicleNo", "Vehicle No", "KWT-00000")}
+        ${input("driverName", "Driver Name", "")}
+        ${input("driverNumber", "Driver Number", "")}
         ${select("status", "Status", ["Planned", "Loading", "Dispatched", "Delivered", "Closed"])}
         ${select("manifestStatus", "Manifest Status", ["Not Generated", "Pending Approval", "Approved", "Rejected"])}
         ${input("lastManifestRequestNo", "Last Manifest Request No", "")}
@@ -2750,6 +2844,7 @@ function partyDialogConfig(key, label) {
 
 function shipmentDialogBody(mode = "shipment") {
   const isAirway = mode === "airway";
+  const defaultCustomer = state.customers[0]?.name || "";
   return `
     <input type="hidden" name="entryMode" value="${escapeHtml(mode || "shipment")}" />
     ${input("jobNo", isAirway ? "Airway Bill Number" : "Shipment Number", isAirway ? nextNumber("AWB", state.shipments, "jobNo") : nextShipmentNumber(), false)}
@@ -2758,25 +2853,29 @@ function shipmentDialogBody(mode = "shipment") {
     ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), "Export")}
     ${select("shipmentService", "Shipment Service", shipmentServiceOptions("Export"), "AE")}
     ${isAirway ? "" : input("shipmentServiceOther", "Other Service / WHC Remark", "")}
-    ${selectFrom("customer", "Consignee", state.customers.map((row) => row.name))}
-    ${isAirway ? input("tariffNo", "Pick Up Location", "", false) : selectFrom("tariffNo", "Applied Tariff", visibleRows(state.tariffs).map((row) => row.tariffNo))}
+    ${selectFrom("customer", "Consignee", state.customers.map((row) => row.name), defaultCustomer)}
+    <label>Bill To 1<input name="billTo1" value="" /></label>
+    <label>Bill To 2<input name="billTo2" value="" /></label>
+    ${isAirway ? input("tariffNo", "Pick Up Location", "", false) : selectFrom("tariffNo", "Applied Tariff", tariffOptionsForCustomer(defaultCustomer))}
     ${input("origin", "Origin", "Kuwait City")}
     ${input("destination", "Destination", "Riyadh")}
     ${input("pieces", isAirway ? "Number of Packages" : "Pieces / Pallets", "1", false, "number")}
     ${isAirway ? `<input type="hidden" name="actualKg" value="0" />` : input("actualKg", "Actual Weight KG", "100", false, "number")}
-    ${isAirway ? palletDimensionBuilder() : ""}
+    ${input("manualChargeableKg", "Total Chargeable Weight KG", "0", false, "number")}
+    ${palletDimensionBuilder()}
     ${select("volumeCategory", "Volume CBM Category", volumeCategoryOptions(), "1 CBM = 250 KG")}
     <input type="hidden" name="chargeableDivisor" value="250" />
     ${input("cbm", "Volume CBM", isAirway ? "0" : "1.0", false, "number")}
-    ${input("chargeableKg", isAirway ? "Total Chargeable Weight KG" : "Chargeable Weight KG", "0", false, "number")}
+    ${input("chargeableKg", "Total Volume Weight", "0", false, "number")}
+    ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
     ${isAirway ? textarea("shipmentServiceOther", "Shipper Reference", "", false, 4) : select("transitDays", "Transit Time in Days", Array.from({ length: 30 }, (_, index) => String(index + 1)), "3")}
-    ${isAirway ? `${input("tcnNumber", "TCN Number", "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>` : ""}
+    ${input("tcnNumber", "TCN Number", "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>
   `;
 }
 
-function palletDimensionBuilder() {
+function palletDimensionBuilder(initialValue = "[]") {
   return `<section class="pallet-builder" data-pallet-builder>
-    <input type="hidden" name="palletDimensionsJson" value="[]" />
+    <input type="hidden" name="palletDimensionsJson" value="${escapeHtml(initialValue || "[]")}" />
     <div class="tariff-charge-entry">
       ${input("palletCount", "No of Pallets", "1", false, "number")}
       ${input("palletLength", "Length", "100", false, "number")}
@@ -2967,6 +3066,27 @@ function bindShipmentDirectionDialog() {
   syncOptions();
 }
 
+function bindShipmentCustomerTariffs() {
+  const customerField = dialogBody.querySelector("input[name='customer']");
+  const tariffField = dialogBody.querySelector("input[name='tariffNo']");
+  if (!customerField || !tariffField || tariffField.type !== "text") return;
+  const datalistId = tariffField.getAttribute("list");
+  const datalist = datalistId ? dialogBody.querySelector(`#${CSS.escape(datalistId)}`) : null;
+  if (!datalist) return;
+
+  const syncTariffs = () => {
+    const options = tariffOptionsForCustomer(customerField.value);
+    datalist.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}" label="${escapeHtml(option.label)}"></option>`).join("");
+    if (!options.some((option) => option.value === tariffField.value)) {
+      tariffField.value = options[0]?.value || "";
+    }
+  };
+
+  customerField.addEventListener("input", syncTariffs);
+  customerField.addEventListener("change", syncTariffs);
+  syncTariffs();
+}
+
 function bindVolumeCalculator() {
   const categoryField = dialogBody.querySelector("[name='volumeCategory']");
   const divisorField = dialogBody.querySelector("[name='chargeableDivisor']");
@@ -3015,7 +3135,7 @@ function bindPalletDimensionBuilder() {
     height: dialogBody.querySelector("input[name='palletHeight']")
   };
   const list = builder.querySelector("[data-pallet-lines-list]");
-  const lines = [];
+  const lines = parsePalletDimensions(hiddenField.value || "[]");
 
   const sync = () => {
     const total = lines.reduce((sum, line) => sum + Number(line.total || 0), 0);
@@ -3052,7 +3172,7 @@ function bindPalletDimensionBuilder() {
 
   dialogBody.querySelector("[data-dialog-action='generate-tcn']")?.addEventListener("click", () => {
     const data = collectFormValues(dialogBody.closest("form"));
-    const tcn = data.tcnNumber || nextNumber("TCN", state.shipments, "jobNo");
+    const tcn = data.tcnNumber || nextNumber("TCN", state.shipments, "tcnNumber");
     if (tcnField) tcnField.value = tcn;
     openPrintableDocument(tcnDocumentHtml({ ...data, tcnNumber: tcn, palletDimensionsJson: hiddenField.value }));
   });
@@ -3068,7 +3188,16 @@ function palletDimensionTable(lines, total, roundedTotal) {
       <td><button type="button" class="ghost-button" data-remove-pallet-line="${index}">Remove</button></td>
     </tr>`).join("")
     : `<tr><td colspan="7" class="empty-state">No pallet dimensions added.</td></tr>`;
-  return `<div class="table-wrap"><table class="tariff-charges-table">
+  return `<div class="table-wrap"><table class="tariff-charges-table pallet-dimensions-table">
+    <colgroup>
+      <col class="pallet-col-sr" />
+      <col class="pallet-col-count" />
+      <col class="pallet-col-measure" />
+      <col class="pallet-col-measure" />
+      <col class="pallet-col-measure" />
+      <col class="pallet-col-total" />
+      <col class="pallet-col-button" />
+    </colgroup>
     <thead><tr><th>Sr no</th><th>No of pallets</th><th>Length</th><th>Width</th><th>Height</th><th>Total</th><th>Button</th></tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr><th colspan="5">Grand total CBM</th><th>${money(total)} -> ${roundedTotal}</th><th></th></tr></tfoot>
@@ -3451,6 +3580,8 @@ function generateRecordDocument(type, id, download = false) {
 
 function invoiceDocumentHtml(record) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === record.shipmentNo);
+  const tariffItem = assignedTariffForShipment(shipmentItem);
+  const tariffCharges = parseTariffChargeLines(tariffItem?.additionalChargesJson || "[]");
   return documentShell(
     `Bill ${record.invoiceNo}`,
     "Tax Invoice / Bill",
@@ -3460,8 +3591,8 @@ function invoiceDocumentHtml(record) {
       <section class="document-summary">
         <div>
           <span>Bill To</span>
-          <strong>${escapeHtml(record.customer)}</strong>
-          <small>Shipment ${escapeHtml(record.shipmentNo)}</small>
+          <strong>${escapeHtml(shipmentItem?.billTo1 || record.customer)}</strong>
+          ${shipmentItem?.billTo2 ? `<small>${escapeHtml(shipmentItem.billTo2)}</small>` : `<small>Shipment ${escapeHtml(record.shipmentNo)}</small>`}
         </div>
         <div>
           <span>Amount</span>
@@ -3475,6 +3606,7 @@ function invoiceDocumentHtml(record) {
         <p><strong>Customer</strong><span>${escapeHtml(record.customer)}</span></p>
         <p><strong>Shipment No</strong><span>${escapeHtml(record.shipmentNo)}</span></p>
         <p><strong>Assigned Tariff</strong><span>${escapeHtml(shipmentItem?.tariffNo || "")}</span></p>
+        <p><strong>Nature of Goods</strong><span>${escapeHtml(shipmentItem?.natureOfGoods || "")}</span></p>
         <p><strong>Status</strong><span>${escapeHtml(record.status)}</span></p>
       </section>
       <table><tbody>
@@ -3482,6 +3614,8 @@ function invoiceDocumentHtml(record) {
         <tr><th>Revenue</th><td>${money(record.revenue)}</td><th>Supplier Cost</th><td>${money(record.supplierCost)}</td></tr>
         <tr><th>Gross Profit</th><td colspan="3">${money(record.grossProfit)}</td></tr>
       </tbody></table>
+      <h2>Tariff Additional Charges</h2>
+      ${tariffChargeTable(tariffCharges, Number(tariffItem?.additionalChargesTotal || 0), Number(tariffItem?.grandTotal || record.revenue || 0), false)}
     `
   );
 }
@@ -3549,6 +3683,10 @@ function tcnDocumentHtml(record) {
         <p><strong>Date</strong><span>${escapeHtml(record.bookingDate || today())}</span></p>
         <p><strong>Pick Up Location</strong><span>${escapeHtml(record.tariffNo)}</span></p>
         <p><strong>Packages</strong><span>${escapeHtml(record.pieces)}</span></p>
+        <p><strong>Bill To 1</strong><span>${escapeHtml(record.billTo1 || "")}</span></p>
+        <p><strong>Bill To 2</strong><span>${escapeHtml(record.billTo2 || "")}</span></p>
+        <p><strong>Manual Chargeable KG</strong><span>${money(record.manualChargeableKg || 0)}</span></p>
+        <p><strong>Nature of Goods</strong><span>${escapeHtml(record.natureOfGoods || "")}</span></p>
         <p><strong>Shipper Reference</strong><span>${escapeHtml(record.shipmentServiceOther || "")}</span></p>
       </section>
       ${palletDimensionPrintTable(pallets, totalCbm)}
@@ -3929,6 +4067,17 @@ async function createShipment(data) {
     notifyDuplicate(data.jobNo);
     return false;
   }
+  if (!String(data.billTo1 || "").trim() && !String(data.billTo2 || "").trim()) {
+    notifyDenied("Bill To required", "Enter at least one Bill To value.");
+    return false;
+  }
+  if (data.entryMode !== "airway") {
+    const allowedTariffs = tariffOptionsForCustomer(data.customer).map((option) => option.value);
+    if (data.tariffNo && !allowedTariffs.includes(data.tariffNo)) {
+      notifyDenied("Tariff not allowed", "Select a tariff created for the selected consignee.");
+      return false;
+    }
+  }
   const tariffItem = state.tariffs.find((row) => row.tariffNo === data.tariffNo);
   const record = shipment(
     data.jobNo,
@@ -3953,7 +4102,9 @@ async function createShipment(data) {
     data.shipmentService || "AE",
     data.shipmentServiceOther || "",
     data.volumeCategory || "Land",
-    Number(data.chargeableDivisor || volumeDivisorFor(data.volumeCategory || "Land") || 0)
+    Number(data.chargeableDivisor || volumeDivisorFor(data.volumeCategory || "Land") || 0),
+    currentUserName(),
+    shipmentMetaNotes(data)
   );
   state.shipments.unshift(record);
   await postRecord("shipment", record);
@@ -3972,7 +4123,7 @@ async function createLoad(data) {
     notifyDenied("Consolidation not created", "Add at least one unassigned shipment with service type Consolidation.");
     return false;
   }
-  const item = load(data.loadNo, data.tripDate, data.route, data.transporter, data.vehicleNo, data.status, jobs.join(", "), data.manifestStatus || "Not Generated", data.lastManifestRequestNo || "");
+  const item = load(data.loadNo, data.tripDate, data.route, data.transporter, data.vehicleNo, data.status, jobs.join(", "), data.manifestStatus || "Not Generated", data.lastManifestRequestNo || "", currentUserName(), loadMetaNotes(data));
   recalculateLoad(item);
   state.loads.unshift(item);
   await postRecord("load", item);

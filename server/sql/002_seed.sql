@@ -197,7 +197,7 @@ insert into app_users (
 )
 values
     ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'All', 'admin123', true, true, true, true, 'System temporary admin'),
-    ('ops-branch1', 'operations.branch1@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', 'Dashboard, Shipment / Airway, Consolidation, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'ops123', false, true, false, false, 'Can create and track Branch 1 shipments'),
+    ('ops-branch1', 'operations.branch1@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', 'Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'ops123', false, true, false, false, 'Can create and track Branch 1 shipments'),
     ('billing-branch2', 'billing.branch2@apollofreightsolution.com', 'Billing', 'Active', 'Branch 2', 'Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports', 'billing123', true, false, true, true, 'Invoice and finance access for Branch 2')
 on conflict (user_name) do update set
     email = excluded.email,
@@ -210,42 +210,6 @@ on conflict (user_name) do update set
     can_edit_all_entry = excluded.can_edit_all_entry,
     can_view_updated_history = excluded.can_view_updated_history,
     notes = excluded.notes;
-
-insert into unblock_requests (request_no, request_type, target_type, reference_no, customer_name, requested_by, reason, status, date)
-values
-    ('REQ-2605001', 'Unblock', 'Customer', 'CUS-002', 'Desert Medical Supplies', 'operations', 'Credit release requested', 'Pending', '2026-05-05')
-on conflict (request_no) do update set
-    request_type = excluded.request_type,
-    target_type = excluded.target_type,
-    reference_no = excluded.reference_no,
-    customer_name = excluded.customer_name,
-    requested_by = excluded.requested_by,
-    reason = excluded.reason,
-    status = excluded.status,
-    date = excluded.date;
-
-insert into admin_requests (
-    request_no,
-    request_type,
-    target_module,
-    reference_no,
-    requested_by,
-    status,
-    date,
-    details,
-    proposed_values
-)
-values
-    ('ADM-2605001', 'Manifest Approval', 'Consolidation', 'CON-260502', 'operations', 'Pending', '2026-05-24', 'Operations requested approval for consolidation edits before dispatch.', 'Route: Kuwait - Dammam | Status: Planned | Jobs: AFS-2605002')
-on conflict (request_no) do update set
-    request_type = excluded.request_type,
-    target_module = excluded.target_module,
-    reference_no = excluded.reference_no,
-    requested_by = excluded.requested_by,
-    status = excluded.status,
-    date = excluded.date,
-    details = excluded.details,
-    proposed_values = excluded.proposed_values;
 
 insert into additional_charges (
     ref_no,
@@ -301,9 +265,3 @@ insert into app_settings (
 values
     ('default', 'APOLLO FREIGHT SOLUTIONS', '', 'AFS-SI###', 'INV-YY###', '5000', 'Yes', 'Kuwait 1, Dubai 2', '{}')
 on conflict (settings_key) do nothing;
-
-insert into audit_log (date_time, user_name, action, reference, details)
-values
-    ('2026-05-05 09:15:00+03', 'operations', 'Created shipment', 'AFS-2605001', '{"source":"seed"}'),
-    ('2026-05-05 10:05:00+03', 'billing', 'Generated invoice', 'INV-260001', '{"source":"seed"}')
-on conflict do nothing;

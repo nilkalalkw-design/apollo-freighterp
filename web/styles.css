@@ -738,6 +738,59 @@ label {
   min-width: 720px;
 }
 
+.pallet-builder {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.pallet-builder .tariff-charge-entry {
+  grid-template-columns: repeat(4, minmax(90px, 120px)) auto;
+  justify-content: center;
+}
+
+.pallet-builder .tariff-charges-table {
+  min-width: 640px;
+  table-layout: fixed;
+}
+
+.pallet-dimensions-table .pallet-col-sr {
+  width: 54px;
+}
+
+.pallet-dimensions-table .pallet-col-count {
+  width: 112px;
+}
+
+.pallet-dimensions-table .pallet-col-measure {
+  width: 92px;
+}
+
+.pallet-dimensions-table .pallet-col-total {
+  width: 112px;
+}
+
+.pallet-dimensions-table .pallet-col-button {
+  width: 120px;
+}
+
+.pallet-builder .tariff-charges-table th,
+.pallet-builder .tariff-charges-table td {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.dialog-body label:has([name="volumeCategory"]),
+.dialog-body label:has([name="cbm"]),
+.dialog-body label:has([name="chargeableKg"]) {
+  justify-self: center;
+  width: min(100%, 260px);
+}
+
 .charge-line-entry,
 .charge-line-row,
 .charge-line-total {
@@ -1127,8 +1180,12 @@ th {
 }
 
 .record-dialog {
-  width: min(760px, calc(100vw - 32px));
+  width: min(1120px, calc(100vw - 32px));
+  min-width: min(560px, calc(100vw - 32px));
+  min-height: min(520px, calc(100vh - 40px));
   max-height: calc(100vh - 40px);
+  resize: both;
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 0;
@@ -1141,6 +1198,7 @@ th {
 }
 
 .record-dialog form {
+  min-height: 100%;
   padding: 20px;
 }
 
@@ -1157,6 +1215,9 @@ th {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin: 18px 0;
+  max-height: calc(100vh - 210px);
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .app-footer {

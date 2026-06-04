@@ -166,36 +166,8 @@ const demoRows = {
       notes: "Default test administrator"
     }
   ],
-  "unblock-requests": [
-    {
-      id: 1,
-      request_no: "REQ-2605001",
-      request_type: "Unblock",
-      target_type: "Customer",
-      reference_no: "CUS-002",
-      customer_name: "Desert Medical Supplies",
-      requested_by: "operations",
-      reason: "Credit release requested",
-      status: "Pending",
-      date: "2026-05-05"
-    }
-  ],
-  "admin-requests": [
-    {
-      id: 1,
-      request_no: "ADM-2605001",
-      request_type: "Manifest Approval",
-      target_module: "Consolidation",
-      reference_no: "CON-260502",
-      requested_by: "operations",
-      status: "Pending",
-      date: "2026-05-24",
-      details: "Operations requested approval for consolidation edits before dispatch.",
-      proposed_values: "Route: Kuwait - Dammam | Status: Planned | Jobs: AFS-2605002",
-      approved_by: "",
-      approval_notes: ""
-    }
-  ],
+  "unblock-requests": [],
+  "admin-requests": [],
   "additional-charges": [
     {
       id: 1,
@@ -220,16 +192,7 @@ const demoRows = {
       approval_notes: "Approved by admin"
     }
   ],
-  audit: [
-    {
-      id: 1,
-      date_time: "2026-05-05 09:15",
-      user_name: "operations",
-      action: "Created shipment",
-      reference: "AFS-2605001",
-      details: {}
-    }
-  ],
+  audit: [],
   settings: [
     {
       id: 1,
