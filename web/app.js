@@ -90,7 +90,7 @@ function rememberSession(sessionOrUserName) {
       userName: session.userName,
       role: session.role || "Operations",
       branchAccess: session.branchAccess || "Branch 1",
-      sectionAccess: session.sectionAccess || "All",
+      sectionAccess: normalizeSectionAccess(session.sectionAccess || "All"),
       canViewAllEntry: Boolean(session.canViewAllEntry || (session.role || "").toLowerCase() === "admin"),
       canViewOnlySelfEntry: Boolean(session.canViewOnlySelfEntry),
       canEditAllEntry: Boolean(session.canEditAllEntry || (session.role || "").toLowerCase() === "admin"),
@@ -329,10 +329,11 @@ function parseDropdownOptions(value) {
 function normalizeState(stored) {
   const defaults = seedState();
   if (!stored || typeof stored !== "object") {
+    defaults.users = normalizeUsers(defaults.users);
     return defaults;
   }
 
-  return {
+  const normalized = {
     ...defaults,
     ...stored,
     shipments: Array.isArray(stored.shipments) && stored.shipments.length ? stored.shipments : defaults.shipments,
@@ -343,7 +344,7 @@ function normalizeState(stored) {
     documents: Array.isArray(stored.documents) ? stored.documents : defaults.documents,
     additionalCharges: Array.isArray(stored.additionalCharges) ? stored.additionalCharges : defaults.additionalCharges,
     invoices: Array.isArray(stored.invoices) ? stored.invoices : defaults.invoices,
-    users: Array.isArray(stored.users) && stored.users.length ? stored.users : defaults.users,
+    users: normalizeUsers(Array.isArray(stored.users) && stored.users.length ? stored.users : defaults.users),
     unblockRequests: Array.isArray(stored.unblockRequests) ? stored.unblockRequests : defaults.unblockRequests,
     adminRequests: Array.isArray(stored.adminRequests) ? stored.adminRequests : defaults.adminRequests,
     audit: Array.isArray(stored.audit) ? stored.audit : defaults.audit,
@@ -381,6 +382,24 @@ function normalizeState(stored) {
       }
     }
   };
+  return normalized;
+}
+
+function normalizeUsers(users) {
+  return (Array.isArray(users) ? users : []).map((record) => ({
+    ...record,
+    sectionAccess: normalizeSectionAccess(record.sectionAccess || "All")
+  }));
+}
+
+function normalizeSectionAccess(value) {
+  const text = String(value || "All").trim();
+  if (!text || text.toLowerCase() === "all") return "All";
+  const sections = text
+    .split(",")
+    .map((item) => normalizeModuleName(item.trim()))
+    .filter(Boolean);
+  return [...new Set(sections)].join(", ") || "Dashboard";
 }
 
 function escapeHtml(value) {
@@ -807,7 +826,7 @@ async function syncFromApi() {
       state.documents = (documents.rows || []).map(apiDocument);
       state.additionalCharges = (additionalCharges.rows || []).map(apiAdditionalCharge);
       state.invoices = (invoices.rows || []).map(apiInvoice);
-      state.users = (users.rows || []).map(apiUser);
+      state.users = normalizeUsers((users.rows || []).map(apiUser));
       state.unblockRequests = (unblockRequests.rows || []).map(apiUnblockRequest);
       state.adminRequests = (adminRequests.rows || []).map(apiAdminRequest);
       state.audit = (auditLog.rows || []).map(apiAudit);
@@ -954,7 +973,7 @@ function apiUser(row) {
     row.role,
     row.account_status,
     row.branch_access,
-    row.section_access || "All",
+    normalizeSectionAccess(row.section_access || "All"),
     row.can_view_all_entry,
     row.can_view_only_self_entry,
     row.can_edit_all_entry,
@@ -2252,6 +2271,9 @@ function detailFieldControl(type, key, value, record) {
   if (type === "user" && key === "password") {
     return passwordField(key, labelize(key), value ?? "");
   }
+  if (type === "user" && key === "sectionAccess") {
+    return sectionAccessCheckboxes(sectionAccessSet(value));
+  }
   if (type === "load" && key === "jobNumbers") {
     return consolidationShipmentPicker(value, record.loadNo);
   }
@@ -2718,7 +2740,7 @@ function palletDimensionBuilder() {
 }
 
 function userDialogBody() {
-  const checkedSections = new Set(["Dashboard", "Shipment / Airway", "Reports"]);
+  const checkedSections = sectionAccessSet("Dashboard, Shipment / Airway, Reports");
   return `
     ${input("userName", "User Name", "")}
     ${passwordField("password", "Password", "")}
@@ -2740,6 +2762,12 @@ function sectionAccessCheckboxes(checkedSections = new Set()) {
     <legend>Menu Access Permissions</legend>
     ${modules.map(([name]) => checkbox("sectionAccessList", name, checkedSections.has(name), name)).join("")}
   </fieldset>`;
+}
+
+function sectionAccessSet(value) {
+  const normalized = normalizeSectionAccess(value || "");
+  if (normalized === "All") return new Set(modules.map(([name]) => name));
+  return new Set(normalized.split(",").map((item) => item.trim()).filter(Boolean));
 }
 
 function openBlockRequestDialog(record) {
@@ -3159,7 +3187,7 @@ function collectFormValues(form) {
   const formData = new FormData(form);
   const data = Object.fromEntries(formData.entries());
   if (form.querySelectorAll("input[name='sectionAccessList']").length) {
-    data.sectionAccess = formData.getAll("sectionAccessList").join(", ") || "Dashboard";
+    data.sectionAccess = normalizeSectionAccess(formData.getAll("sectionAccessList").join(", ") || "Dashboard");
   }
   form.querySelectorAll("input[type='checkbox'][name]").forEach((input) => {
     if (input.name === "sectionAccessList") return;
@@ -3934,7 +3962,7 @@ async function createUser(data) {
     data.role,
     data.accountStatus,
     data.branchAccess,
-    data.sectionAccess || "All",
+    normalizeSectionAccess(data.sectionAccess || "All"),
     isChecked(data.canViewAllEntry),
     isChecked(data.canViewOnlySelfEntry),
     isChecked(data.canEditAllEntry),
