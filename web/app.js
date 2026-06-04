@@ -2986,7 +2986,7 @@ function bindPalletDimensionBuilder() {
         notifyDenied("Pallet line not added", "Enter pallet count, length, width, and height.");
         return;
       }
-      lines.push({ count, length, width, height, total: count * length * width * height / 100000 });
+      lines.push({ count, length, width, height, total: count * length * width * height / 1000000 });
       sync();
       return;
     }
