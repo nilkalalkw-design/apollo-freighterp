@@ -195,21 +195,7 @@ function shipmentMetaNotes(data) {
     natureOfGoods: String(data.natureOfGoods || "").trim(),
     tcnNumber: String(data.tcnNumber || "").trim(),
     palletDimensionsJson: data.palletDimensionsJson || "[]",
-    entryMode: data.entryMode || "shipment",
-    deliveryNoteNo: String(data.deliveryNoteNo || "").trim(),
-    ginNo: String(data.ginNo || "").trim(),
-    customerReference: String(data.customerReference || "").trim(),
-    vehicleType: String(data.vehicleType || "").trim(),
-    deliveryRemarks: String(data.deliveryRemarks || "").trim(),
-    pocName: String(data.pocName || "").trim(),
-    pocMobile: String(data.pocMobile || "").trim(),
-    additionalContact: String(data.additionalContact || "").trim(),
-    preparedBy: String(data.preparedBy || "").trim(),
-    deliveredBy: String(data.deliveredBy || "").trim(),
-    receivedBy: String(data.receivedBy || data.receiver || "").trim(),
-    receiverPhone: String(data.receiverPhone || "").trim(),
-    deliveryDatetime: String(data.deliveryDatetime || "").trim(),
-    receiverSignature: String(data.receiverSignature || "").trim()
+    entryMode: data.entryMode || "shipment"
   });
 }
 
@@ -279,20 +265,6 @@ function shipment(
     tcnNumber: meta.tcnNumber || "",
     palletDimensionsJson: meta.palletDimensionsJson || "[]",
     entryMode: meta.entryMode || (String(jobNo || "").startsWith("AWB") ? "airway" : "shipment"),
-    deliveryNoteNo: meta.deliveryNoteNo || "",
-    ginNo: meta.ginNo || "",
-    customerReference: meta.customerReference || "",
-    vehicleType: meta.vehicleType || "",
-    deliveryRemarks: meta.deliveryRemarks || "",
-    pocName: meta.pocName || "",
-    pocMobile: meta.pocMobile || "",
-    additionalContact: meta.additionalContact || "",
-    preparedBy: meta.preparedBy || "",
-    deliveredBy: meta.deliveredBy || "",
-    receivedBy: meta.receivedBy || "",
-    receiverPhone: meta.receiverPhone || "",
-    deliveryDatetime: meta.deliveryDatetime || "",
-    receiverSignature: meta.receiverSignature || "",
     notes,
     createdBy
   };
