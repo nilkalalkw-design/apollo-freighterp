@@ -23,6 +23,42 @@ let activeModule = "Dashboard";
 let editing = null;
 let dialogState = null;
 let lastPendingNotificationCount = 0;
+// ==========================================================================
+// ENTERPRISE HARDWARE PRINT ENGINE LAUNCHER
+// ==========================================================================
+function openEnterprisePrintJob(htmlContentString) {
+  const printWindow = window.open("", "_blank", "width=950,height=750");
+  if (!printWindow) {
+    if (typeof notifyDenied === "function") {
+      notifyDenied("Popup Blocked", "Please permit popups to render document printing jobs.");
+    } else {
+      window.alert("Popup Blocked! Please permit the system to present print sheets.");
+    }
+    return;
+  }
+  
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <title>Apollo Print Engine</title>
+        <link rel="stylesheet" href="./styles.css">
+      </head>
+      <body>
+        ${htmlContentString}
+        <script>
+          window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+              window.print();
+              window.close();
+            }, 350);
+          });
+        </script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
 
 const loginScreen = document.querySelector("#loginScreen");
 const appShell = document.querySelector("#appShell");
