@@ -1349,3 +1349,202 @@ th {
     font-size: 24px;
   }
 }
+
+/* ==========================================================================
+   APOLLO FREIGHT SOLUTIONS - OFFICIAL REVISED LAYOUT OVERRIDES (A4 PORTRAIT)
+   ========================================================================== */
+
+@media print {
+  /* Hide all generic UI components, sidebars, interactive controls and layouts */
+  body *, 
+  #loginScreen, 
+  .sidebar, 
+  .topbar, 
+  .filter-bar, 
+  .dialog-actions, 
+  .top-actions,
+  .app-footer,
+  button {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  
+  /* Reset document flow to utilize maximum printable surface area */
+  html, body {
+    background: #ffffff !important;
+    color: #16202a !important; /* var(--ink) */
+    font-family: "Segoe UI", "Arial", sans-serif !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Make sure our target document container overrides standard layouts and spans fully */
+  .printable-document, 
+  .printable-document * {
+    visibility: visible !important;
+    display: block !important;
+  }
+
+  .printable-document {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    padding: 8mm 6mm !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm 8mm 10mm 8mm;
+  }
+
+  /* Structural wrappers preventing content from slicing awkwardly over boundaries */
+  tr, .print-info-block, .print-sign-row, .print-footer-clauses {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  /* Document Header Block */
+  .print-doc-header {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    border-bottom: 2px solid #12202f !important; /* var(--nav) */
+    padding-bottom: 10px !important;
+    margin-bottom: 15px !important;
+  }
+
+  .print-brand-info h1 {
+    font-size: 20pt !important;
+    font-weight: 900 !important;
+    color: #12202f !important;
+    margin: 0 !important;
+    text-transform: uppercase !important;
+    letter-spacing: -0.5px !important;
+  }
+
+  .print-brand-info p {
+    font-size: 9pt !important;
+    color: #687582 !important; /* var(--muted) */
+    margin: 2px 0 0 0 !important;
+    font-style: italic !important;
+  }
+
+  .print-meta-info {
+    text-align: right !important;
+  }
+
+  .print-meta-info h2 {
+    font-size: 12pt !important;
+    font-weight: 800 !important;
+    color: #f58220 !important; /* var(--accent) */
+    margin: 0 0 4px 0 !important;
+    text-transform: uppercase !important;
+  }
+
+  .print-doc-id {
+    font-family: "Courier New", Courier, monospace !important;
+    font-size: 11pt !important;
+    font-weight: 700 !important;
+    background: #eef3f8 !important; /* var(--blue-soft) */
+    border: 1px solid #c7d2de !important; /* var(--line-strong) */
+    padding: 3px 8px !important;
+    display: inline-block !important;
+    letter-spacing: 0.5px !important;
+  }
+
+  /* Information Address Layout (2-Column Dense Grid) */
+  .print-doc-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+    margin-bottom: 15px !important;
+    width: 100% !important;
+  }
+
+  .print-info-block {
+    border: 1px solid #c7d2de !important;
+    background: #f4f6f8 !important;
+    padding: 8px 10px !important;
+    border-radius: 4px !important;
+  }
+
+  .print-info-block h3 {
+    margin: 0 0 5px 0 !important;
+    font-size: 8.5pt !important;
+    text-transform: uppercase !important;
+    color: #687582 !important;
+    border-bottom: 1px solid #c7d2de !important;
+    padding-bottom: 3px !important;
+  }
+
+  .print-info-block p {
+    margin: 2px 0 !important;
+    font-size: 9.5pt !important;
+    line-height: 1.35 !important;
+  }
+
+  /* Freight Items Table Architecture */
+  table.print-table {
+    display: table !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin: 15px 0 !important;
+  }
+
+  table.print-table th {
+    background-color: #12202f !important;
+    color: #ffffff !important;
+    font-size: 8.5pt !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    padding: 6px 8px !important;
+    border: 1px solid #12202f !important;
+  }
+
+  table.print-table td {
+    padding: 6px 8px !important;
+    font-size: 9pt !important;
+    border: 1px solid #c7d2de !important;
+    background: transparent !important;
+  }
+
+  table.print-table tr:nth-child(even) td {
+    background-color: #f4f6f8 !important;
+  }
+
+  /* Signature Block Zone */
+  .print-sign-row {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    margin-top: 35px !important;
+    width: 100% !important;
+  }
+
+  .print-sign-box {
+    width: 45% !important;
+    border-top: 1px dashed #16202a !important;
+    text-align: center !important;
+    padding-top: 5px !important;
+    font-size: 9pt !important;
+    margin-top: 40px !important;
+  }
+
+  /* Official Terms Conditions Legal Print */
+  .print-footer-clauses {
+    margin-top: 25px !important;
+    font-size: 7pt !important;
+    color: #687582 !important;
+    line-height: 1.25 !important;
+    border-top: 1px solid #dde4ec !important;
+    padding-top: 8px !important;
+  }
+}
