@@ -1771,24 +1771,6 @@ function tableRow(type, row, index, columns, showLoad = true) {
   const actionCell = showLoad ? `<td>${tableActionButton(type, id)}</td>` : "";
   return `<tr>${columns.map(([key]) => `<td>${cellHtml(type, key, row)}</td>`).join("")}${actionCell}</tr>`;
 }
-function tableActionButton(type, id) {
-  let actions = `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Load</button>`;
-  
-  // Find the row data
-  const row = (state.shipments || []).find(s => s.jobNo === id) || (state.loads || []).find(l => l.loadNo === id);
-  
-  if (type === "shipment" && row) {
-    actions += `<button class="blue-button" onclick="openEnterprisePrintJob(renderAirwayBillTcnPrint(state.shipments.find(s=>s.jobNo==='${id}')))">Print TCN</button>`;
-    if(activeModule === "POD / Delivery") {
-        actions += `<button class="secondary-button" onclick="openEnterprisePrintJob(renderPodPrint(state.shipments.find(s=>s.jobNo==='${id}')))">Print Receipt</button>`;
-    }
-  } else if (type === "load" && row) {
-    const linked = state.shipments.filter(s => String(row.jobNumbers || "").includes(s.jobNo));
-    actions += `<button class="navy-button" onclick="openEnterprisePrintJob(renderManifestConsolidationPrint(state.loads.find(l=>l.loadNo==='${id}'), ${JSON.stringify(linked).replace(/"/g, "'")}))">Print Manifest</button>`;
-  }
-  
-  return actions;
-}
 
 function tableActionButton(type, id) {
   if (type === "load") {
@@ -4691,24 +4673,3 @@ function sendShipmentStatusEmail(jobNo) {
 }
 
 boot();
-
-// --- ENTERPRISE PRINT ENGINE ---
-function openEnterprisePrintJob(htmlContent) {
-  // --- DOCUMENT TEMPLATE GENERATORS ---
-function renderAirwayBillTcnPrint(shipmentItem) {
-  return `<div class="printable-document"><h1>TCN: ${escapeHtml(shipmentItem.jobNo)}</h1><p>Customer: ${escapeHtml(shipmentItem.customer)}</p><p>Origin: ${escapeHtml(shipmentItem.origin)}</p><p>Destination: ${escapeHtml(shipmentItem.destination)}</p></div>`;
-}
-
-function renderManifestConsolidationPrint(loadItem, linkedShipments) {
-  const jobList = linkedShipments.map(s => `<li>${s.jobNo} - ${s.customer}</li>`).join('');
-  return `<div class="printable-document"><h1>Manifest: ${escapeHtml(loadItem.loadNo)}</h1><ul>${jobList}</ul></div>`;
-}
-
-function renderPodPrint(shipmentItem) {
-  return `<div class="printable-document"><h1>POD Receipt: ${escapeHtml(shipmentItem.jobNo)}</h1><p>Status: ${escapeHtml(shipmentItem.podStatus)}</p></div>`;
-}
-  const win = window.open("", "_blank", "width=900,height=700");
-  win.document.write(`<html><body>${htmlContent}<script>setTimeout(() => { window.print(); window.close(); }, 500);</script></body></html>`);
-  win.document.close();
-}
-// Paste the renderAirwayBillTcnPrint, renderManifestConsolidationPrint, and renderPodPrint functions from my previous messages here.
