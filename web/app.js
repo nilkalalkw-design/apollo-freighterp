@@ -24,4652 +24,1016 @@ let editing = null;
 let dialogState = null;
 let lastPendingNotificationCount = 0;
 
-const loginScreen = document.querySelector("#loginScreen");
-const appShell = document.querySelector("#appShell");
-const loginForm = document.querySelector("#loginForm");
-const loginMessage = document.querySelector("#loginMessage");
-const moduleNav = document.querySelector("#moduleNav");
-const pageEyebrow = document.querySelector("#pageEyebrow");
-const pageTitle = document.querySelector("#pageTitle");
-const pageSubtitle = document.querySelector("#pageSubtitle");
-const userContextText = document.querySelector("#userContextText");
-const moduleContent = document.querySelector("#moduleContent");
-const apiBanner = document.querySelector("#apiBanner");
-const globalSearch = document.querySelector("#globalSearch");
-const fromDate = document.querySelector("#fromDate");
-const toDate = document.querySelector("#toDate");
-const applyFilters = document.querySelector("#applyFilters");
-const dateFilterStatusText = document.querySelector("#dateFilterStatusText");
-const resetFilters = document.querySelector("#resetFilters");
-const newShipmentButton = document.querySelector("#newShipmentButton");
-const logoutButton = document.querySelector("#logoutButton");
-const resetEmail = document.querySelector("#resetEmail");
-const resetPasswordButton = document.querySelector("#resetPasswordButton");
-const resetMessage = document.querySelector("#resetMessage");
-const recordDialog = document.querySelector("#recordDialog");
-const dialogType = document.querySelector("#dialogType");
-const dialogTitle = document.querySelector("#dialogTitle");
-const dialogBody = document.querySelector("#dialogBody");
-const dialogSecondary = document.querySelector("#dialogSecondary");
-const dialogSave = document.querySelector("#dialogSave");
-const toastStack = document.querySelector("#toastStack");
-
-function currentSession() {
-  const raw = sessionStorage.getItem(SESSION_KEY);
-  if (!raw) {
-    return null;
+// ==========================================
+// UNIVERSAL DOCUMENT & MANIFEST PRINT ENGINE
+// ==========================================
+window.printUniversalDocument = function(documentType, data) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    alert("Please allow pop-ups to print layouts.");
+    return;
   }
 
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") {
-      return parsed;
+  // Current operational date formatting
+  const today = new Date();
+  const formattedDate = today.getDate().toString().padStart(2, '0') + '-' + 
+                        today.toLocaleString('en-US', { month: 'short' }) + '-' + 
+                        today.getFullYear();
+
+  // ----------------------------------------------------
+  // ROUTE A: IF PRINTING THE TRUCK CONSOLIDATION MANIFEST
+  // ----------------------------------------------------
+  if (documentType === "Consolidation Manifest" || data.truckNo || data.sealNo) {
+    const decs = (data.declarationsList || "").split("\n").map(d => d.trim()).filter(Boolean);
+    const invs = (data.invoicesList || "").split("\n").map(i => i.trim()).filter(Boolean);
+    
+    let leftMetaRowsHtml = "";
+    const maxLines = Math.max(decs.length, invs.length, 4);
+    
+    for(let m = 0; m < maxLines; m++) {
+      leftMetaRowsHtml += `
+        <tr>
+          <td style="border: 1px solid #000; padding:4px; font-family:monospace; font-size:11px;">${decs[m] || ""}</td>
+          <td style="border: 1px solid #000; padding:4px; font-family:monospace; font-size:11px;">${invs[m] || ""}</td>
+        </tr>
+      `;
     }
-  } catch {}
 
-  return {
-    userName: raw,
-    role: raw === "admin" ? "Admin" : "Operations",
-    branchAccess: raw === "admin" ? "Both" : "Branch 1"
-  };
-}
+    // Filter matching active shipment rows for this lane to embed inside manifest
+    let consolidatedCargoRowsHtml = "";
+    const filteredJobs = (state.shipments || []).filter(j => j.destination === data.destination || j.origin === data.origin);
+    
+    if (filteredJobs.length > 0) {
+      let totalQty = 0;
+      let totalGross = 0;
+      
+      consolidatedCargoRowsHtml = filteredJobs.map(job => {
+        totalQty += (parseInt(job.pieces) || 1);
+        totalGross += (parseFloat(job.grossWeightKg || job.weightKg) || 0);
+        return `
+          <tr>
+            <td style="border:1px solid #000; padding:5px;">${data.loadNo || 'ALT66466'}<br><strong>${job.jobNo || 'AFS261146'}</strong></td>
+            <td style="border:1px solid #000; padding:5px;">${job.tcnNumber || 'INV#' + (job.jobNo || '')}</td>
+            <td style="border:1px solid #000; padding:5px;"><strong>${job.customer || 'GENERAL COMMODITY'}</strong></td>
+            <td style="border:1px solid #000; padding:5px; text-align:center;">${job.pieces || 1}</td>
+            <td style="border:1px solid #000; padding:5px; text-align:right;">${(parseFloat(job.grossWeightKg || job.weightKg || 0)).toFixed(2)}</td>
+            <td style="border:1px solid #000; padding:5px;">${job.natureOfGoods || 'GENERAL COMMODITY'}</td>
+            <td style="border:1px solid #000; padding:5px; font-size:10px;">${job.billTo1 || 'As Per Border Documents'}</td>
+          </tr>
+        `;
+      }).join('');
+    } else {
+      // Direct text fallback matching the required structural template document layout exactly
+      consolidatedCargoRowsHtml = `
+        <tr>
+          <td style="border:1px solid #000; padding:5px;">ALT66466<br><strong>AFS261146</strong></td>
+          <td style="border:1px solid #000; padding:5px;">4130243800</td>
+          <td style="border:1px solid #000; padding:5px;"><strong>KARCHER</strong></td>
+          <td style="border:1px solid #000; padding:5px; text-align:center;">1</td>
+          <td style="border:1px solid #000; padding:5px; text-align:right;">50.00</td>
+          <td style="border:1px solid #000; padding:5px;">GENERAL COMMODITY</td>
+          <td style="border:1px solid #000; padding:5px; font-size:10px;">Bahrah Trading Company (Al Sayer)</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #000; padding:5px;">ALT66520<br><strong>AFS261152</strong></td>
+          <td style="border:1px solid #000; padding:5px;">SSSJA/2000479346</td>
+          <td style="border:1px solid #000; padding:5px;"><strong>SUN & SANDS</strong></td>
+          <td style="border:1px solid #000; padding:5px; text-align:center;">165</td>
+          <td style="border:1px solid #000; padding:5px; text-align:right;">1106.67</td>
+          <td style="border:1px solid #000; padding:5px;">FOOTWEAR & APPAREL</td>
+          <td style="border:1px solid #000; padding:5px; font-size:10px;">SUN AND SAND SPORTS LLC</td>
+        </tr>
+      `;
+    }
 
-function rememberSession(sessionOrUserName) {
-  const session =
-    typeof sessionOrUserName === "object" && sessionOrUserName
-      ? sessionOrUserName
-      : {
-          userName: sessionOrUserName,
-          role: sessionOrUserName === "admin" ? "Admin" : "Operations",
-          branchAccess: sessionOrUserName === "admin" ? "Both" : "Branch 1"
-        };
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+      <head>
+        <title>Manifest - ${data.loadNo || 'ALT66466'}</title>
+        <style>
+          body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; color: #000; line-height: 1.2; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+          .header-title { font-size: 15px; font-weight: bold; }
+          .grid-header td { padding: 4px; border: 1px solid #000; vertical-align: top; }
+          .cargo-table th, .cargo-table td { border: 1px solid #000; padding: 5px; text-align: left; }
+          .cargo-table th { background: #f2f2f2; font-size: 10px; }
+        </style>
+      </head>
+      <body>
+        <table style="border:none; margin-bottom:5px;">
+          <tr>
+            <td>
+              <div class="header-title">APOLLO FREIGHT SOLUTIONS</div>
+              <span style="font-size:9px;">& CLEARING L.L.C • Tel: +971 4 3202668 • abekai@altexpressure.com</span>
+            </td>
+            <td style="text-align: right; font-weight: bold; font-size: 14px;">INTERNATIONAL TRUCK VOYAGE MANIFEST</td>
+          </tr>
+        </table>
 
-  sessionStorage.setItem(
-    SESSION_KEY,
-    JSON.stringify({
-      userName: session.userName,
-      role: session.role || "Operations",
-      branchAccess: session.branchAccess || "Branch 1",
-      sectionAccess: normalizeSectionAccess(session.sectionAccess || "All"),
-      canViewAllEntry: Boolean(session.canViewAllEntry || (session.role || "").toLowerCase() === "admin"),
-      canViewOnlySelfEntry: Boolean(session.canViewOnlySelfEntry),
-      canEditAllEntry: Boolean(session.canEditAllEntry || (session.role || "").toLowerCase() === "admin"),
-      canViewUpdatedHistory: Boolean(session.canViewUpdatedHistory)
-    })
-  );
-}
+        <table class="grid-header">
+          <tr>
+            <td style="width: 20%;"><strong>TRUCK NO:</strong></td>
+            <td style="width: 30%; font-size:12px; font-weight:bold;">${data.truckNo || '48221 DXB'}</td>
+            <td style="width: 15%;"><strong>FROM:</strong></td>
+            <td style="width: 35%;">${data.origin || 'JBL-UAE'}</td>
+          </tr>
+          <tr>
+            <td><strong>MANIFEST NO:</strong></td>
+            <td style="font-size:12px; font-weight:bold; color:red;">${data.loadNo || 'ALT66466'}</td>
+            <td><strong>TO:</strong></td>
+            <td>${data.destination || 'KUWAIT'}</td>
+          </tr>
+          <tr>
+            <td><strong>DRIVER NAME:</strong></td>
+            <td>${data.driverName || 'FAHAD MAHMOUD AL NASER'}</td>
+            <td><strong>ETD DATE:</strong></td>
+            <td>${data.etdDate || '6-Jun-26'}</td>
+          </tr>
+          <tr>
+            <td><strong>MOB / CONTACT:</strong></td>
+            <td>${data.driverMob || '971 52 110 3672'}</td>
+            <td><strong>CUSTOMS POINT:</strong></td>
+            <td>${data.customsRoute || 'PUBLIC WAREHOUSE - SAIL SHIPPING'}</td>
+          </tr>
+          <tr>
+            <td><strong>SEAL NO:</strong></td>
+            <td colspan="3" style="font-family:monospace;">${data.sealNo || '303-01055290-26'}</td>
+          </tr>
+        </table>
 
-function seedState() {
-  const today = new Date().toISOString().slice(0, 10);
-  return {
-    shipments: [
-      shipment("AFS-2605001", "Branch 1", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Booked", 14, 820, 5.2, 1040, 485, 330, "Pending", "Unbilled", "2026-05-05", "AWB-2605001", "TAR-1001", 3, "Export", "AE", ""),
-      shipment("AFS-2605002", "Branch 2", "Desert Medical Supplies", "Shuwaikh", "Dammam", "In-Transit", 8, 410, 2.1, 420, 215, 150, "Pending", "Unbilled", "2026-05-05", "AWB-2605002", "TAR-1002", 2, "Import", "AI", ""),
-      shipment("AFS-2605003", "Branch 1", "Al Noor Projects", "Ahmadi", "Doha", "Delivered", 22, 1250, 7.8, 1560, 780, 590, "Missing", "Unbilled", "2026-05-04", "AWB-2605003", "TAR-1001", 4, "Export", "LE", ""),
-      shipment("AFS-2605004", "Branch 1", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Invoiced", 4, 160, 0.9, 180, 95, 70, "Uploaded", "INV-260001", "2026-05-02", "AWB-2605004", "TAR-1001", 3, "WHC", "WHC Remark", "Warehouse handling and cross-docking")
-    ],
-    loads: [
-      load("CON-260501", "2026-05-05", "Kuwait - Riyadh", "Al Dana Transport", "KWT-49217", "Dispatched", "AFS-2605001, AFS-2605004", "Not Generated", ""),
-      load("CON-260502", "2026-05-06", "Kuwait - Dammam", "Falcon Line Haul", "KWT-77320", "Planned", "AFS-2605002", "Not Generated", "")
-    ],
-    customers: [
-      party("CUS-001", "Gulf Retail Trading", "Kuwait City", "ops@gulf-retail.example", "30 days", "Active", false, "Branch 1"),
-      party("CUS-002", "Desert Medical Supplies", "Shuwaikh", "logistics@desert-med.example", "15 days", "Active", true, "Branch 2"),
-      party("CUS-003", "Al Noor Projects", "Ahmadi", "cargo@alnoor.example", "45 days", "Active", false, "Branch 1")
-    ],
-    suppliers: [
-      party("TRN-001", "Al Dana Transport", "Kuwait - Riyadh", "dispatch@aldana.example", "20 days", "Active", false, "Branch 1"),
-      party("TRN-002", "Falcon Line Haul", "Kuwait - Dammam", "ops@falconline.example", "30 days", "Active", false, "Branch 2")
-    ],
-    tariffs: [
-      tariff("TAR-1001", "Gulf Retail Trading", "Kuwait City", "Riyadh", "FTL", "Minimum", "100 KG", 0.42, 35),
-      tariff("TAR-1002", "Desert Medical Supplies", "Shuwaikh", "Dammam", "LTL", "Up to 300 KG", "300 KG", 18, 55)
-    ],
-    documents: [
-      documentRow("DOC-001", "AFS-2605001", "Waybill", "Issued", "2026-05-05", "operations"),
-      documentRow("DOC-002", "AFS-2605003", "POD", "Missing", "2026-05-04", "delivery"),
-      documentRow("DOC-003", "AFS-2605004", "Customer Invoice", "Stored", "2026-05-02", "billing")
-    ],
-    additionalCharges: [
-      additionalCharge("CHG-001", "AFS-2605001", "2026-05-24", "Labour Charges", "1 ton", "ABC Labour", "LAB-5001", "INV-LAB-001", 50, 10, "KWD", "Labour support at warehouse dock.", "", "Approved", "admin", "admin", "Approved by admin"),
-      additionalCharge("CHG-002", "AFS-2605001", "2026-05-24", "Delivery Charges", "3 ton", "Fast Van", "DLV-5001", "INV-DLV-001", 20, 10, "KWD", "Final-mile van delivery.", "", "Pending Approval", "operations", "", "")
-    ],
-    invoices: [
-      invoice("INV-260001", "Gulf Retail Trading", "AFS-2605004", 95, 70, "Sent", "2026-05-02"),
-      invoice("DRAFT-260006", "Al Noor Projects", "AFS-2605003", 780, 590, "Draft", "2026-05-05")
-    ],
-    users: [
-      user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All", true, true, true, true, "admin123", "System temporary admin"),
-      user("ops-branch1", "operations.branch1@apollofreightsolution.com", "Operations", "Active", "Branch 1", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Branch 1 shipments"),
-      user("billing-branch2", "billing.branch2@apollofreightsolution.com", "Billing", "Active", "Branch 2", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Branch 2")
-    ],
-    unblockRequests: [],
-    adminRequests: [],
-    audit: [],
-    settings: {
-      settingsKey: "default",
-      companyName: "APOLLO FREIGHT SOLUTIONS",
-      companyLogoUrl: "",
-      shipmentNumberFormat: "AFS-SI###",
-      invoiceNumberFormat: "INV-YY###",
-      consolidationNumberFormat: "CON-YY###",
-      customerNumberFormat: "CUS-###",
-      additionalChargeNumberFormat: "CHG-YY###",
-      supplierNumberFormat: "TRN-###",
-      defaultVolumetricDivisor: "5000",
-      requirePodBeforeInvoice: "Yes",
-      branches: "Kuwait 1, Dubai 2",
-      dropdownOptionsJson: "{}"
-    },
-    api: {
-      status: "Checking API",
-      database: "Pending",
-      mode: "local"
-    },
-    ui: {
-      reportFormat: "PDF",
-      reportType: "Daily shipments",
-      reportPreview: null,
-      selectedLoadNo: ""
-    },
-    dropdownOptions: {}
-  };
-}
+        <div style="font-weight:bold; margin-bottom:3px; text-transform:uppercase;">Customs Declaration & Commercial Invoice Audit Reference</div>
+        <table style="width:100%; margin-bottom:15px;">
+          <thead>
+            <tr style="background:#f2f2f2;">
+              <th style="border: 1px solid #000; padding:4px; width:50%;">DECLARATION / BOE LINE REF</th>
+              <th style="border: 1px solid #000; padding:4px; width:50%;">INVOICE REFERENCE CODE</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${leftMetaRowsHtml}
+          </tbody>
+        </table>
 
-function parseJsonMeta(value) {
-  const text = String(value || "").trim();
-  if (!text) return {};
-  try {
-    const parsed = JSON.parse(text);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
+        <div style="font-weight:bold; margin-bottom:3px; text-transform:uppercase;">Consolidated Cargo Items Breakdown</div>
+        <table class="cargo-table">
+          <thead>
+            <tr>
+              <th>ALT NO / JOB #</th>
+              <th>INVOICE NO</th>
+              <th>SHIPPER BRAND</th>
+              <th style="text-align:center;">QTY (PKGS)</th>
+              <th style="text-align:right;">GROSS WT (KG)</th>
+              <th>COMMODITY TYPE</th>
+              <th>CONSIGNEE / NOTIFY PARTY</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${consolidatedCargoRowsHtml}
+          </tbody>
+        </table>
+
+        <table style="width:100%; margin-top:30px; border:1px solid #000;">
+          <tr>
+            <td style="width:33%; border-right:1px solid #000; height:70px; text-align:center; vertical-align:bottom; padding-bottom:5px;">
+              <div style="border-top:1px dashed #000; width:80%; margin:0 auto;"></div>
+              <span style="font-size:10px;">ALT Express STAMP & SIGN</span>
+            </td>
+            <td style="width:33%; border-right:1px solid #000; text-align:center; vertical-align:middle; font-style:italic; padding:10px;">
+              "We assume full operational responsibility for the accuracy of all information declared on this border manifest run."
+            </td>
+            <td style="width:34%; text-align:center; vertical-align:bottom; padding-bottom:5px;">
+              <div style="border-top:1px dashed #000; width:80%; margin:0 auto;"></div>
+              <span style="font-size:10px;">CUSTOMS ENTRY STAMP AREA</span>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `);
+  } 
+  // ----------------------------------------------------
+  // ROUTE B: TRUCK CONSIGNMENT NOTE (TCN) / WAYBILL LAYOUT
+  // ----------------------------------------------------
+  else {
+    let dimensionsRowsHtml = "";
+    if (data.palletDimensionsJson) {
+      try {
+        const breakdown = JSON.parse(data.palletDimensionsJson);
+        if (breakdown.length > 0) {
+          dimensionsRowsHtml = breakdown.map(b => `
+            <tr>
+              <td style="padding: 5px; border: 1px solid #000;">${b.qty} ${b.type}</td>
+              <td style="padding: 5px; border: 1px solid #000; text-align: center;">${data.grossWeightKg || data.weightKg || b.weight || 0}</td>
+              <td style="padding: 5px; border: 1px solid #000; text-align: center;">${data.chargeableWeight || 0}</td>
+              <td style="padding: 5px; border: 1px solid #000; text-align: center;">${b.length} x ${b.width} x ${b.height} cm</td>
+            </tr>
+          `).join('');
+        }
+      } catch(e){}
+    }
+
+    if (!dimensionsRowsHtml) {
+      dimensionsRowsHtml = `
+        <tr>
+          <td style="padding: 5px; border: 1px solid #000;">${data.pieces || 1} Pallet / Pkg</td>
+          <td style="padding: 5px; border: 1px solid #000; text-align: center;">${data.grossWeightKg || 41.97}</td>
+          <td style="padding: 5px; border: 1px solid #000; text-align: center;">${data.chargeableWeight || 200.00}</td>
+          <td style="padding: 5px; border: 1px solid #000; text-align: center;">As per CBM (${data.cbm || 0.00})</td>
+        </tr>
+      `;
+    }
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+      <head>
+        <title>TCN Waybill - ${data.jobNo || 'AFS261134'}</title>
+        <style>
+          body { font-family: 'Arial', sans-serif; color: #000; margin: 20px; line-height: 1.3; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { vertical-align: top; }
+          .outer-border { border: 2px solid #000; padding: 10px; }
+          .header-title { font-size: 16px; font-weight: bold; letter-spacing: 1px; }
+          .sub-header { font-size: 10px; color: #333; }
+          .doc-type { font-size: 15px; font-weight: bold; text-align: right; text-transform: uppercase; margin: 0; }
+          .waybill-box { border: 2px solid #000; background: #f0f0f0; padding: 5px; text-align: center; font-size: 14px; font-weight: bold; margin-top: 5px; }
+          .section-box { border: 1px solid #000; padding: 6px; min-height: 80px; font-size: 11px; }
+          .section-title { font-weight: bold; font-size: 11px; border-bottom: 1px solid #000; margin-bottom: 4px; padding-bottom: 2px; text-transform: uppercase; }
+          .terms-section { font-size: 8px; line-height: 1.2; text-align: justify; margin-top: 15px; border-top: 1px solid #000; padding-top: 5px; }
+          .sign-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; text-align: center; }
+          .sign-box { border-top: 1px solid #000; padding-top: 4px; font-size: 10px; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="outer-border">
+          <table style="margin-bottom: 15px;">
+            <tr>
+              <td style="width: 50%;">
+                <div class="header-title">APOLLO FREIGHT SOLUTIONS</div>
+                <div class="sub-header" style="font-style: italic;">we bring continents closer...</div>
+                <div class="sub-header" style="margin-top: 4px;">Office 823, Building 6WA, DAFZA, UAE<br>Tel: +971 04-2602287</div>
+              </td>
+              <td style="width: 50%; text-align: right;">
+                <div class="doc-type">Truck Consignment Note - TCN/WAYBILL</div>
+                <div style="width: 220px; float: right;">
+                  <div class="waybill-box">
+                    <span style="font-size: 9px; display: block; font-weight: normal; margin-bottom: 2px;">WAYBILL NUMBER</span>
+                    ${data.tcnNumber || data.jobNo || 'AFS261134'}
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <table style="margin-bottom: 10px;" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="width: 50%; padding-right: 5px;">
+                <div class="section-box">
+                  <div class="section-title">Shipper</div>
+                  <strong>${data.customer || 'SUN AND SAND SPORTS LLC'}</strong><br>
+                  PO BOX 7011, JAFZA DUBAI<br>
+                  UNITED ARAB EMIRATES
+                </div>
+              </td>
+              <td style="width: 50%; padding-left: 5px;">
+                <div class="section-box">
+                  <div class="section-title">Pickup & Route Logistics</div>
+                  <strong>Origin Lane:</strong> ${data.origin || 'DUBAI UAE'}<br>
+                  <strong>Carrier Type / Run:</strong> LTL Freight Service<br>
+                  <strong>Execution Date:</strong> ${formattedDate}<br>
+                  <strong>Pickup Location:</strong> TRILOGI LOGISTICS - MEGA DC, JEBEL ALI SOUTH, UAE
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <table style="margin-bottom: 15px;" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="width: 50%; padding-right: 5px;">
+                <div class="section-box" style="min-height: 95px;">
+                  <div class="section-title">Consignee</div>
+                  <strong>${data.customer || 'SUN AND SAND SPORTS LLC'}</strong><br>
+                  ${data.billTo1 || 'SSS OMNI-B2B2C (ARAMEX WAREHOUSE)'}<br>
+                  SALMIYA CITY, SALEM AL MUBARAK STREET, KUWAIT<br>
+                  Tel: +9652244845 &nbsp; Contact: MR. WALTON NORONHA
+                </div>
+              </td>
+              <td style="width: 50%; padding-left: 5px;">
+                <div class="section-box" style="min-height: 95px;">
+                  <div class="section-title">Notify & Delivery Address</div>
+                  <strong>Destination Country:</strong> ${data.destination || 'KUWAIT'}<br>
+                  <strong>Delivery Target W/H:</strong> SSS ECOM KUWAIT-ARAMEX W/H, KUWAIT<br>
+                  <strong>Ref / Invoice Details:</strong> ${data.jobNo || 'AFS261134'} / TU-2000478859
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <div style="font-weight: bold; margin-bottom: 4px; text-transform: uppercase; font-size: 11px;">Cargo Specifications & Metrics</div>
+          <table style="width:100%; margin-bottom: 15px;">
+            <thead>
+              <tr style="background: #f0f0f0;">
+                <th style="padding: 5px; border: 1px solid #000; text-align: left; font-size: 11px;">Cargo Details</th>
+                <th style="padding: 5px; border: 1px solid #000; text-align: center; font-size: 11px;">Gross Weight (Kgs)</th>
+                <th style="padding: 5px; border: 1px solid #000; text-align: center; font-size: 11px;">Volume Weight (Kgs)</th>
+                <th style="padding: 5px; border: 1px solid #000; text-align: center; font-size: 11px;">Dimensions Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${dimensionsRowsHtml}
+            </tbody>
+          </table>
+
+          <table style="margin-bottom: 15px; border: 1px solid #000;">
+            <tr>
+              <td style="padding: 6px; width: 50%; border-right: 1px solid #000;">
+                <strong>NATURE OF GOODS:</strong><br>
+                ${data.natureOfGoods || 'GARMENTS SHOES & ACCESSORIES'}
+              </td>
+              <td style="padding: 6px; width: 50%;">
+                <strong>CARGO TYPE:</strong> GENERAL CARGO<br>
+                <strong>TOTAL CBM METRIC:</strong> ${data.cbm || '0.000'} CBM
+              </td>
+            </tr>
+          </table>
+
+          <div class="terms-section">
+            <strong>Terms and Conditions:</strong><br>
+            1. The consignor certifies that he is the owner of the goods or authorized agent.<br>
+            2. Consignor agrees to indemnify carrier against claims arising from cargo safety faults.<br>
+            3. Carrier is not liable for border or clearance delays outside structural control rules.<br>
+            4. Carrier liability limit rules apply per standard international land tariff guidelines.
+          </div>
+
+          <div class="sign-grid">
+            <div class="sign-box" style="margin-top: 35px;">SHIPPER'S SIGNATURE</div>
+            <div class="sign-box" style="margin-top: 35px;">CARRIER / DRIVER SIGN</div>
+            <div class="sign-box" style="margin-top: 35px;">RECEIVER'S SIGN & STAMP</div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
   }
-}
 
-function shipmentMetaNotes(data) {
-  return JSON.stringify({
-    billTo1: String(data.billTo1 || "").trim(),
-    billTo2: String(data.billTo2 || "").trim(),
-    manualChargeableKg: Number(data.manualChargeableKg || 0),
-    natureOfGoods: String(data.natureOfGoods || "").trim(),
-    tcnNumber: String(data.tcnNumber || "").trim(),
-    palletDimensionsJson: data.palletDimensionsJson || "[]",
-    entryMode: data.entryMode || "shipment"
-  });
-}
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+};
 
-function loadMetaNotes(data) {
-  return JSON.stringify({
-    driverName: String(data.driverName || "").trim(),
-    driverNumber: String(data.driverNumber || "").trim()
-  });
-}
-
-function shipment(
-  jobNo,
-  branch,
-  customer,
-  origin,
-  destination,
-  status,
-  pieces,
-  actualKg,
-  cbm,
-  chargeableKg,
-  sell,
-  buyCost,
-  podStatus,
-  invoiceStatus,
-  bookingDate,
-  airwayBillNo = jobNo.replace("AFS", "AWB"),
-  tariffNo = "TAR-1001",
-  transitDays = 3,
-  shipmentDirection = "Export",
-  shipmentService = "AE",
-  shipmentServiceOther = "",
-  volumeCategory = "Land",
-  chargeableDivisor = 250,
-  createdBy = currentUserName(),
-  notes = ""
-) {
-  const meta = parseJsonMeta(notes);
-  return {
-    jobNo,
-    branch,
-    customer,
-    origin,
-    destination,
-    status,
-    pieces,
-    actualKg,
-    cbm,
-    chargeableKg,
-    sell,
-    buyCost,
-    podStatus,
-    invoiceStatus,
-    bookingDate,
-    airwayBillNo,
-    tariffNo,
-    transitDays,
-    shipmentDirection,
-    shipmentService,
-    shipmentServiceOther,
-    volumeCategory,
-    chargeableDivisor,
-    billTo1: meta.billTo1 || "",
-    billTo2: meta.billTo2 || "",
-    manualChargeableKg: Number(meta.manualChargeableKg || 0),
-    natureOfGoods: meta.natureOfGoods || "",
-    tcnNumber: meta.tcnNumber || "",
-    palletDimensionsJson: meta.palletDimensionsJson || "[]",
-    entryMode: meta.entryMode || (String(jobNo || "").startsWith("AWB") ? "airway" : "shipment"),
-    notes,
-    createdBy
+// ==========================================
+// FORM STATE DATA DATA EXTRACTION CAPTURE
+// ==========================================
+window.captureActiveDialogFormData = function() {
+  const dialog = document.getElementById("recordDialog");
+  if (!dialog) return {};
+  
+  const getVal = (name) => {
+    const el = dialog.querySelector(`[name="${name}"]`);
+    return el ? el.value : "";
   };
-}
 
-function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, manifestStatus = "Not Generated", lastManifestRequestNo = "", createdBy = currentUserName(), notes = "") {
-  const meta = parseJsonMeta(notes);
-  return { loadNo, tripDate, route, transporter, vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
-}
-
-function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName(), fullAddress = "") {
-  return { code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, fullAddress, createdBy, createdDate: new Date().toISOString().slice(0, 10) };
-}
-
-function tariff(tariffNo, customer, origin, destination, mainSection, weightSection, minUpTo, rate, minCharge, additionalChargesJson = "[]", additionalChargesTotal = 0, grandTotal = 0, createdBy = currentUserName()) {
-  return { tariffNo, customer, origin, destination, mainSection, weightSection, minUpTo, rate, minCharge, additionalChargesJson, additionalChargesTotal, grandTotal: grandTotal || Number(minCharge || 0) + Number(additionalChargesTotal || 0), volumetricDivisor: 5000, effectiveFrom: "2026-01-01", effectiveTo: "2026-12-31", status: "Active", createdBy };
-}
-
-function documentRow(documentNo, linkedNo, type, status, date, owner, fileName = "", createdBy = currentUserName()) {
-  return { documentNo, linkedNo, type, status, date, owner, fileName, createdBy };
-}
-
-function additionalCharge(
-  refNo,
-  shipmentNo,
-  chargeDate,
-  chargeType,
-  chargeBasis,
-  supplier,
-  referenceNo,
-  invoiceNo,
-  amount,
-  taxPercent,
-  currency,
-  remarks,
-  attachmentName,
-  status,
-  requestedBy,
-  approvedBy,
-  approvalNotes,
-  createdBy = currentUserName()
-) {
-  const taxAmount = Number(amount || 0) * (Number(taxPercent || 0) / 100);
-  const totalAmount = Number(amount || 0) + taxAmount;
-  return {
-    refNo,
-    shipmentNo,
-    chargeDate,
-    chargeType,
-    chargeBasis,
-    supplier,
-    referenceNo,
-    invoiceNo,
-    amount: Number(amount || 0),
-    taxPercent: Number(taxPercent || 0),
-    taxAmount,
-    totalAmount,
-    currency,
-    remarks,
-    attachmentName,
-    status,
-    requestedBy,
-    approvedBy,
-    approvalNotes,
-    createdBy
+  const getNum = (name) => {
+    const el = dialog.querySelector(`[name="${name}"]`);
+    return el ? parseFloat(el.value) || 0 : 0;
   };
-}
 
-function invoice(invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, createdBy = currentUserName()) {
-  return { invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, grossProfit: revenue - supplierCost, createdBy };
-}
+  return {
+    jobNo: dialog.querySelector("#field_jobNo")?.value || "AUTO-GEN",
+    branch: getVal("branch"),
+    customer: getVal("customer"),
+    origin: getVal("origin"),
+    destination: getVal("destination"),
+    transitDays: getNum("transitDays"),
+    pieces: getNum("pieces"),
+    palletsCount: getNum("palletsCount"),
+    cartonsCount: getNum("cartonsCount"),
+    weightKg: getNum("weightKg"),
+    grossWeightKg: getNum("grossWeightKg"),
+    cbm: getNum("cbm"),
+    chargeableWeightBasis: getVal("chargeableWeightBasis"),
+    chargeableWeight: getNum("chargeableWeight"),
+    volumeCategory: getVal("volumeCategory"),
+    natureOfGoods: getVal("natureOfGoods"),
+    tcnNumber: getVal("tcnNumber"),
+    sellRevenue: getNum("sellRevenue"),
+    buyCost: getNum("buyCost"),
+    billTo1: getVal("billTo1"),
+    billTo2: getVal("billTo2"),
+    palletDimensionsJson: dialog.querySelector("#hidden_dim_json")?.value || "[]"
+  };
+};
 
-function user(
-  userName,
-  email,
-  role,
-  accountStatus,
-  branchAccess,
-  sectionAccess,
-  canViewAllEntry,
-  canViewOnlySelfEntry,
-  canEditAllEntry,
-  canViewUpdatedHistory,
-  password = "",
-  notes = "Web demo user",
-  createdDate = today()
-) {
-  return { userName, email, role, accountStatus, branchAccess, sectionAccess, canViewAllEntry, canViewOnlySelfEntry, canEditAllEntry, canViewUpdatedHistory, password, notes, createdDate };
-}
+window.executeAirwayBillPrintAndRegisterWorkflow = async function() {
+  const currentFormData = window.captureActiveDialogFormData();
+  
+  if (!currentFormData.branch || !currentFormData.customer || !currentFormData.billTo1) {
+    alert("Please ensure all required fields (*) like Branch, Customer, and Bill To Account 1 are filled out.");
+    return;
+  }
 
-function audit(dateTime, userName, action, reference, id = "") {
-  return { id, dateTime, user: userName, action, reference };
-}
+  if (!currentFormData.jobNo || currentFormData.jobNo === "AWB-Auto" || currentFormData.jobNo.startsWith("AFS-")) {
+    currentFormData.jobNo = "AFS" + Math.floor(260000 + Math.random() * 9999);
+  }
 
-function adminRequest(requestNo, requestType, targetModule, referenceNo, requestedBy, status, date, details, proposedValues, approvedBy = "", approvalNotes = "") {
-  return { requestNo, requestType, targetModule, referenceNo, requestedBy, status, date, details, proposedValues, approvedBy, approvalNotes };
-}
+  state.shipments.unshift(currentFormData);
+  saveState();
+  notifySuccess("AWB Registered", `Airway Bill ${currentFormData.jobNo} saved.`);
+  window.printUniversalDocument("Master Airway Bill (AWB)", currentFormData);
 
+  const recordDialog = document.getElementById("recordDialog");
+  if (recordDialog) recordDialog.close();
+  render();
+};
+
+window.triggerLiveTcnPrintWorkflow = function() {
+  const currentJobNo = document.getElementById("field_jobNo")?.value || "TCN-TEMP";
+  const tcnInput = document.getElementById("field_tcn");
+  if (tcnInput) tcnInput.value = currentJobNo;
+  
+  const currentData = window.captureActiveDialogFormData();
+  currentData.tcnNumber = currentJobNo; 
+  window.printUniversalDocument("Transit Control Document (TCN)", currentData);
+};
+
+// ==========================================
+// COMPONENT CORE BACKBONE LOGIC STATE UTILS
+// ==========================================
 function loadState() {
   try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return normalizeState(stored);
-  } catch {
-    return normalizeState(null);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error("Error loading state", e);
   }
+  return {
+    shipments: [],
+    manifests: [],
+    customers: [{ name: "SUN AND SAND SPORTS LLC", email: "info@gss.com" }, { name: "SEPHORA", email: "ops@sephora.com" }],
+    suppliers: [],
+    tariffs: [],
+    auditLogs: []
+  };
 }
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function parseDropdownOptions(value) {
-  try {
-    const parsed = JSON.parse(value || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function normalizeState(stored) {
-  const defaults = seedState();
-  if (!stored || typeof stored !== "object") {
-    defaults.users = normalizeUsers(defaults.users);
-    return defaults;
-  }
-
-  const normalized = {
-    ...defaults,
-    ...stored,
-    shipments: Array.isArray(stored.shipments) && stored.shipments.length ? stored.shipments : defaults.shipments,
-    loads: Array.isArray(stored.loads) && stored.loads.length ? stored.loads : defaults.loads,
-    customers: Array.isArray(stored.customers) && stored.customers.length ? stored.customers : defaults.customers,
-    suppliers: Array.isArray(stored.suppliers) && stored.suppliers.length ? stored.suppliers : defaults.suppliers,
-    tariffs: Array.isArray(stored.tariffs) && stored.tariffs.length ? stored.tariffs : defaults.tariffs,
-    documents: Array.isArray(stored.documents) ? stored.documents : defaults.documents,
-    additionalCharges: Array.isArray(stored.additionalCharges) ? stored.additionalCharges : defaults.additionalCharges,
-    invoices: Array.isArray(stored.invoices) ? stored.invoices : defaults.invoices,
-    users: normalizeUsers(Array.isArray(stored.users) && stored.users.length ? stored.users : defaults.users),
-    unblockRequests: Array.isArray(stored.unblockRequests) ? stored.unblockRequests : defaults.unblockRequests,
-    adminRequests: Array.isArray(stored.adminRequests) ? stored.adminRequests : defaults.adminRequests,
-    audit: Array.isArray(stored.audit) ? stored.audit : defaults.audit,
-    settings: {
-      ...defaults.settings,
-      ...(stored.settings || {})
-    },
-    dropdownOptions: {
-      ...defaults.dropdownOptions,
-      ...parseDropdownOptions((stored.settings || {}).dropdownOptionsJson),
-      ...(stored.dropdownOptions || {})
-    },
-    api: {
-      ...defaults.api,
-      ...(stored.api || {})
-    },
-    ui: {
-      ...defaults.ui,
-      ...(stored.ui || {}),
-      selectedLoadNo: (stored.ui || {}).selectedLoadNo || "",
-      chargeFilters: {
-        shipmentNo: "",
-        chargeType: "All",
-        supplier: "All",
-        status: "All",
-        fromDate: "",
-        toDate: "",
-        ...((stored.ui || {}).chargeFilters || {})
-      },
-      auditFilters: {
-        query: "",
-        fromDate: "",
-        toDate: "",
-        ...((stored.ui || {}).auditFilters || {})
-      }
-    }
-  };
-  return normalized;
-}
-
-function normalizeUsers(users) {
-  return (Array.isArray(users) ? users : []).map((record) => ({
-    ...record,
-    sectionAccess: normalizeSectionAccess(record.sectionAccess || "All")
-  }));
-}
-
-function normalizeSectionAccess(value) {
-  const text = String(value || "All").trim();
-  if (!text || text.toLowerCase() === "all") return "All";
-  const sections = text
-    .split(",")
-    .map((item) => normalizeModuleName(item.trim()))
-    .filter(Boolean);
-  return [...new Set(sections)].join(", ") || "Dashboard";
-}
-
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-}
-
-function money(value) {
-  return Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-}
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function nextNumber(prefix, collection, field) {
-  const max = collection
-    .map((item) => String(item[field] || ""))
-    .map((value) => Number(value.replace(/\D/g, "").slice(-4)) || 0)
-    .reduce((highest, value) => Math.max(highest, value), 0);
-  return `${prefix}-${new Date().toISOString().slice(2, 7).replace("-", "")}${String(max + 1).padStart(4, "0")}`;
-}
-
-function escapeRegex(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function configuredNumber(format, collection, field, fallbackPrefix) {
-  const normalizedFormat = String(format || "").trim();
-  if (!normalizedFormat || !normalizedFormat.includes("#")) {
-    return nextNumber(fallbackPrefix, collection, field);
-  }
-
-  const fullYear = new Date().getFullYear().toString();
-  const year = new Date().getFullYear().toString().slice(-2);
-  const resolvedFormat = normalizedFormat.replaceAll("YYYY", fullYear).replaceAll("YY", year);
-  const hashPattern = resolvedFormat.match(/#+/);
-  if (!hashPattern) return nextNumber(fallbackPrefix, collection, field);
-
-  const digits = hashPattern[0].length;
-  const prefix = resolvedFormat.slice(0, hashPattern.index);
-  const suffix = resolvedFormat.slice(hashPattern.index + digits);
-  const numberPattern = new RegExp(`^${escapeRegex(prefix)}(\\d{${digits},})${escapeRegex(suffix)}$`, "i");
-  const max = collection
-    .map((item) => String(item[field] || ""))
-    .map((value) => {
-      const match = value.match(numberPattern);
-      return match ? Number(match[1]) || 0 : 0;
-    })
-    .reduce((highest, value) => Math.max(highest, value), 0);
-
-  return resolvedFormat
-    .replace(/#+/, String(max + 1).padStart(digits, "0"));
+function notifySuccess(title, msg) {
+  const stack = document.getElementById("toastStack");
+  if (!stack) return;
+  const div = document.createElement("div");
+  div.className = "toast success-toast";
+  div.innerHTML = `<strong>${title}</strong><p>${msg}</p>`;
+  stack.appendChild(div);
+  setTimeout(() => div.remove(), 4000);
 }
 
 function nextShipmentNumber() {
-  return configuredNumber(state.settings.shipmentNumberFormat, state.shipments, "jobNo", "AFS");
+  const count = state.shipments.length + 1;
+  return `AFS-${261100 + count}`;
 }
 
-function nextInvoiceNumber() {
-  return configuredNumber(state.settings.invoiceNumberFormat, state.invoices, "invoiceNo", "INV");
+function branchOptions(selected) {
+  const branches = ["Kuwait Main Office", "Dubai Logistics Hub", "Qatar Station", "Bahrain Terminal"];
+  return branches.map(b => `<option value="${b}" ${selected === b ? "selected" : ""}>${b}</option>`).join("");
 }
 
-function nextConsolidationNumber() {
-  return configuredNumber(state.settings.consolidationNumberFormat, state.loads, "loadNo", "CON");
-}
-
-function nextCustomerNumber() {
-  return configuredNumber(state.settings.customerNumberFormat, state.customers, "code", "CUS");
-}
-
-function nextSupplierNumber() {
-  return configuredNumber(state.settings.supplierNumberFormat, state.suppliers, "code", "TRN");
-}
-
-function nextAdditionalChargeNumber() {
-  return configuredNumber(state.settings.additionalChargeNumberFormat, state.additionalCharges, "refNo", "CHG");
-}
-
-function branchOptions() {
-  const branches = String(state.settings.branches || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return branches.length ? branches : ["Branch 1", "Branch 2"];
-}
-
-function defaultUserBranch() {
-  const access = String(currentSession()?.branchAccess || "").trim();
-  if (access && !["both", "all"].includes(access.toLowerCase())) {
-    return access.split(",").map((item) => item.trim()).filter(Boolean)[0] || branchOptions()[0];
-  }
-  return branchOptions()[0];
-}
-
-function recordDate(record) {
-  return record.bookingDate || record.tripDate || record.date || record.createdDate || record.effectiveFrom || record.dateTime?.slice(0, 10) || "";
-}
-
-function filteredRows(rows) {
-  const query = globalSearch.value.trim().toLowerCase();
-  const from = fromDate.value;
-  const to = toDate.value;
-  return rows.filter((row) => {
-    const date = recordDate(row);
-    const textMatch = !query || Object.values(row).join(" ").toLowerCase().includes(query);
-    const fromMatch = !from || !date || date >= from;
-    const toMatch = !to || !date || date <= to;
-    return textMatch && fromMatch && toMatch;
-  });
-}
-
-function maybePlayAdminNotification() {
-  const pending = pendingRequestCount();
-  if (isAdminSession() && lastPendingNotificationCount > 0 && pending > lastPendingNotificationCount) {
-    playBeep();
-  }
-  lastPendingNotificationCount = pending;
-}
-
-function playBeep() {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return;
-
-  try {
-    const audioContext = new AudioContextClass();
-    const oscillator = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.value = 880;
-    gain.gain.value = 0.08;
-    oscillator.connect(gain);
-    gain.connect(audioContext.destination);
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.18);
-    oscillator.onended = () => audioContext.close().catch(() => {});
-  } catch {}
-}
-
-function addHistory(action, reference) {
-  const record = audit(new Date().toISOString().slice(0, 16).replace("T", " "), currentUserName(), action, reference);
-  state.audit.unshift(record);
-  postRecord("audit", record);
-  saveState();
-}
-
-function recalculateLoad(loadItem) {
-  const jobs = loadItem.jobNumbers.split(",").map((job) => job.trim()).filter(Boolean);
-  const linked = state.shipments.filter((shipmentItem) => jobs.includes(shipmentItem.jobNo));
-  loadItem.pieces = linked.reduce((sum, item) => sum + Number(item.pieces || 0), 0);
-  loadItem.actualKg = linked.reduce((sum, item) => sum + Number(item.actualKg || 0), 0);
-  loadItem.cbm = linked.reduce((sum, item) => sum + Number(item.cbm || 0), 0);
-  loadItem.chargeableKg = linked.reduce((sum, item) => sum + Number(item.chargeableKg || 0), 0);
-}
-
-function boot() {
-  renderModuleNav();
-
-  moduleNav.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-module]");
-    if (!button) return;
-    activeModule = button.dataset.module;
-    render();
-  });
-
-  loginForm.addEventListener("submit", handleLogin);
-  logoutButton.addEventListener("click", () => {
-    sessionStorage.removeItem(SESSION_KEY);
-    showLogin();
-  });
-  globalSearch.addEventListener("input", render);
-  applyFilters.addEventListener("click", render);
-  resetFilters.addEventListener("click", () => {
-    globalSearch.value = "";
-    fromDate.value = "";
-    toDate.value = "";
-    render();
-  });
-  newShipmentButton?.addEventListener("click", openShipmentWorkspace);
-  resetPasswordButton.addEventListener("click", handlePasswordReset);
-  loginForm.querySelector("[data-toggle-password]")?.addEventListener("click", toggleLoginPassword);
-  moduleContent.addEventListener("click", handleModuleClick);
-  moduleContent.addEventListener("submit", handleModuleSubmit);
-  dialogSecondary.addEventListener("click", () => dialogState?.onSecondary?.());
-  dialogSave.addEventListener("click", saveDialogRecord);
-  recordDialog.addEventListener("close", resetDialogShell);
-
-  if (currentSession()) {
-    showApp();
-  } else {
-    showLogin();
-  }
-}
-
-function isAdminSession() {
-  return (currentSession()?.role || "").toLowerCase() === "admin";
-}
-
-function visibleModules() {
-  if (isAdminSession()) return modules;
-  const session = currentSession();
-  const configured = String(session?.sectionAccess || "").trim();
-  if (configured && configured.toLowerCase() !== "all") {
-    const allowedSections = new Set(
-      configured
-        .split(",")
-        .map((item) => normalizeModuleName(item.trim()))
-        .filter(Boolean)
-    );
-    return modules.filter(([name]) => allowedSections.has(name));
-  }
-  const allowed = new Set([
-    "Dashboard",
-    "Shipment / Airway",
-    "Manifest",
-    "Customers",
-    "Suppliers / Transporters",
-    "Documents",
-    "Tariffs / Rate Master",
-    "Reports"
-  ]);
-  return modules.filter(([name]) => allowed.has(name));
-}
-
-function normalizeModuleName(name) {
-  if (name === "Shipments / Jobs") return "Shipment / Airway";
-  if (name === "Consolidation") return "Manifest";
-  return name;
-}
-
-function renderModuleNav() {
-  moduleNav.innerHTML = visibleModules()
-    .map(([name]) => `<button type="button" data-module="${escapeHtml(name)}">${escapeHtml(name)}</button>`)
-    .join("");
-}
-
-function currentUserName() {
-  return currentSession()?.userName || "operations";
-}
-
-function canViewAllData() {
-  const session = currentSession();
-  return isAdminSession() || Boolean(session?.canViewAllEntry);
-}
-
-function ownedByCurrentUser(row) {
-  if (!branchAllowed(row)) return false;
-  if (canViewAllData()) return true;
-  const userName = currentUserName().toLowerCase();
-  const owners = [
-    row.createdBy,
-    row.created_by,
-    row.requestedBy,
-    row.requested_by,
-    row.owner,
-    row.user,
-    row.userName
-  ].map((value) => String(value || "").toLowerCase());
-  return owners.includes(userName);
-}
-
-function visibleRows(rows) {
-  return rows.filter(ownedByCurrentUser);
-}
-
-function branchAllowed(row) {
-  const branch = String(row.branch || "").trim();
-  if (!branch) return true;
-  const access = String(currentSession()?.branchAccess || "Branch 1").trim();
-  if (!access || ["both", "all"].includes(access.toLowerCase())) return true;
-  const allowed = access
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-  return allowed.includes(branch.toLowerCase());
-}
-
-function notify(status, title, detail = "") {
-  if (!toastStack) {
-    if (detail) window.alert(`${title}\n${detail}`);
-    else window.alert(title);
-    return;
-  }
-
-  const toast = document.createElement("div");
-  toast.className = `toast toast-${status}`;
-  toast.innerHTML = `<strong>${escapeHtml(title)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}`;
-  toastStack.appendChild(toast);
-  window.setTimeout(() => toast.remove(), 4200);
-}
-
-function notifySuccess(title, detail = "") {
-  notify("success", title, detail);
-}
-
-function notifyDenied(title, detail = "") {
-  notify("denied", title, detail);
-}
-
-function notifyFailed(title, detail = "") {
-  notify("failed", title, detail);
-}
-
-function openShipmentWorkspace() {
-  activeModule = "Shipment / Airway";
-  render();
-  setTimeout(() => {
-    openNewDialog("shipment");
-  }, 0);
-}
-
-function handlePasswordReset() {
-  const email = resetEmail.value.trim();
-  if (!email) {
-    resetMessage.textContent = "Enter an email address first.";
-    return;
-  }
-
-  resetMessage.textContent = `Password reset is not configured yet for ${email}. Enable SMTP or Microsoft 365 on the API to activate this flow.`;
-}
-
-function toggleLoginPassword(event) {
-  const button = event.currentTarget;
-  const field = loginForm.querySelector("input[name='password']");
-  if (!field) return;
-  const shouldShow = field.type === "password";
-  field.type = shouldShow ? "text" : "password";
-  button.textContent = shouldShow ? "Hide" : "View";
-  button.setAttribute("aria-label", shouldShow ? "Hide password" : "Show password");
-  button.title = shouldShow ? "Hide password" : "Show password";
-}
-
-async function handleLogin(event) {
-  event.preventDefault();
-  const form = new FormData(loginForm);
-  const userName = String(form.get("userName") || "").trim();
-  const password = String(form.get("password") || "");
-
-  try {
-    const session = await attemptApiLogin(userName, password);
-    rememberSession(session);
-    loginMessage.textContent = "";
-    resetMessage.textContent = "";
-    showApp();
-    return;
-  } catch (error) {
-    loginMessage.textContent = error.message || "Invalid login. Check user name and password.";
-  }
-}
-
-async function attemptApiLogin(userName, password) {
-  if (!userName || !password) {
-    throw new Error("User name and password are required.");
-  }
-
-  const result = await fetchJson("/api/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userName, password })
-  });
-  return result.session;
-}
-
-function showLogin() {
-  loginScreen.classList.remove("is-hidden");
-  appShell.classList.add("is-hidden");
-  resetMessage.textContent = "";
-}
-
-function showApp() {
-  loginScreen.classList.add("is-hidden");
-  appShell.classList.remove("is-hidden");
-  renderModuleNav();
-  updateUserContext();
-  syncFromApi();
-  render();
-}
-
-async function syncFromApi() {
-  try {
-    const [
-      health,
-      shipments,
-      consolidations,
-      customers,
-      suppliers,
-      tariffs,
-      documents,
-      additionalCharges,
-      invoices,
-      users,
-      unblockRequests,
-      adminRequests,
-      auditLog,
-      settings
-    ] = await Promise.all([
-      fetchJson("/api/health"),
-      fetchJson("/api/shipments"),
-      fetchJson("/api/consolidations"),
-      fetchJson("/api/customers"),
-      fetchJson("/api/suppliers"),
-      fetchJson("/api/tariffs"),
-      fetchJson("/api/documents"),
-      fetchJson("/api/additional-charges"),
-      fetchJson("/api/invoices"),
-      fetchJson("/api/users"),
-      fetchJson("/api/unblock-requests"),
-      fetchJson("/api/admin-requests"),
-      fetchJson("/api/audit"),
-      fetchJson("/api/settings")
-    ]);
-
-    const apiMode = health.mode || (health.database === "connected" ? "database" : "demo");
-    const databaseReady = health.database === "connected" && apiMode === "database";
-    state.api = {
-      status: databaseReady ? "API connected" : "API setup required",
-      database: health.database || "unknown",
-      mode: apiMode,
-      error: health.error || health.startupError || ""
-    };
-    if (databaseReady) {
-      state.shipments = (shipments.rows || []).map(apiShipment);
-      state.loads = (consolidations.rows || []).map(apiLoad);
-      state.customers = (customers.rows || []).map(apiCustomer);
-      state.suppliers = (suppliers.rows || []).map(apiSupplier);
-      state.tariffs = (tariffs.rows || []).map(apiTariff);
-      state.documents = (documents.rows || []).map(apiDocument);
-      state.additionalCharges = (additionalCharges.rows || []).map(apiAdditionalCharge);
-      state.invoices = (invoices.rows || []).map(apiInvoice);
-      state.users = normalizeUsers((users.rows || []).map(apiUser));
-      state.unblockRequests = (unblockRequests.rows || []).map(apiUnblockRequest);
-      state.adminRequests = (adminRequests.rows || []).map(apiAdminRequest);
-      state.audit = (auditLog.rows || []).map(apiAudit);
-      if (settings.rows?.length) {
-        state.settings = apiSettings(settings.rows[0]);
-        state.dropdownOptions = {
-          ...state.dropdownOptions,
-          ...parseDropdownOptions(state.settings.dropdownOptionsJson)
-        };
-      }
-    }
-    saveState();
-    maybePlayAdminNotification();
-    render();
-  } catch (error) {
-    state.api = { status: "API offline", database: "local data", mode: "browser", error: error.message };
-    render();
-  }
-}
-
-async function fetchJson(path, options) {
-  const response = await fetch(`${API_URL}${path}`, options);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) throw new Error(data.error || `Request failed: ${response.status}`);
-  return data;
-}
-
-function apiShipment(row) {
-  const item = shipment(
-    row.job_no,
-    row.branch,
-    row.customer_name,
-    row.origin,
-    row.destination,
-    row.status,
-    row.pieces || 0,
-    row.actual_kg || 0,
-    row.cbm || 0,
-    row.chargeable_kg || 0,
-    row.sell || 0,
-    row.buy_cost || 0,
-    row.pod_status || "Pending",
-    row.invoice_status || "Unbilled",
-    String(row.booking_date || today()).slice(0, 10),
-    row.airway_bill_no || row.job_no?.replace("AFS", "AWB"),
-    row.tariff_no || "TAR-1001",
-    Number(row.transit_days || 0),
-    row.shipment_direction || "Export",
-    row.shipment_service || "AE",
-    row.shipment_service_other || "",
-    row.volume_category || "Land",
-    Number(row.chargeable_divisor || 250),
-    row.created_by || "admin",
-    row.notes || ""
-  );
-  return item;
-}
-
-function apiLoad(row) {
-  const item = load(
-    row.load_no,
-    String(row.trip_date || today()).slice(0, 10),
-    row.route,
-    row.transporter,
-    row.vehicle_no,
-    row.status,
-    row.job_numbers || "",
-    row.manifest_status || "Not Generated",
-    row.last_manifest_request_no || "",
-    row.created_by || "admin",
-    row.notes || ""
-  );
-  recalculateLoad(item);
-  return item;
-}
-
-function apiCustomer(row) {
-  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin", row.full_address || "");
-}
-
-function apiSupplier(row) {
-  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin", row.full_address || "");
-}
-
-function apiTariff(row) {
-  const item = tariff(
-    row.tariff_no,
-    row.customer,
-    row.origin,
-    row.destination,
-    row.main_section,
-    row.weight_section,
-    row.min_up_to || "",
-    Number(row.rate || 0),
-    Number(row.min_charge || 0),
-    row.additional_charges_json || "[]",
-    Number(row.additional_charges_total || 0),
-    Number(row.grand_total || 0),
-    row.created_by || "admin"
-  );
-  item.volumetricDivisor = Number(row.volumetric_divisor || 5000);
-  item.effectiveFrom = String(row.effective_from || today()).slice(0, 10);
-  item.effectiveTo = String(row.effective_to || today()).slice(0, 10);
-  item.status = row.status || "Active";
-  return item;
-}
-
-function apiDocument(row) {
-  const item = documentRow(row.document_no, row.linked_no, row.type, row.status, String(row.date || today()).slice(0, 10), row.owner, row.file_name || "", row.owner || "admin");
-  item.fileName = row.file_name || "";
-  item.storageUrl = row.storage_url || "";
-  return item;
-}
-
-function apiAdditionalCharge(row) {
-  return additionalCharge(
-    row.ref_no,
-    row.shipment_no,
-    String(row.charge_date || today()).slice(0, 10),
-    row.charge_type,
-    row.charge_basis || "1 ton",
-    row.supplier,
-    row.reference_no || "",
-    row.invoice_no || "",
-    Number(row.amount || 0),
-    Number(row.tax_percent || 0),
-    row.currency || "KWD",
-    row.remarks || "",
-    row.attachment_name || "",
-    row.status || "Draft",
-    row.requested_by || "",
-    row.approved_by || "",
-    row.approval_notes || "",
-    row.created_by || row.requested_by || "admin"
-  );
-}
-
-function apiInvoice(row) {
-  return invoice(row.invoice_no, row.customer, row.shipment_no, Number(row.revenue || 0), Number(row.supplier_cost || 0), row.status, String(row.date || today()).slice(0, 10), row.created_by || "admin");
-}
-
-function apiUser(row) {
-  return user(
-    row.user_name,
-    row.email,
-    row.role,
-    row.account_status,
-    row.branch_access,
-    normalizeSectionAccess(row.section_access || "All"),
-    row.can_view_all_entry,
-    row.can_view_only_self_entry,
-    row.can_edit_all_entry,
-    row.can_view_updated_history,
-    "",
-    row.notes || "",
-    String(row.created_at || today()).slice(0, 10)
-  );
-}
-
-function apiUnblockRequest(row) {
-  return {
-    requestNo: row.request_no,
-    requestType: row.request_type || "Unblock",
-    targetType: row.target_type || "Customer",
-    referenceNo: row.reference_no || "",
-    customerName: row.customer_name,
-    requestedBy: row.requested_by,
-    reason: row.reason,
-    status: row.status,
-    date: String(row.date || today()).slice(0, 10),
-    approvedBy: row.approved_by || "",
-    notes: row.notes || ""
-  };
-}
-
-function apiAdminRequest(row) {
-  return adminRequest(
-    row.request_no,
-    row.request_type,
-    row.target_module,
-    row.reference_no,
-    row.requested_by,
-    row.status,
-    String(row.date || today()).slice(0, 10),
-    row.details || "",
-    row.proposed_values || "",
-    row.approved_by || "",
-    row.approval_notes || ""
-  );
-}
-
-function apiAudit(row) {
-  return {
-    id: row.id,
-    dateTime: String(row.date_time || "").replace("T", " ").slice(0, 16),
-    user: row.user_name,
-    action: row.action,
-    reference: row.reference
-  };
-}
-
-function apiSettings(row) {
-  return {
-    settingsKey: row.settings_key || state.settings.settingsKey || "default",
-    companyName: row.company_name || state.settings.companyName,
-    companyLogoUrl: row.company_logo_url || state.settings.companyLogoUrl || "",
-    shipmentNumberFormat: row.shipment_number_format || state.settings.shipmentNumberFormat,
-    invoiceNumberFormat: row.invoice_number_format || state.settings.invoiceNumberFormat,
-    consolidationNumberFormat: row.consolidation_number_format || state.settings.consolidationNumberFormat,
-    customerNumberFormat: row.customer_number_format || state.settings.customerNumberFormat,
-    additionalChargeNumberFormat: row.additional_charge_number_format || state.settings.additionalChargeNumberFormat,
-    supplierNumberFormat: row.supplier_number_format || state.settings.supplierNumberFormat,
-    defaultVolumetricDivisor: row.default_volumetric_divisor || state.settings.defaultVolumetricDivisor,
-    requirePodBeforeInvoice: row.require_pod_before_invoice || state.settings.requirePodBeforeInvoice,
-    branches: row.branches || state.settings.branches,
-    dropdownOptionsJson: row.dropdown_options || state.settings.dropdownOptionsJson || "{}"
-  };
-}
-
-function render() {
-  if (!visibleModules().some(([name]) => name === activeModule)) {
-    activeModule = "Dashboard";
-  }
-  const module = modules.find(([name]) => name === activeModule) || modules[0];
-  pageEyebrow.textContent = module[0];
-  pageTitle.textContent = module[0];
-  pageSubtitle.textContent = module[1];
-  updateUserContext();
-  updateDateFilterStatus();
-  moduleNav.querySelectorAll("button").forEach((button) => button.classList.toggle("active", button.dataset.module === activeModule));
-  if (apiBanner) {
-    const apiHealthy = state.api.database === "connected";
-    apiBanner.className = `api-banner ${apiHealthy ? "is-ok" : "is-warning"}`;
-    const errorText = state.api.error ? ` | Detail: ${escapeHtml(state.api.error)}` : "";
-    apiBanner.innerHTML = `<strong>${escapeHtml(state.api.status)}</strong><span>Render: ${escapeHtml(API_URL)} | Database: ${escapeHtml(state.api.database)} | Mode: ${escapeHtml(state.api.mode)}${errorText}</span>`;
-  }
-
-  const renderers = {
-    Dashboard: renderDashboard,
-    "Shipment / Airway": renderShipments,
-    Manifest: renderConsolidation,
-    Customers: () => renderParties("customers", "Consignee"),
-    "Suppliers / Transporters": () => renderParties("suppliers", "Supplier / Transporter"),
-    "Tariffs / Rate Master": renderTariffs,
-    Documents: renderDocuments,
-    "Billing / Invoices": renderInvoices,
-    "POD / Delivery": renderPod,
-    "Shipment Status": renderShipmentStatus,
-    Reports: renderReports,
-    "User Management / Settings": renderSettings,
-    "Audit Log": renderAudit
-  };
-  moduleContent.innerHTML = (renderers[activeModule] || renderDashboard)();
-}
-
-function updateUserContext() {
-  const session = currentSession() || { userName: "admin", branchAccess: "Both" };
-  userContextText.textContent = `User: ${session.userName} | Branch: ${session.branchAccess}`;
-}
-
-function updateDateFilterStatus() {
-  if (!fromDate.value && !toDate.value) {
-    dateFilterStatusText.textContent = "Showing all records";
-    return;
-  }
-
-  const fromLabel = fromDate.value || "start";
-  const toLabel = toDate.value || "today";
-  dateFilterStatusText.textContent = `Showing records from ${fromLabel} to ${toLabel}`;
-}
-
-function renderDashboard() {
-  const rows = filteredRows(visibleRows(state.shipments));
-  const open = rows.filter((row) => ["Draft", "Booked"].includes(row.status)).length;
-  const transit = rows.filter((row) => row.status === "In-Transit").length;
-  const pod = rows.filter((row) => row.podStatus !== "Uploaded").length;
-  const unbilled = rows.filter((row) => ["Unbilled", "Missing rate"].includes(row.invoiceStatus)).length;
-  const pendingRequests = pendingRequestCount();
-  const pendingCharges = state.additionalCharges.filter((row) => row.status === "Pending Approval").length;
-  if (!isAdminSession()) {
-    return `
-      <section class="kpi-grid">
-        ${kpi("Open Shipments", open, "Your draft and booked jobs")}
-        ${kpi("In Transit", transit, "Your shipments moving")}
-        ${kpi("Pending POD", pod, "Need delivery proof")}
-        ${kpi("Unbilled", unbilled, "Your jobs ready for billing")}
-        ${kpi("Pending Requests", pendingRequests, "Your pending approvals")}
-      </section>
-      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${table("shipment", rows, shipmentColumns())}</section>`;
-  }
-  return `
-    <section class="kpi-grid">
-      ${kpi("Open Shipments", open, "Draft and booked jobs")}
-      ${kpi("In Transit", transit, "Currently moving")}
-      ${kpi("Pending POD", pod, "Need delivery proof")}
-      ${kpi("Unbilled", unbilled, "Ready for billing review")}
-      ${kpi("Pending Requests", pendingRequests, "Need admin action")}
-      ${kpi("Month Revenue", money(rows.reduce((sum, row) => sum + Number(row.sell || 0), 0)), "Sell total")}
-      ${kpi("Gross Profit", money(rows.reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0) - state.additionalCharges.reduce((sum, charge) => sum + Number(charge.totalAmount || 0), 0)), "Sell minus supplier and extra cost")}
-    </section>
-    <section class="split-grid">
-      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, shipmentColumns())}</article>
-      <article class="panel">${panelHeader("Exception Alerts", "Controls")}
-        <div class="alert-list">
-          ${alert("Jobs missing tariff/rate", "AFS-2605005 needs tariff selection before invoice.")}
-          ${alert("Delivered but not invoiced", "AFS-2605003 is delivered and waiting for billing.")}
-          ${alert("Pending POD", `${pod} shipments need POD upload or dispute update.`)}
-          ${alert("Admin requests waiting", `${pendingRequests} pending request(s) need admin approval. Open User Management / Settings to review.`)}
-          ${alert("Additional charges waiting", `${pendingCharges} additional charge entry/changes are waiting for approval.`)}
-        </div>
-      </article>
-    </section>`;
-}
-
-function adminTopRequestsPanel() {
-  if (!isAdminSession()) return "";
-  return `<section class="split-grid single-panel admin-request-strip">
-    <article class="panel">${panelHeader("All User Requests", "Admin")}
-      ${safeTable("userRequest", filteredRows(allUserRequests()), userRequestColumns(), "No user requests are loaded yet.")}
-    </article>
-  </section>`;
-}
-
-function allUserRequests() {
-  const blockRows = (state.unblockRequests || []).map((row) => ({
-    ...row,
-    sourceType: "unblock",
-    target: row.targetType || "Block / Unblock",
-    referenceNo: row.referenceNo || row.customerName || "",
-    details: row.reason || ""
-  }));
-  const adminRows = (state.adminRequests || []).map((row) => ({
-    ...row,
-    sourceType: "adminRequest",
-    target: row.targetModule || "Admin Request",
-    customerName: row.targetModule || "",
-    details: row.details || ""
-  }));
-  return [...blockRows, ...adminRows].sort((left, right) => String(right.date || "").localeCompare(String(left.date || "")));
-}
-
-function adminDeletePanel(type, label, note = "") {
-  if (!isAdminSession()) return "";
-  return `<section class="panel admin-delete-panel">${panelHeader(`Delete ${label}`, "Admin Only")}
-    ${deleteSelectorMarkup(type, `${label} To Delete`)}
-    <div class="action-row">
-      <button type="button" class="danger-button" data-action="delete-record" data-type="${escapeHtml(type)}">Delete ${escapeHtml(label)}</button>
-    </div>
-    ${note ? `<p class="empty-state">${escapeHtml(note)}</p>` : ""}
-  </section>`;
-}
-
-function renderShipments() {
-  const rows = filteredRows(visibleRows(state.shipments));
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Shipment Register", "Editable records")} ${table("shipment", rows, shipmentColumns())}</article>
-      ${moduleActionPanel("Shipment Actions", "shipment", "Use separate desktop-style windows for new shipment entry and load/edit shipment details.", actionChecklist([
-        "New button opens the shipment popup window.",
-        "Load uses the selected saved shipment from the list.",
-        "Shipment type controls service options: Import, Export, WHC, and Consolidation service."
-      ]) + blockRequestControls("shipment", "Shipment"))}
-    </section>
-    ${adminDeletePanel("shipment", "Shipment", "Deleting a shipment also removes linked consolidation references, documents, invoices, and additional charges.")}`;
-}
-
-function renderConsolidation() {
-  const rows = filteredRows(visibleRows(state.loads)).map((row) => {
-    recalculateLoad(row);
-    return row;
-  });
-  const selectedLoad = rows.find((row) => row.loadNo === state.ui.selectedLoadNo) || null;
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Manifest Register", "Loads / Trips")}
-        ${table("load", rows, loadColumns())}
-        ${selectedLoad ? consolidationJobsPanel(selectedLoad) : `<div class="report-preview-empty"><p class="empty-state">Select a manifest from the list to open the related job numbers below.</p></div>`}
-      </article>
-      ${moduleActionPanel("Manifest Actions", "load", "Generate, load, and update consolidation manifests from separate popup windows.", actionChecklist([
-        "Select a manifest, then load it to review or edit.",
-        "New button opens a fresh manifest builder.",
-        "Click any job below the manifest list to open that shipment.",
-        "Non-admin manifest changes go to admin approval first."
-      ]))}
-    </section>
-    ${adminDeletePanel("load", "Manifest", "Deleting a manifest removes the trip/manifest only. Shipments stay available.")}`;
-}
-
-function renderParties(key, label) {
-  const rows = filteredRows(state[key]);
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader(`${label} Register`, "Master data")} ${table(key, rows, partyColumns())}</article>
-      ${moduleActionPanel(`${label} Actions`, key, `Open separate New and Load windows for ${label.toLowerCase()} records.`, actionChecklist([
-        "New creates a fresh master-data entry window.",
-        "Load opens an existing record to review or update."
-      ]) + blockRequestControls(key, label))}
-    </section>
-    ${adminDeletePanel(key, label)}`;
-}
-
-function renderTariffs() {
-  const rows = filteredRows(visibleRows(state.tariffs));
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Rate Master", "Tariffs")} ${table("tariff", rows, tariffColumns())}</article>
-      ${moduleActionPanel("Tariff Actions", "tariff", "Maintain tariff cards from separate New and Load popups just like the desktop layout.", documentActionControls("tariff", "Tariff"))}
-    </section>
-    ${adminDeletePanel("tariff", "Tariff")}`;
-}
-
-function renderDocuments() {
-  const rows = filteredRows(visibleRows(state.documents));
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Document Library", "Attachments")} ${table("document", rows, documentColumns())}</article>
-      ${moduleActionPanel("Document Actions", "document", "Separate popup windows are available for new document tags and for loading stored shipment files.")}
-    </section>
-    ${adminDeletePanel("document", "Document")}`;
-}
-
-function renderAdditionalCharges() {
-  const rows = filteredAdditionalCharges();
-  const selectedShipmentNo = state.ui.chargeFilters?.shipmentNo || rows[0]?.shipmentNo || state.shipments[0]?.jobNo || "";
-  const summary = chargeSummary(selectedShipmentNo);
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Additional Charges", "Shipment cost control")}
-        ${chargeFilterPanel()}
-        ${table("charge", rows, additionalChargeColumns())}
-      </article>
-      <article class="panel">${panelHeader("Shipment Cost Summary", "Profitability")}
-        ${summaryCard(summary)}
-        ${chargeReceiptPanel(selectedShipmentNo)}
-        <div class="action-stack">
-          ${newRecordSelectorMarkup("charge")}
-          <div class="action-row">
-            <button type="button" data-action="new-record" data-type="charge">New Charge</button>
-          </div>
-          ${loadSelectorMarkup("charge", "Saved Charges")}
-          <div class="action-row">
-            <button type="button" class="secondary-button" data-action="load-record" data-type="charge">Load Charge</button>
-          </div>
-          <p class="empty-state">Admins can approve or edit charges directly. Other users send change requests to admin.</p>
-          ${actionChecklist(chargeTypeOptions())}
-        </div>
-      </article>
-    </section>
-    ${adminDeletePanel("charge", "Additional Charge")}`;
-}
-
-function renderInvoices() {
-  const rows = filteredRows(visibleRows(state.invoices));
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Invoice Register", "Billing")} ${table("invoice", rows, invoiceColumns())}</article>
-      ${moduleActionPanel("Invoice Actions", "invoice", "Keep invoice creation and load/update in separate popup windows.", documentActionControls("invoice", "Bill"))}
-    </section>
-    ${adminDeletePanel("invoice", "Invoice")}`;
-}
-
-function renderPod() {
-  const rows = filteredRows(visibleRows(state.shipments).filter((row) => row.podStatus !== "Uploaded" || row.status !== "Closed"));
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("POD Pending / Delivery Board", "Delivery")} ${table("shipment", rows, shipmentColumns())}</article>
-      ${moduleActionPanel("POD Actions", "pod", "Load a shipment into a separate POD window or create a new delivery update popup.")}
-    </section>
-    ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for POD-related shipment cleanup.")}`;
-}
-
-function chargeReceiptPanel(shipmentNo) {
-  const charges = state.additionalCharges.filter((row) => row.shipmentNo === shipmentNo);
-  if (!shipmentNo) return `<p class="empty-state">Select a shipment to view charge receipt lines.</p>`;
-  const invoiceNo = charges.find((row) => row.invoiceNo)?.invoiceNo || "Not assigned";
-  const receiptNo = charges.find((row) => row.referenceNo)?.referenceNo || charges[0]?.refNo || "No receipt";
-  const total = charges.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
-  const rows = charges.length
-    ? charges
-        .map(
-          (row) => `<div class="receipt-line">
-            <span>${escapeHtml(row.chargeType)}</span>
-            <small>${escapeHtml(row.status)} | ${escapeHtml(row.currency)}</small>
-            <strong>${money(row.totalAmount)}</strong>
-            <button type="button" class="ghost-button" data-action="open" data-type="charge" data-id="${escapeHtml(row.refNo)}">Edit</button>
-            ${isAdminSession() ? `<button type="button" class="danger-button" data-action="delete-record-direct" data-type="charge" data-id="${escapeHtml(row.refNo)}">Delete</button>` : ""}
-          </div>`
-        )
-        .join("")
-    : `<p class="empty-state">No charge lines added for this shipment yet.</p>`;
-  return `<section class="receipt-box">
-    <div class="panel-header"><div><p class="eyebrow">Receipt ${escapeHtml(receiptNo)} / Invoice ${escapeHtml(invoiceNo)}</p><h2>Charge Lines</h2></div></div>
-    ${rows}
-    <div class="receipt-total"><span>Total Receipt Amount</span><strong>${money(total)}</strong></div>
-  </section>`;
-}
-
-function renderShipmentStatus() {
-  const rows = filteredRows(visibleRows(state.shipments));
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Shipment Status Register", "Status board")} ${table("shipment", rows, shipmentColumns())}</article>
-      <article class="panel">${panelHeader("Status Actions", "Update / Email")}
-        <div class="action-stack">
-          <p class="empty-state">Select a shipment, load its status window, or send the latest update through Outlook to the related customer.</p>
-          ${newRecordSelectorMarkup("status")}
-          <div class="action-row">
-            <button type="button" data-action="new-record" data-type="status">New</button>
-          </div>
-          ${loadSelectorMarkup("status", "Shipment To Load")}
-          <div class="action-row">
-            <button type="button" data-action="load-record" data-type="status">Load</button>
-            <button type="button" class="secondary-button" data-action="send-status-email" data-type="status">Send Update</button>
-          </div>
-        </div>
-      </article>
-    </section>
-    ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for status-board shipment cleanup.")}`;
-}
-
-function renderReports() {
-  const rows = filteredRows(visibleRows(state.shipments));
-  const revenue = rows.reduce((sum, row) => sum + Number(row.sell || 0), 0);
-  const cost = rows.reduce((sum, row) => sum + Number(row.buyCost || 0), 0);
-  const preview = state.ui.reportPreview;
-  return `
-    <section class="kpi-grid">
-      ${kpi("Filtered Shipments", rows.length, "Current report scope")}
-      ${kpi("Revenue", money(revenue), "Sell total")}
-      ${kpi("Supplier Cost", money(cost), "Buy total")}
-      ${kpi("Margin", money(revenue - cost), "Revenue minus cost")}
-    </section>
-    <section class="panel">${panelHeader("Report Preview and Export", "Reports")}
-      <div class="report-toolbar">
-        ${select("reportType", "Report Type", reportTypeOptions(), state.ui.reportType || "Daily shipments")}
-        ${select("reportFormat", "Preview As", ["PDF", "Excel CSV"], state.ui.reportFormat || "PDF")}
-        <button type="button" data-action="preview-report">Preview Report</button>
-        <button type="button" class="secondary-button" data-action="export-report" ${preview ? "" : "disabled"}>Export Report</button>
-        <button type="button" class="secondary-button" data-action="margin-report">Margin Summary</button>
-      </div>
-      ${preview ? reportPreviewPanel(preview) : `<div class="report-preview-empty"><p class="empty-state">Preview the report first, then export once the page layout looks correct.</p></div>`}
-    </section>`;
-}
-
-function renderSettings() {
-  if (!isAdminSession()) {
-    return `<section class="panel">${panelHeader("Access Denied", "Admin")}<p class="empty-state">Only admin users can access user management and settings.</p></section>`;
-  }
-
-  const settingsOpen = Boolean(state.ui.showSettingsForm);
-  return `
-    ${adminTopRequestsPanel()}
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("User Accounts", "Permissions")} ${table("user", filteredRows(state.users), userColumns())}</article>
-      ${moduleActionPanel("User / Permission Actions", "user", "Admin users can open separate New and Load windows for staff accounts and permissions.")}
-    </section>
-    ${adminDeletePanel("user", "User Account", "Deleting a user removes the login from the live database. The current logged-in admin cannot delete itself.")}
-    <section class="split-grid single-panel">
-      <article class="panel">${panelHeader("Company Settings", "System")}
-        <div class="action-row">
-          <button type="button" data-action="toggle-settings">${settingsOpen ? "Close Settings" : "Open / Update Settings"}</button>
-        </div>
-        ${settingsOpen ? `<form class="stack-form" data-form="settings">
-          ${input("companyName", "Company Name", state.settings.companyName)}
-          ${input("companyLogoUrl", "Company Logo URL", state.settings.companyLogoUrl || "")}
-          ${input("shipmentNumberFormat", "Shipment Number Format", state.settings.shipmentNumberFormat)}
-          ${input("invoiceNumberFormat", "Invoice Number Format", state.settings.invoiceNumberFormat)}
-          ${input("consolidationNumberFormat", "Consolidation Number Format", state.settings.consolidationNumberFormat)}
-          ${input("customerNumberFormat", "New Customer Number Format", state.settings.customerNumberFormat)}
-          ${input("additionalChargeNumberFormat", "Additional Charges Number Format", state.settings.additionalChargeNumberFormat)}
-          ${input("supplierNumberFormat", "Supplier / Transporter Number Format", state.settings.supplierNumberFormat)}
-          ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
-          ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
-          ${input("branches", "Branches", state.settings.branches)}
-          <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | consolidation: ${escapeHtml(nextConsolidationNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
-          <button type="submit">Save Company Settings</button>
-        </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
-      </article>
-    </section>`;
-}
-
-function renderAudit() {
-  if (!isAdminSession()) {
-    return `<section class="panel">${panelHeader("Access Denied", "Admin")}<p class="empty-state">Only admin users can access audit log.</p></section>`;
-  }
-  const rows = filteredAuditRows();
-  return `<section class="panel">${panelHeader("Audit Trail", "History")}
-    <div class="report-toolbar">
-      ${input("auditQuery", "Search Log", state.ui.auditFilters?.query || "")}
-      ${input("auditFromDate", "From", state.ui.auditFilters?.fromDate || "", false, "date")}
-      ${input("auditToDate", "To", state.ui.auditFilters?.toDate || "", false, "date")}
-      <button type="button" data-action="filter-audit">Filter</button>
-      ${deleteSelectorMarkup("audit", "Log To Delete")}
-      <button type="button" class="danger-button" data-action="delete-audit-log">Delete Log</button>
-    </div>
-    <div class="audit-scroll">${table("audit", rows, auditColumns())}</div>
-  </section>`;
-}
-
-function moduleActionPanel(title, type, note, extra = "") {
-  const newButtons = type === "shipment"
-    ? `<button type="button" data-action="new-record" data-type="shipment" data-mode="shipment">New Shipment</button><button type="button" class="secondary-button" data-action="new-record" data-type="shipment" data-mode="airway">New Airway</button>`
-    : `<button type="button" data-action="new-record" data-type="${escapeHtml(type)}">New</button>`;
-  return `<article class="panel">${panelHeader(title, "New / Load")}
-    <div class="action-stack">
-      <p class="empty-state">${escapeHtml(note)}</p>
-      ${newRecordSelectorMarkup(type)}
-      <div class="action-row">
-        ${newButtons}
-      </div>
-      ${loadSelectorMarkup(type)}
-      <div class="action-row">
-        <button type="button" class="secondary-button" data-action="load-record" data-type="${escapeHtml(type)}">Load</button>
-      </div>
-      ${extra}
-    </div>
-  </article>`;
-}
-
-function blockRequestControls(type, label) {
-  const rows = collectionFor(type);
-  return `<div class="action-stack">
-    ${loadSelectorMarkup(type, `${label} To Request`)}
-    <div class="action-row">
-      <button type="button" class="secondary-button" data-action="request-block" data-type="${escapeHtml(type)}">Block Request</button>
-      <button type="button" class="secondary-button" data-action="request-unblock" data-type="${escapeHtml(type)}">Unblock Request</button>
-    </div>
-    <p class="empty-state">${rows.length ? "Requests are sent to admin and shown in User Management / Settings." : `No ${label.toLowerCase()} records available for request.`}</p>
-  </div>`;
-}
-
-function documentActionControls(type, label) {
-  return `<div class="action-stack">
-    ${loadSelectorMarkup(type, `${label} To Generate`)}
-    <div class="action-row">
-      <button type="button" class="secondary-button" data-action="generate-document" data-type="${escapeHtml(type)}">Generate ${escapeHtml(label)}</button>
-      <button type="button" class="secondary-button" data-action="export-document" data-type="${escapeHtml(type)}">Save / Export</button>
-    </div>
-  </div>`;
-}
-
-function newRecordSelectorMarkup(type, label = "New Entry Option") {
-  const options = newRecordOptions(type);
-  return `<label>${escapeHtml(label)}
-    <select data-new-select="${escapeHtml(type)}">
-      ${options.map((option) => `<option value="${escapeHtml(option.type)}">${escapeHtml(option.label)}</option>`).join("")}
-    </select>
-  </label>`;
-}
-
-function newRecordOptions(type) {
-  const labels = {
-    shipment: "New Shipment / Airway",
-    load: "New Manifest",
-    customers: "New Customer",
-    suppliers: "New Supplier / Transporter",
-    tariff: "New Tariff",
-    document: "New Document Tag",
-    charge: "New Additional Charge",
-    invoice: "New Invoice",
-    pod: "New POD / Delivery",
-    status: "New Shipment Status",
-    user: "New User Account"
-  };
-  return [{ type, label: labels[type] || `New ${type}` }];
-}
-
-function loadSelectorMarkup(type, label = "Saved Records") {
-  const rows = collectionFor(type);
-  if (!rows.length) {
-    return `<p class="empty-state">No saved ${escapeHtml(type)} records available.</p>`;
-  }
-
-  return `<label>${escapeHtml(label)}
-    <select data-load-select="${escapeHtml(type)}">
-      ${rows.map((row) => `<option value="${escapeHtml(rowId(type, row))}">${escapeHtml(loadOptionLabel(type, row))}</option>`).join("")}
-    </select>
-  </label>`;
-}
-
-function deleteSelectorMarkup(type, label = "Record To Delete") {
-  const rows = collectionFor(type);
-  if (!rows.length) {
-    return `<p class="empty-state">No saved ${escapeHtml(type)} records available.</p>`;
-  }
-
-  return `<label>${escapeHtml(label)}
-    <select data-delete-select="${escapeHtml(type)}">
-      ${rows.map((row) => `<option value="${escapeHtml(rowId(type, row))}">${escapeHtml(loadOptionLabel(type, row))}</option>`).join("")}
-    </select>
-  </label>`;
-}
-
-function loadOptionLabel(type, row) {
-  if (type === "shipment" || type === "status" || type === "pod") {
-    return shipmentOptionLabel(row);
-  }
-
-  if (type === "load") {
-    return `${row.loadNo} | ${row.route} | ${row.status}`;
-  }
-
-  if (type === "user") {
-    return `${row.userName} | ${row.role}`;
-  }
-
-  if (type === "charge") {
-    return `${row.refNo} | ${row.shipmentNo} | ${row.chargeType}`;
-  }
-
-  if (type === "customers" || type === "suppliers") {
-    return `${row.code} | ${row.name}`;
-  }
-
-  return rowId(type, row);
-}
-
-function shipmentOptions() {
-  return visibleRows(state.shipments).map((row) => ({ value: row.jobNo, label: shipmentOptionLabel(row) }));
-}
-
-function tariffOptionsForCustomer(customer) {
-  const name = String(customer || "").trim().toLowerCase();
-  return visibleRows(state.tariffs)
-    .filter((row) => !name || String(row.customer || "").trim().toLowerCase() === name)
-    .map((row) => ({ value: row.tariffNo, label: `${row.tariffNo} | ${row.customer} | ${row.origin} to ${row.destination}` }));
-}
-
-function shipmentOptionLabel(row) {
-  return `${row.jobNo} | ${row.airwayBillNo || ""} | ${row.customer} | ${row.origin} to ${row.destination}`;
-}
-
-function consolidationJobsPanel(loadItem) {
-  const jobs = String(loadItem.jobNumbers || "")
-    .split(",")
-    .map((jobNo) => jobNo.trim())
-    .filter(Boolean);
-
-  return `<section class="consolidation-jobs">
-    <div class="panel-header">
-      <div>
-        <p class="eyebrow">Selected Manifest</p>
-        <h2>${escapeHtml(loadItem.loadNo)}</h2>
-        <p class="empty-state">Manifest: ${escapeHtml(loadItem.manifestStatus || "Not Generated")}${loadItem.lastManifestRequestNo ? ` | Request: ${escapeHtml(loadItem.lastManifestRequestNo)}` : ""}</p>
-      </div>
-      <div class="action-row">
-        ${isAdminSession()
-          ? `<button type="button" class="secondary-button" data-action="approve-load-manifest" data-id="${escapeHtml(loadItem.loadNo)}">Generate / Approve Manifest</button>`
-          : `<button type="button" class="secondary-button" data-action="request-load-manifest" data-id="${escapeHtml(loadItem.loadNo)}">Send Manifest Request</button>`}
-        <button type="button" class="secondary-button" data-action="open" data-type="load" data-id="${escapeHtml(loadItem.loadNo)}">Edit Manifest</button>
-      </div>
-    </div>
-    ${jobs.length ? `<div class="job-list-table">${jobs.map((jobNo) => consolidationJobRow(loadItem.loadNo, jobNo)).join("")}</div>` : `<p class="empty-state">No job numbers linked to this consolidation.</p>`}
-  </section>`;
-}
-
-function consolidationJobRow(loadNo, jobNo) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
-  const removeButton = isAdminSession()
-    ? `<button type="button" class="danger-button" data-action="remove-load-job" data-load-id="${escapeHtml(loadNo)}" data-job-id="${escapeHtml(jobNo)}">Remove</button>`
-    : "";
-  if (!shipmentItem) {
-    return `<div class="job-list-row"><strong>${escapeHtml(jobNo)}</strong><span class="empty-state">Shipment not found.</span>${removeButton}</div>`;
-  }
-
-  return `<div class="job-list-row">
-    <div class="job-list-main">
-      <button type="button" class="ghost-button inline-link" data-action="open" data-type="shipment" data-id="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button>
-      <span class="status-badge neutral">${escapeHtml(shipmentItem.status)}</span>
-    </div>
-    <div class="job-list-detail-grid">
-      <span><strong>Customer</strong>${escapeHtml(shipmentItem.customer)}</span>
-      <span><strong>Route</strong>${escapeHtml(shipmentItem.origin)} to ${escapeHtml(shipmentItem.destination)}</span>
-      <span><strong>Service</strong>${escapeHtml(shipmentItem.shipmentDirection)} / ${escapeHtml(shipmentItem.shipmentService)}</span>
-      <span><strong>Pieces</strong>${escapeHtml(shipmentItem.pieces)}</span>
-      <span><strong>Actual KG</strong>${money(shipmentItem.actualKg)}</span>
-      <span><strong>CBM</strong>${money(shipmentItem.cbm)}</span>
-      <span><strong>Chargeable KG</strong>${money(shipmentItem.chargeableKg)}</span>
-      <span><strong>POD</strong>${escapeHtml(shipmentItem.podStatus)}</span>
-      <span><strong>Invoice</strong>${escapeHtml(shipmentItem.invoiceStatus)}</span>
-      <span><strong>Sell / Cost</strong>${money(shipmentItem.sell)} / ${money(shipmentItem.buyCost)}</span>
-    </div>
-    ${removeButton}
-  </div>`;
-}
-
-function actionChecklist(items) {
-  return `<div class="bullet-card">${items.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>`;
-}
-
-function chargeFilterPanel() {
-  const filters = state.ui.chargeFilters || {};
-  return `<div class="charge-filter-grid">
-    ${input("chargeShipmentNo", "Shipment No", filters.shipmentNo || "", false, "text")}
-    ${select("chargeTypeFilter", "Charge Type", ["All", ...chargeTypeOptions()], filters.chargeType || "All")}
-    ${select("chargeSupplierFilter", "Supplier", ["All", ...uniqueOptions(state.additionalCharges.map((row) => row.supplier))], filters.supplier || "All")}
-    ${select("chargeStatusFilter", "Status", ["All", ...chargeStatusOptions()], filters.status || "All")}
-    ${input("chargeFromDate", "From Date", filters.fromDate || "", false, "date")}
-    ${input("chargeToDate", "To Date", filters.toDate || "", false, "date")}
-    <button type="button" data-action="filter-charges">Search</button>
-    ${newRecordSelectorMarkup("charge", "New Entry")}
-    <button type="button" data-action="new-record" data-type="charge">New Charge</button>
-    <button type="button" class="secondary-button" data-action="load-record" data-type="charge">Load Charge</button>
-  </div>`;
-}
-
-function chargeSummary(shipmentNo) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === shipmentNo);
-  const chargeRows = state.additionalCharges.filter((row) => row.shipmentNo === shipmentNo);
-  const extraCost = chargeRows.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
-  const freightCost = Number(shipmentItem?.buyCost || 0);
-  const sellAmount = Number(shipmentItem?.sell || 0);
-  return {
-    shipmentNo,
-    freightCost,
-    additionalCharges: extraCost,
-    totalCost: freightCost + extraCost,
-    sellAmount,
-    netProfit: sellAmount - (freightCost + extraCost)
-  };
-}
-
-function summaryCard(summary) {
-  return `<div class="summary-card">
-    <h3>${escapeHtml(summary.shipmentNo || "Shipment Summary")}</h3>
-    <p><span>Freight Cost</span><strong>${money(summary.freightCost)}</strong></p>
-    <p><span>Additional Charges</span><strong>${money(summary.additionalCharges)}</strong></p>
-    <p><span>Total Cost</span><strong>${money(summary.totalCost)}</strong></p>
-    <p><span>Sell Amount</span><strong>${money(summary.sellAmount)}</strong></p>
-    <p><span>Net Profit</span><strong>${money(summary.netProfit)}</strong></p>
-  </div>`;
-}
-
-function reportPreviewPanel(preview) {
-  return `<div class="report-preview-shell">
-    <div class="report-preview-page ${preview.format === "PDF" ? "pdf" : "excel"}">
-      <div class="report-preview-heading">
-        <h3>${escapeHtml(preview.reportType)}</h3>
-        <p>${escapeHtml(preview.summary)}</p>
-      </div>
-      ${table("shipment", preview.rows, shipmentColumns(), false)}
-    </div>
-  </div>`;
-}
-
-function kpi(title, value, caption) {
-  return `<article class="kpi"><span>${escapeHtml(title)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(caption)}</small></article>`;
-}
-
-function alert(title, detail) {
-  return `<article class="alert"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></article>`;
-}
-
-function panelHeader(title, label) {
-  return `<div class="panel-header"><div><p class="eyebrow">${escapeHtml(label)}</p><h2>${escapeHtml(title)}</h2></div></div>`;
-}
-
-function empty(text) {
-  return `<p class="empty-state">${escapeHtml(text)}</p>`;
-}
-
-function table(type, rows, columns, showLoad = true) {
-  const header = showLoad ? `<th>Load</th>` : "";
-  const colSpan = columns.length + (showLoad ? 1 : 0);
-  const body = rows.length
-    ? rows.map((row, index) => tableRow(type, row, index, columns, showLoad)).join("")
-    : `<tr><td colspan="${colSpan}">${empty("No records found.")}</td></tr>`;
-  return `<div class="table-wrap"><table><thead><tr>${columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("")}${header}</tr></thead><tbody>${body}</tbody></table></div>`;
-}
-
-function safeTable(type, rows, columns, fallbackText) {
-  try {
-    return table(type, Array.isArray(rows) ? rows : [], columns);
-  } catch (error) {
-    return `<div class="report-preview-empty"><p class="empty-state">${escapeHtml(fallbackText)} ${escapeHtml(error?.message || "")}</p></div>`;
-  }
-}
-
-function tableRow(type, row, index, columns, showLoad = true) {
-  const id = rowId(type, row);
-  const actionCell = showLoad ? `<td>${tableActionButton(type, id)}</td>` : "";
-  return `<tr>${columns.map(([key]) => `<td>${cellHtml(type, key, row)}</td>`).join("")}${actionCell}</tr>`;
-}
-
-function tableActionButton(type, id) {
-  if (type === "load") {
-    return `<button class="ghost-button" data-action="view-load" data-id="${escapeHtml(id)}">View Jobs</button>`;
-  }
-
-  if (type === "unblock" || type === "adminRequest" || type === "userRequest") {
-    return `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Review</button>`;
-  }
-
-  return `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Load</button>`;
-}
-
-function display(value) {
-  if (typeof value === "number") return Number.isInteger(value) ? value : money(value);
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  return value ?? "";
-}
-
-function uniqueOptions(values) {
-  return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right));
-}
-
-function chargeTypeOptions() {
-  return [
-    "Labour Charges",
-    "Delivery Charges",
-    "Loading Charges",
-    "Unloading Charges",
-    "Fuel Charges",
-    "Toll Charges",
-    "Handling Charges",
-    "Customs Charges",
-    "Warehouse Charges",
-    "Documentation Charges",
-    "Crane Charges",
-    "Local Transport",
-    "Miscellaneous"
-  ];
-}
-
-function chargeBasisOptions() {
-  return ["1 ton", "3 ton", "5 ton", "10 ton", "Flat", "Per Shipment"];
-}
-
-function chargeStatusOptions() {
-  return ["Draft", "Pending Approval", "Approved", "Rejected", "Posted to Invoice"];
-}
-
-function reportTypeOptions() {
-  return ["Daily shipments", "Open / in-transit / delivered", "Pending POD / invoice", "Revenue by customer / route", "Margin and cost vs sell"];
-}
-
-function shipmentDirectionOptions() {
-  return ["Import", "Export", "WHC"];
-}
-
-function shipmentServiceOptions(direction) {
-  if (direction === "Import") {
-    return ["SI", "AI", "LI", "Consolidation", "Other"];
-  }
-
-  if (direction === "WHC") {
-    return ["WHC Remark", "Consolidation"];
-  }
-
-  return ["SE", "AE", "LE", "Consolidation", "Other"];
-}
-
-function isConsolidationShipment(row) {
-  return String(row?.shipmentService || "").toLowerCase() === "consolidation";
-}
-
-function assignedConsolidationJobs(exceptLoadNo = "") {
-  const jobs = new Set();
-  state.loads
-    .filter((loadItem) => !exceptLoadNo || loadItem.loadNo !== exceptLoadNo)
-    .forEach((loadItem) => {
-      String(loadItem.jobNumbers || "")
-        .split(",")
-        .map((jobNo) => jobNo.trim())
-        .filter(Boolean)
-        .forEach((jobNo) => jobs.add(jobNo));
-    });
-  return jobs;
-}
-
-function availableConsolidationShipmentOptions(initialJobs = "", currentLoadNo = "") {
-  const selected = new Set(
-    String(initialJobs || "")
-      .split(",")
-      .map((jobNo) => jobNo.trim())
-      .filter(Boolean)
-  );
-  const assigned = assignedConsolidationJobs(currentLoadNo);
-  return state.shipments
-    .filter((row) => isConsolidationShipment(row))
-    .filter((row) => selected.has(row.jobNo) || !assigned.has(row.jobNo))
-    .map((row) => row.jobNo);
-}
-
-function normalizeConsolidationJobs(jobNumbers, currentLoadNo = "") {
-  const assigned = assignedConsolidationJobs(currentLoadNo);
-  const valid = new Set(state.shipments.filter(isConsolidationShipment).map((row) => row.jobNo));
-  return [
-    ...new Set(
-      String(jobNumbers || "")
-        .split(",")
-        .map((jobNo) => jobNo.trim())
-        .filter((jobNo) => jobNo && valid.has(jobNo) && !assigned.has(jobNo))
-    )
-  ];
-}
-
-function filteredAdditionalCharges() {
-  const filters = state.ui.chargeFilters || {};
-  return filteredRows(visibleRows(state.additionalCharges)).filter((row) => {
-    const shipmentMatch = !filters.shipmentNo || row.shipmentNo.toLowerCase().includes(String(filters.shipmentNo).toLowerCase());
-    const typeMatch = !filters.chargeType || filters.chargeType === "All" || row.chargeType === filters.chargeType;
-    const supplierMatch = !filters.supplier || filters.supplier === "All" || row.supplier === filters.supplier;
-    const statusMatch = !filters.status || filters.status === "All" || row.status === filters.status;
-    const fromMatch = !filters.fromDate || row.chargeDate >= filters.fromDate;
-    const toMatch = !filters.toDate || row.chargeDate <= filters.toDate;
-    return shipmentMatch && typeMatch && supplierMatch && statusMatch && fromMatch && toMatch;
-  });
-}
-
-function filteredAuditRows() {
-  const filters = state.ui.auditFilters || {};
-  return filteredRows(state.audit).filter((row) => {
-    const query = String(filters.query || "").trim().toLowerCase();
-    const textMatch = !query || Object.values(row).join(" ").toLowerCase().includes(query);
-    const date = recordDate(row);
-    const fromMatch = !filters.fromDate || !date || date >= filters.fromDate;
-    const toMatch = !filters.toDate || !date || date <= filters.toDate;
-    return textMatch && fromMatch && toMatch;
-  });
-}
-
-function pendingRequestCount() {
-  return state.adminRequests.filter((row) => row.status === "Pending").length + state.unblockRequests.filter((row) => row.status === "Pending").length;
-}
-
-function badge(value) {
-  const tone =
-    value === "Approved" || value === "Paid" || value === "Uploaded"
-      ? "ok"
-      : value === "Pending" || value === "Pending Approval" || value === "In-Transit"
-        ? "warn"
-        : value === "Rejected" || value === "Declined" || value === "Blocked" || value === "Missing"
-          ? "bad"
-          : "neutral";
-  return `<span class="status-badge ${tone}">${escapeHtml(value)}</span>`;
-}
-
-function cellHtml(type, key, row) {
-  if (["status", "podStatus", "invoiceStatus", "accountStatus", "manifestStatus"].includes(key)) {
-    return badge(display(row[key]));
-  }
-
-  if (type === "charge" && ["amount", "taxAmount", "totalAmount"].includes(key)) {
-    return money(row[key]);
-  }
-
-  if (type === "charge" && key === "taxPercent") {
-    return `${escapeHtml(row[key])}%`;
-  }
-
-  if (type === "invoice" && ["revenue", "supplierCost"].includes(key)) {
-    return money(row[key]);
-  }
-
-  return escapeHtml(display(row[key]));
-}
-
-function loadCard(loadItem) {
-  const jobs = loadItem.jobNumbers.split(",").map((job) => job.trim()).filter(Boolean);
-  return `<article class="load-card">
-    <button class="load-title" data-action="open" data-type="load" data-id="${escapeHtml(loadItem.loadNo)}">${escapeHtml(loadItem.loadNo)}</button>
-    <div class="load-meta">${escapeHtml(loadItem.tripDate)} | ${escapeHtml(loadItem.route)} | ${escapeHtml(loadItem.status)} | ${escapeHtml(loadItem.vehicleNo)}</div>
-    <div class="job-list">${jobs.map((jobNo) => jobBadge(jobNo)).join("") || empty("No jobs linked yet.")}</div>
-  </article>`;
-}
-
-function jobBadge(jobNo) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
-  if (!shipmentItem) return `<button class="job-chip warning">${escapeHtml(jobNo)}</button>`;
-  return `<button class="job-chip" data-action="open" data-type="shipment" data-id="${escapeHtml(jobNo)}"><strong>${escapeHtml(jobNo)}</strong><span>${escapeHtml(shipmentItem.customer)} | Pieces ${escapeHtml(shipmentItem.pieces)} | ${escapeHtml(shipmentItem.status)}</span></button>`;
-}
-
-function input(name, label, value = "", readonly = false, type = "text") {
-  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" type="${type}" value="${escapeHtml(value)}" ${readonly ? "readonly" : ""} /></label>`;
-}
-
-function textarea(name, label, value = "", readonly = false, rows = 4) {
-  return `<label>${escapeHtml(label)}<textarea name="${escapeHtml(name)}" rows="${rows}" ${readonly ? "readonly" : ""}>${escapeHtml(value)}</textarea></label>`;
-}
-
-function checkbox(name, label, checked = false, value = "on") {
-  return `<label class="checkbox-field"><input name="${escapeHtml(name)}" type="checkbox" value="${escapeHtml(value)}" ${checked ? "checked" : ""} /><span>${escapeHtml(label)}</span></label>`;
-}
-
-function select(name, label, options, selected = options[0]) {
-  const selectedValue = optionValue(selected);
-  return `<label>${escapeHtml(label)}<select name="${escapeHtml(name)}">${options.map((option) => {
-    const value = optionValue(option);
-    return `<option value="${escapeHtml(value)}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(optionLabel(option))}</option>`;
-  }).join("")}</select></label>`;
-}
-
-function selectFrom(name, label, options, value = options[0] || "") {
-  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(optionValue(value))}" /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
-}
-
-function optionValue(option) {
-  return typeof option === "object" && option ? option.value || "" : option || "";
-}
-
-function optionLabel(option) {
-  return typeof option === "object" && option ? option.label || option.value || "" : option || "";
-}
-
-function dropdownOptions(key, defaults = []) {
-  const saved = Array.isArray(state.dropdownOptions?.[key]) ? state.dropdownOptions[key] : [];
-  return [...new Set([...defaults, ...saved].map((item) => String(item || "").trim()).filter(Boolean))];
-}
-
-function selectEditable(name, label, optionKey, defaults = [], selected = defaults[0] || "") {
-  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(optionKey)}Options" value="${escapeHtml(optionValue(selected))}" data-dropdown-key="${escapeHtml(optionKey)}" /><datalist id="${escapeHtml(optionKey)}Options">${dropdownOptions(optionKey, defaults).map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
-}
-
-function rememberDropdownOptions(data) {
-  let changed = false;
-  Object.entries(data).forEach(([name, value]) => {
-    const optionKey = dropdownKeyForField(name);
-    const text = String(value || "").trim();
-    if (!optionKey || !text) return;
-    const current = dropdownOptions(optionKey);
-    if (!current.map((item) => item.toLowerCase()).includes(text.toLowerCase())) {
-      state.dropdownOptions[optionKey] = [...current, text];
-      changed = true;
-    }
-  });
-  if (changed) {
-    state.settings.dropdownOptionsJson = JSON.stringify(state.dropdownOptions);
-    saveState();
-    persistRecord("settings", state.settings);
-  }
-}
-
-function dropdownKeyForField(name) {
-  return {
-    branch: "branch",
-    status: "status",
-    podStatus: "podStatus",
-    invoiceStatus: "invoiceStatus",
-    shipmentDirection: "shipmentDirection",
-    shipmentService: "shipmentService",
-    manifestStatus: "manifestStatus",
-    chargeType: "chargeType",
-    chargeBasis: "chargeBasis",
-    mainSection: "mainSection",
-    weightSection: "weightSection",
-    minUpTo: "minUpTo",
-    type: "documentType",
-    role: "role",
-    accountStatus: "accountStatus",
-    branchAccess: "branchAccess",
-    currency: "currency",
-    terms: "terms",
-    volumeCategory: "volumeCategory"
-  }[name];
-}
-
-function statusOptions() {
-  return dropdownOptions("status", ["Draft", "Booked", "In-Transit", "Delivered", "Invoiced", "Closed", "Blocked"]);
-}
-
-function roleOptions() {
-  return dropdownOptions("role", ["Admin", "Operations", "Billing", "Management", "Read-only"]);
-}
-
-function accountStatusOptions() {
-  return dropdownOptions("accountStatus", ["Active", "Inactive", "Locked"]);
-}
-
-function branchAccessOptions() {
-  return dropdownOptions("branchAccess", [...branchOptions(), "Both"]);
-}
-
-function volumeCategoryOptions() {
-  return dropdownOptions("volumeCategory", ["1 CBM = 167 KG", "1 CBM = 200 KG", "1 CBM = 250 KG", "1 CBM = 333 KG"]);
-}
-
-function volumeDivisorFor(category) {
-  const match = String(category || "").match(/=\s*(\d+(?:\.\d+)?)\s*KG/i);
-  if (match) return Number(match[1]);
-  return { Sea: 333, Land: 250, Air: 167 }[category] || 0;
-}
-
-function shipmentColumns() {
-  return [["jobNo", "Job No"], ["airwayBillNo", "AWB Number"], ["customer", "Consignee"], ["shipmentDirection", "Type"], ["shipmentService", "Service"], ["status", "Status"], ["bookingDate", "Date"], ["invoiceStatus", "Invoice"]];
-}
-
-function loadColumns() {
-  return [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]];
-}
-
-function partyColumns() {
-  return [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["fullAddress", "Full Address"], ["email", "Email"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]];
-}
-
-function tariffColumns() {
-  return [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["weightSection", "Weight Section"], ["minUpTo", "Minimum Up To"], ["rate", "Rate"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"]];
-}
-
-function documentColumns() {
-  return [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]];
-}
-
-function invoiceColumns() {
-  return [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"]];
-}
-
-function additionalChargeColumns() {
-  return [["refNo", "Ref No"], ["shipmentNo", "Shipment No"], ["chargeType", "Charge Type"], ["supplier", "Supplier"], ["amount", "Amount"], ["taxAmount", "Tax"], ["totalAmount", "Total"], ["status", "Status"]];
-}
-
-function userColumns() {
-  return [["userName", "User"], ["email", "Email"], ["role", "Role"], ["accountStatus", "Status"], ["branchAccess", "Branch"]];
-}
-
-function unblockColumns() {
-  return [["requestNo", "Request"], ["requestType", "Type"], ["targetType", "Target"], ["referenceNo", "Reference"], ["customerName", "Name"], ["requestedBy", "Requested By"], ["reason", "Reason"], ["status", "Status"], ["date", "Date"]];
-}
-
-function adminRequestColumns() {
-  return [["requestNo", "Request"], ["requestType", "Type"], ["targetModule", "Module"], ["referenceNo", "Reference"], ["requestedBy", "Requested By"], ["status", "Status"], ["date", "Date"]];
-}
-
-function userRequestColumns() {
-  return [["requestNo", "Request"], ["requestType", "Type"], ["target", "Section"], ["referenceNo", "Reference"], ["requestedBy", "Requested By"], ["status", "Status"], ["date", "Date"]];
-}
-
-function auditColumns() {
-  return [["dateTime", "Date Time"], ["user", "User"], ["action", "Action"], ["reference", "Reference"]];
-}
-
-function rowId(type, row) {
-  const keys = {
-    shipment: "jobNo",
-    load: "loadNo",
-    pod: "jobNo",
-    status: "jobNo",
-    customers: "code",
-    suppliers: "code",
-    tariff: "tariffNo",
-    document: "documentNo",
-    charge: "refNo",
-    invoice: "invoiceNo",
-    user: "userName",
-    settings: "settingsKey",
-    unblock: "requestNo",
-    adminRequest: "requestNo",
-    userRequest: "requestNo",
-    audit: "id"
-  };
-  const id = row[keys[type]] || "";
-  return type === "userRequest" ? `${row.sourceType}:${id}` : id;
-}
-
-function collectionFor(type) {
-  const collections = {
-    shipment: visibleRows(state.shipments),
-    load: visibleRows(state.loads),
-    pod: visibleRows(state.shipments),
-    status: visibleRows(state.shipments),
-    customers: state.customers,
-    suppliers: state.suppliers,
-    tariff: visibleRows(state.tariffs),
-    document: visibleRows(state.documents),
-    charge: visibleRows(state.additionalCharges),
-    invoice: visibleRows(state.invoices),
-    user: state.users,
-    settings: [state.settings],
-    unblock: state.unblockRequests,
-    adminRequest: state.adminRequests,
-    userRequest: allUserRequests(),
-    audit: state.audit
-  };
-  return collections[type] || [];
-}
-
-async function handleModuleClick(event) {
-  const button = event.target.closest("[data-action]");
-  if (!button) return;
-  const { action, type, id, mode } = button.dataset;
-
-  if (action === "open") {
-    openRecord(type, id);
-    return;
-  }
-
-  if (action === "new-record") {
-    openNewDialog(selectedNewRecordType(type), mode || "");
-    return;
-  }
-
-  if (action === "load-record") {
-    handleLoadRecord(type);
-    return;
-  }
-
-  if (action === "view-load") {
-    state.ui.selectedLoadNo = id;
-    saveState();
-    render();
-    return;
-  }
-
-  if (action === "remove-load-job") {
-    await removeJobFromLoad(button.dataset.loadId, button.dataset.jobId);
-    return;
-  }
-
-  if (action === "delete-record") {
-    await deleteSelectedRecord(type);
-    return;
-  }
-
-  if (action === "delete-record-direct") {
-    await deleteRecordById(type, id);
-    return;
-  }
-
-  if (action === "request-block" || action === "request-unblock") {
-    await submitBlockRequest(type, selectedRecordId(type), action === "request-block" ? "Block" : "Unblock");
-    return;
-  }
-
-  if (action === "generate-document" || action === "export-document") {
-    generateRecordDocument(type, selectedRecordId(type), action === "export-document");
-    return;
-  }
-
-  if (action === "request-load-manifest") {
-    await requestLoadManifest(id);
-    return;
-  }
-
-  if (action === "approve-load-manifest") {
-    await approveLoadManifest(id);
-    return;
-  }
-
-  if (action === "send-status-email") {
-    sendShipmentStatusEmail(selectedRecordId("status"));
-    return;
-  }
-
-  if (action === "preview-report") {
-    previewReport();
-    return;
-  }
-
-  if (action === "export-report") {
-    exportReport();
-    return;
-  }
-
-  if (action === "margin-report") {
-    const margin = filteredRows(visibleRows(state.shipments)).reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0);
-    window.alert(`Current margin: ${money(margin)}`);
-    return;
-  }
-
-  if (action === "filter-charges") {
-    applyChargeFilters();
-    return;
-  }
-
-  if (action === "toggle-settings") {
-    state.ui.showSettingsForm = !state.ui.showSettingsForm;
-    saveState();
-    render();
-    return;
-  }
-
-  if (action === "filter-audit") {
-    applyAuditFilters();
-    return;
-  }
-
-  if (action === "delete-audit-log") {
-    await deleteAuditLog();
-    return;
-  }
-}
-
-function selectedRecordId(type) {
-  return moduleContent.querySelector(`[data-load-select='${type}']`)?.value || "";
-}
-
-function selectedNewRecordType(type) {
-  return moduleContent.querySelector(`[data-new-select='${type}']`)?.value || type;
-}
-
-function handleLoadRecord(type) {
-  const selectedId = selectedRecordId(type);
-
-  if (type === "load") {
-    if (!selectedId) {
-      window.alert("Select a consolidation first.");
-      return;
-    }
-    state.ui.selectedLoadNo = selectedId;
-    saveState();
-    render();
-    return;
-  }
-
-  if (type === "status") {
-    openStatusDialog(selectedId);
-    return;
-  }
-
-  if (type === "pod") {
-    openPodDialog(selectedId);
-    return;
-  }
-
-  if (selectedId) {
-    openRecord(type, selectedId);
-    return;
-  }
-
-  openLoadDialog(type);
-}
-
-function openRecord(type, id) {
-  const collection = collectionFor(type);
-  const record = collection.find((row) => rowId(type, row) === id);
-  if (!record) return;
-
-  if (type === "adminRequest") {
-    openAdminRequestDialog(record);
-    return;
-  }
-
-  if (type === "unblock") {
-    openBlockRequestDialog(record);
-    return;
-  }
-
-  if (type === "userRequest") {
-    if (record.sourceType === "adminRequest") openAdminRequestDialog(record);
-    else openBlockRequestDialog(record);
-    return;
-  }
-
-  editing = { type, id, record };
-  dialogState = null;
-  dialogType.textContent = `${type} record`;
-  dialogTitle.textContent = id;
-  dialogSave.textContent = type === "charge" && !isAdminSession() ? "Send Change Request" : "Save Changes";
-  dialogSecondary.classList.add("is-hidden");
-  dialogBody.innerHTML = Object.entries(record)
-    .map(([key, value]) => detailFieldControl(type, key, value, record))
-    .join("");
-  if (type === "shipment") bindShipmentDirectionDialog();
-  if (type === "shipment") bindShipmentCustomerTariffs();
-  if (type === "shipment") bindVolumeCalculator();
-  if (type === "shipment") bindPalletDimensionBuilder();
-  if (type === "tariff") bindTariffAdditionalCharges(record.additionalChargesJson || "[]");
-  if (type === "load") bindConsolidationJobPicker();
-  bindDialogPasswordToggles();
-  recordDialog.showModal();
-}
-
-function duplicateRecordExists(type, id) {
-  const normalized = String(id || "").trim().toLowerCase();
-  if (!normalized) return false;
-  return allCollectionFor(type).some((row) => String(rowId(type, row) || "").trim().toLowerCase() === normalized);
-}
-
-function allCollectionFor(type) {
-  const collections = {
-    shipment: state.shipments,
-    load: state.loads,
-    customers: state.customers,
-    suppliers: state.suppliers,
-    tariff: state.tariffs,
-    document: state.documents,
-    charge: state.additionalCharges,
-    invoice: state.invoices,
-    user: state.users,
-    unblock: state.unblockRequests,
-    adminRequest: state.adminRequests
-  };
-  return collections[type] || collectionFor(type);
-}
-
-function notifyDuplicate(id) {
-  notifyDenied("Already used", `${id} is already used. Enter a different serial number.`);
-}
-
-function detailFieldControl(type, key, value, record) {
-  const readonlyKeys = new Set(["jobNo", "loadNo", "code", "tariffNo", "documentNo", "invoiceNo", "refNo", "userName", "requestNo"]);
-  const options = detailFieldOptions(type, key, record);
-  if (type === "shipment" && ["sell", "buyCost"].includes(key)) {
-    return "";
-  }
-  if (type === "shipment" && key === "actualKg" && record?.entryMode === "airway") {
-    return `<input type="hidden" name="actualKg" value="${escapeHtml(value ?? 0)}" />`;
-  }
-  if (["shipment", "load"].includes(type) && key === "notes") {
-    return "";
-  }
-  if (type === "tariff" && key === "additionalChargesJson") {
-    return tariffAdditionalChargesBuilder(value || "[]");
-  }
-  if (type === "tariff" && ["additionalChargesTotal", "grandTotal"].includes(key)) {
-    return "";
-  }
-  if (type === "shipment" && key === "palletDimensionsJson") {
-    return palletDimensionBuilder(value || "[]");
-  }
-  if (type === "shipment" && key === "tcnNumber") {
-    return `${input(key, labelize(key), value ?? "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>`;
-  }
-  if (type === "user" && key === "password") {
-    return passwordField(key, labelize(key), value ?? "");
-  }
-  if (type === "user" && key === "sectionAccess") {
-    return sectionAccessCheckboxes(sectionAccessSet(value));
-  }
-  if (type === "load" && key === "jobNumbers") {
-    return consolidationShipmentPicker(value, record.loadNo);
-  }
-  if (typeof value === "boolean") {
-    return checkbox(key, labelize(key), value);
-  }
-
-  if (options.length) {
-    const optionKey = dropdownKeyForField(key);
-    return optionKey ? selectEditable(key, labelize(key), optionKey, options, String(value ?? "")) : select(key, labelize(key), options, String(value ?? ""));
-  }
-
-  const inputType = key.toLowerCase().includes("date") ? "date" : typeof value === "number" ? "number" : "text";
-  const readonly = readonlyKeys.has(key);
-  return input(key, labelize(key), value ?? "", readonly, inputType);
-}
-
-function passwordField(name, label, value = "") {
-  return `<label>${escapeHtml(label)}<span class="password-input-wrap"><input name="${escapeHtml(name)}" type="password" value="${escapeHtml(value)}" /><button type="button" class="password-toggle" data-dialog-action="toggle-password" aria-label="Show password" title="Show password">View</button></span></label>`;
-}
-
-function detailFieldOptions(type, key, record) {
-  const common = {
-    branch: branchOptions(),
-    status: statusOptions(),
-    podStatus: ["Pending", "Uploaded", "Missing", "Disputed", "Approved"],
-    invoiceStatus: ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue", ...state.invoices.map((row) => row.invoiceNo)],
-    shipmentDirection: shipmentDirectionOptions(),
-    shipmentService: shipmentServiceOptions(record.shipmentDirection || "Export"),
-    volumeCategory: volumeCategoryOptions(),
-    manifestStatus: ["Not Generated", "Pending Approval", "Approved", "Rejected"],
-    chargeType: chargeTypeOptions(),
-    chargeBasis: chargeBasisOptions(),
-    currency: ["KWD", "AED", "USD"],
-    accountStatus: accountStatusOptions(),
-    role: roleOptions(),
-    branchAccess: branchAccessOptions()
-  };
-
-  if (key === "customer") return state.customers.map((row) => row.name);
-  if (key === "tariffNo" && type === "shipment" && record?.entryMode !== "airway") return tariffOptionsForCustomer(record.customer);
-  if (key === "tariffNo") return visibleRows(state.tariffs).map((row) => row.tariffNo);
-  if (key === "mainSection") return dropdownOptions("mainSection", ["FTL", "LTL"]);
-  if (key === "weightSection") return dropdownOptions("weightSection", ["Minimum", "Up to 100 KG", "300 KG", "500 KG", "1000 KG", "More"]);
-  if (key === "minUpTo") return dropdownOptions("minUpTo", ["Minimum", "100 KG", "300 KG", "500 KG", "1000 KG", "More"]);
-  if (key === "supplier") return state.suppliers.map((row) => row.name);
-  if (key === "shipmentNo" || key === "linkedNo" || key === "jobNo") return shipmentOptions();
-  if (type === "load" && key === "jobNumbers") return [];
-  return common[key] || [];
-}
-
-function labelize(key) {
-  return String(key)
-    .replace(/([A-Z])/g, " $1")
-    .replace(/^./, (letter) => letter.toUpperCase());
-}
-
-async function saveDialogRecord() {
-  if (dialogState?.onSave) {
-    await dialogState.onSave();
-    return;
-  }
-
-  if (!editing) return;
-  const data = collectFormValues(dialogBody.closest("form"));
-  rememberDropdownOptions(data);
-  const updatedRecord = { ...editing.record };
-  Object.keys(updatedRecord).forEach((key) => {
-    if (Object.prototype.hasOwnProperty.call(data, key)) {
-      updatedRecord[key] = coerceValue(updatedRecord[key], data[key]);
-    }
-  });
-  if (editing.type === "shipment") {
-    if (!String(updatedRecord.billTo1 || "").trim() && !String(updatedRecord.billTo2 || "").trim()) {
-      notifyDenied("Bill To required", "Enter at least one Bill To value.");
-      return;
-    }
-    updatedRecord.notes = shipmentMetaNotes(updatedRecord);
-  }
-  if (editing.type === "load") {
-    const jobs = normalizeConsolidationJobs(updatedRecord.jobNumbers, editing.id);
-    if (!jobs.length) {
-      notifyDenied("Consolidation not saved", "Add at least one unassigned shipment with service type Consolidation.");
-      return;
-    }
-    updatedRecord.jobNumbers = jobs.join(", ");
-    updatedRecord.notes = loadMetaNotes(updatedRecord);
-    recalculateLoad(updatedRecord);
-  }
-
-  if (editing.type === "charge" && !isAdminSession()) {
-    await submitAdminRequest(
-      "Additional Charges",
-      editing.id,
-      "Charge change request submitted by non-admin user.",
-      summarizeChanges(editing.record, updatedRecord),
-      "Charge Change Request"
-    );
-    addHistory("Submitted charge change request", editing.id);
-    saveState();
-    resetDialogShell();
-    recordDialog.close();
-    notifySuccess("Request submitted", `${editing.id} was sent to admin approval.`);
-    render();
-    return;
-  }
-
-  if (editing.type === "load" && !isAdminSession()) {
-    const request = await submitAdminRequest(
-      "Consolidation",
-      editing.id,
-      "Consolidation change request submitted by non-admin user.",
-      summarizeChanges(editing.record, updatedRecord),
-      "Manifest Approval"
-    );
-    editing.record.manifestStatus = "Pending Approval";
-    editing.record.lastManifestRequestNo = request.requestNo;
-    await persistRecord("load", editing.record);
-    addHistory("Submitted consolidation change request", editing.id);
-    saveState();
-    resetDialogShell();
-    recordDialog.close();
-    notifySuccess("Request submitted", `${editing.id} was sent to admin approval.`);
-    render();
-    return;
-  }
-
-  Object.assign(editing.record, updatedRecord);
-  const editedType = editing.type;
-  const editedId = editing.id;
-  addHistory(`Updated ${editing.type}`, editing.id);
-  await persistRecord(editing.type, editing.record);
-  saveState();
-  resetDialogShell();
-  recordDialog.close();
-  if (editedType === "user") {
-    notifySuccess("User updated", `${editedId} was saved successfully.`);
-    setTimeout(() => syncFromApi(), 300);
-  } else {
-    notifySuccess("Record updated", `${editedId} was saved successfully.`);
-  }
-  render();
-}
-
-function resetDialogShell() {
-  editing = null;
-  dialogState = null;
-  dialogSecondary.classList.add("is-hidden");
-  dialogSecondary.textContent = "Secondary";
-  dialogSave.textContent = "Save Changes";
-}
-
-function openDialog({ title, typeLabel, body, saveLabel, secondaryLabel = "", onSave = null, onSecondary = null, afterOpen = null }) {
-  resetDialogShell();
-  dialogType.textContent = typeLabel;
-  dialogTitle.textContent = title;
-  dialogBody.innerHTML = body;
-  dialogSave.textContent = saveLabel || "Save Changes";
-  dialogState = { onSave, onSecondary };
-  if (secondaryLabel && onSecondary) {
-    dialogSecondary.textContent = secondaryLabel;
-    dialogSecondary.classList.remove("is-hidden");
-  }
-  recordDialog.showModal();
-  afterOpen?.();
-  bindDialogPasswordToggles();
-}
-
-function openNewDialog(type, mode = "") {
-  const config = dialogConfigFor(type, mode);
-  if (!config) return;
-  openDialog({
-    title: config.title,
-    typeLabel: config.typeLabel,
-    body: config.body,
-    saveLabel: config.saveLabel,
-    async onSave() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      rememberDropdownOptions(data);
-      const saved = await config.onSave(data);
-      if (saved === false) {
-        return;
-      }
-      saveState();
-      recordDialog.close();
-      render();
-    },
-    afterOpen: config.afterOpen
-  });
-}
-
-function openLoadDialog(type) {
-  const collection = collectionFor(type);
-  if (!collection.length) {
-    window.alert(`No ${type} records available yet.`);
-    return;
-  }
-  const firstId = rowId(type, collection[0] || {});
-  openDialog({
-    title: `Load ${type}`,
-    typeLabel: "Load",
-    body: `<label>Select existing record<select name="selectedId">${collection.map((row) => `<option value="${escapeHtml(rowId(type, row))}">${escapeHtml(rowId(type, row))}</option>`).join("")}</select></label>`,
-    saveLabel: `Load ${type}`,
-    onSave() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      const selectedId = data.selectedId || firstId;
-      recordDialog.close();
-      openRecord(type, selectedId);
-    }
-  });
-}
-
-function openStatusDialog(jobNo = "") {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo) || state.shipments[0];
-  openDialog({
-    title: jobNo ? `Shipment Status - ${jobNo}` : "Shipment Status Update",
-    typeLabel: "Status",
-    body: `
-      ${selectFrom("jobNo", "Shipment No", shipmentOptions(), shipmentItem?.jobNo || "")}
-      ${select("status", "Shipment Status", statusOptions(), shipmentItem?.status || "Booked")}
-      ${select("podStatus", "POD Status", ["Pending", "Uploaded", "Missing", "Disputed", "Approved"], shipmentItem?.podStatus || "Pending")}
-      ${select("invoiceStatus", "Invoice Status", ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue"], shipmentItem?.invoiceStatus || "Unbilled")}
-      ${input("notes", "Notes", "Status update")}
-    `,
-    saveLabel: "Update Shipment Status",
-    async onSave() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      await updateStatus(data);
-      saveState();
-      recordDialog.close();
-      render();
-    }
-  });
-}
-
-function openPodDialog(jobNo = "") {
-  openDialog({
-    title: jobNo ? `POD / Delivery - ${jobNo}` : "Delivery Update",
-    typeLabel: "POD",
-    body: `
-      ${selectFrom("jobNo", "Shipment No", shipmentOptions(), jobNo || visibleRows(state.shipments)[0]?.jobNo || "")}
-      ${input("receiver", "Receiver", "Receiver Name")}
-    `,
-    saveLabel: "Mark Delivered + Upload POD",
-    async onSave() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      await updatePod(data);
-      saveState();
-      recordDialog.close();
-      render();
-    }
-  });
-}
-
-function openAdminRequestDialog(record) {
-  openDialog({
-    title: record.requestNo,
-    typeLabel: "Approval Request",
-    body: `
-      <label>Request Type<input value="${escapeHtml(record.requestType)}" readonly /></label>
-      <label>Module<input value="${escapeHtml(record.targetModule)}" readonly /></label>
-      <label>Reference No<input value="${escapeHtml(record.referenceNo)}" readonly /></label>
-      <label>Requested By<input value="${escapeHtml(record.requestedBy)}" readonly /></label>
-      <label>Status<input value="${escapeHtml(record.status)}" readonly /></label>
-      <label>Details<textarea name="details" rows="4" readonly>${escapeHtml(record.details)}</textarea></label>
-      <label>Proposed Values<textarea name="proposedValues" rows="5" readonly>${escapeHtml(record.proposedValues)}</textarea></label>
-      <label>Approval Notes<textarea name="approvalNotes" rows="4">${escapeHtml(record.approvalNotes || "")}</textarea></label>
-    `,
-    saveLabel: "Approve Request",
-    secondaryLabel: "Reject Request",
-    async onSave() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      await approveAdminRequest(record, data.approvalNotes || "");
-      recordDialog.close();
-      render();
-    },
-    async onSecondary() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      await rejectAdminRequest(record, data.approvalNotes || "");
-      recordDialog.close();
-      render();
-    }
-  });
-}
-
-function dialogConfigFor(type, mode = "") {
-  const configs = {
-    shipment: {
-      title: mode === "airway" ? "New Airway Bill" : "New Shipment",
-      typeLabel: mode === "airway" ? "Airway Bill" : "Shipment",
-      saveLabel: mode === "airway" ? "Create Airway Bill" : "Create Shipment",
-      body: shipmentDialogBody(mode),
-      onSave: createShipment,
-      afterOpen: () => {
-        bindShipmentDirectionDialog();
-        bindShipmentCustomerTariffs();
-        bindVolumeCalculator();
-        bindPalletDimensionBuilder();
-      }
-    },
-    load: {
-      title: "New Manifest",
-      typeLabel: "Manifest",
-      saveLabel: "Create Manifest",
-      body: `
-        ${input("loadNo", "Manifest No", nextConsolidationNumber(), false)}
-        ${input("tripDate", "Trip Date", today(), false, "date")}
-        ${input("route", "Route", "Kuwait - Riyadh")}
-        ${input("transporter", "Transporter", "Al Dana Transport")}
-        ${input("vehicleNo", "Vehicle No", "KWT-00000")}
-        ${input("driverName", "Driver Name", "")}
-        ${input("driverNumber", "Driver Number", "")}
-        ${select("status", "Status", ["Planned", "Loading", "Dispatched", "Delivered", "Closed"])}
-        ${select("manifestStatus", "Manifest Status", ["Not Generated", "Pending Approval", "Approved", "Rejected"])}
-        ${input("lastManifestRequestNo", "Last Manifest Request No", "")}
-        ${consolidationShipmentPicker()}
-      `,
-      onSave: createLoad,
-      afterOpen: bindConsolidationJobPicker
-    },
-    customers: partyDialogConfig("customers", "Customer"),
-    suppliers: partyDialogConfig("suppliers", "Supplier / Transporter"),
-    tariff: {
-      title: "New Tariff",
-      typeLabel: "Tariff",
-      saveLabel: "Create Tariff",
-      body: `
-        ${input("tariffNo", "Tariff Number", nextNumber("TAR", state.tariffs, "tariffNo"), false)}
-        ${selectFrom("customer", "Consignee", state.customers.map((row) => row.name))}
-        ${input("origin", "Origin", "Kuwait City")}
-        ${input("destination", "Destination", "Riyadh")}
-        ${selectEditable("mainSection", "Main Section", "mainSection", ["FTL", "LTL"])}
-        ${selectEditable("weightSection", "Weight Section", "weightSection", ["Minimum", "Up to 100 KG", "300 KG", "500 KG", "1000 KG", "More"])}
-        ${selectEditable("minUpTo", "Minimum Up To", "minUpTo", ["Minimum", "100 KG", "300 KG", "500 KG", "1000 KG", "More"])}
-        ${input("rate", "Rate", "0.420", false, "number")}
-        ${input("minCharge", "Minimum Charge", "35.000", false, "number")}
-        ${tariffAdditionalChargesBuilder()}
-      `,
-      onSave: createTariff,
-      afterOpen: () => bindTariffAdditionalCharges()
-    },
-    document: {
-      title: "New Document Tag",
-      typeLabel: "Document",
-      saveLabel: "Save Document Tag",
-      body: `
-        ${input("documentNo", "Document No", nextNumber("DOC", state.documents, "documentNo"), false)}
-        ${selectFrom("linkedNo", "Attach To", shipmentOptions())}
-        ${select("type", "Document Type", ["Waybill", "LR", "CMR", "Commercial Invoice", "Packing List", "POD", "Supplier Invoice"])}
-        ${select("status", "Status", ["Uploaded", "Attached", "Missing", "Issued", "Stored", "Replaced"])}
-        ${input("date", "Date", today(), false, "date")}
-        ${input("owner", "Owner", currentUserName())}
-        <label>Upload File<input name="fileUpload" type="file" accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf" /></label>
-      `,
-      onSave: createDocument
-    },
-    charge: {
-      title: "New Additional Charge",
-      typeLabel: "Additional Charges",
-      saveLabel: isAdminSession() ? "Save Charge" : "Send for Approval",
-      body: chargeDialogBody(),
-      onSave: createCharge,
-      afterOpen: bindChargeLineBuilder
-    },
-    invoice: {
-      title: "New Invoice",
-      typeLabel: "Invoice",
-      saveLabel: "Generate Invoice",
-      body: `
-        ${input("invoiceNo", "Invoice No", nextInvoiceNumber(), false)}
-        ${selectFrom("customer", "Consignee", state.customers.map((row) => row.name))}
-        ${selectFrom("shipmentNo", "Shipment", shipmentOptions())}
-        ${input("tariffNo", "Assigned Tariff", "", true)}
-        ${input("revenue", "Revenue", "100.000", false, "number")}
-        ${input("supplierCost", "Supplier Cost", "70.000", false, "number")}
-        ${select("status", "Status", ["Draft", "Approved", "Sent", "Paid", "Overdue"])}
-        ${input("date", "Date", today(), false, "date")}
-      `,
-      onSave: createInvoice,
-      afterOpen: bindInvoiceShipmentTariff
-    },
-    pod: {
-      title: "Delivery Update",
-      typeLabel: "POD",
-      saveLabel: "Mark Delivered + Upload POD",
-      body: `
-        ${selectFrom("jobNo", "Shipment No", shipmentOptions())}
-        ${input("receiver", "Receiver", "Receiver Name")}
-      `,
-      onSave: updatePod
-    },
-    status: {
-      title: "Shipment Status Update",
-      typeLabel: "Status",
-      saveLabel: "Update Shipment Status",
-      body: `
-        ${selectFrom("jobNo", "Shipment No", shipmentOptions())}
-        ${select("status", "Shipment Status", statusOptions())}
-        ${select("podStatus", "POD Status", ["Pending", "Uploaded", "Missing", "Disputed", "Approved"])}
-        ${select("invoiceStatus", "Invoice Status", ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue"])}
-        ${input("notes", "Notes", "Status update")}
-      `,
-      onSave: updateStatus
-    },
-    user: {
-      title: "Create User / Permissions",
-      typeLabel: "User",
-      saveLabel: "Create User",
-      body: userDialogBody(),
-      onSave: createUser
-    }
-  };
-
-  return configs[type];
-}
-
-function partyDialogConfig(key, label) {
-  return {
-    title: `New ${label}`,
-    typeLabel: label,
-    saveLabel: `Create ${label}`,
-    body: `
-      ${input("code", `${label} Code`, key === "customers" ? nextCustomerNumber() : nextSupplierNumber(), false)}
-      ${input("name", "Name", "")}
-      ${input("locationOrLane", "Lane / Location", "")}
-      ${key === "customers" ? textarea("fullAddress", "Full Address / Shipping Delivery Address", "", false, 3) : ""}
-      ${input("email", "Contact Email", "", false, "email")}
-      ${select("terms", "Credit Limit Days", ["15 days", "30 days", "45 days"])}
-      ${select("status", "Status", ["Active", "Inactive", "Blocked"])}
-      ${select("branch", "Branch", [...branchOptions(), "Both"], defaultUserBranch())}
-    `,
-    onSave: (data) => createParty(key, data)
-  };
-}
-
+// ==========================================
+// MODAL FORMS DIALOG LAYOUT GENERATION HTML
+// ==========================================
 function shipmentDialogBody(mode = "shipment") {
   const isAirway = mode === "airway";
-  const defaultCustomer = state.customers[0]?.name || "";
+  let displayJobNo = editing ? editing.jobNo : "";
+  if (!editing) {
+    displayJobNo = nextShipmentNumber();
+  }
+
   return `
-    <input type="hidden" name="entryMode" value="${escapeHtml(mode || "shipment")}" />
-    ${input("jobNo", isAirway ? "Airway Bill Number" : "Shipment Number", isAirway ? nextNumber("AWB", state.shipments, "jobNo") : nextShipmentNumber(), false)}
-    ${isAirway ? input("bookingDate", "Date", today(), false, "date") : input("airwayBillNo", "Airway Bill Number", nextNumber("AWB", state.shipments, "jobNo"), false)}
-    ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
-    ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), "Export")}
-    ${select("shipmentService", "Shipment Service", shipmentServiceOptions("Export"), "AE")}
-    ${isAirway ? "" : input("shipmentServiceOther", "Other Service / WHC Remark", "")}
-    ${selectFrom("customer", "Consignee", state.customers.map((row) => row.name), defaultCustomer)}
-    <label>Bill To 1<input name="billTo1" value="" /></label>
-    <label>Bill To 2<input name="billTo2" value="" /></label>
-    ${isAirway ? input("tariffNo", "Pick Up Location", "", false) : selectFrom("tariffNo", "Applied Tariff", tariffOptionsForCustomer(defaultCustomer))}
-    ${input("origin", "Origin", "Kuwait City")}
-    ${input("destination", "Destination", "Riyadh")}
-    ${input("pieces", isAirway ? "Number of Packages" : "Pieces / Pallets", "1", false, "number")}
-    ${isAirway ? `<input type="hidden" name="actualKg" value="0" />` : input("actualKg", "Actual Weight KG", "100", false, "number")}
-    ${input("manualChargeableKg", "Total Chargeable Weight KG", "0", false, "number")}
-    ${palletDimensionBuilder()}
-    ${select("volumeCategory", "Volume CBM Category", volumeCategoryOptions(), "1 CBM = 250 KG")}
-    <input type="hidden" name="chargeableDivisor" value="250" />
-    ${input("cbm", "Volume CBM", isAirway ? "0" : "1.0", false, "number")}
-    ${input("chargeableKg", "Total Volume Weight", "0", false, "number")}
-    ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
-    ${isAirway ? textarea("shipmentServiceOther", "Shipper Reference", "", false, 4) : select("transitDays", "Transit Time in Days", Array.from({ length: 30 }, (_, index) => String(index + 1)), "3")}
-    ${input("tcnNumber", "TCN Number", "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>
-  `;
-}
-
-function palletDimensionBuilder(initialValue = "[]") {
-  return `<section class="pallet-builder" data-pallet-builder>
-    <input type="hidden" name="palletDimensionsJson" value="${escapeHtml(initialValue || "[]")}" />
-    <div class="tariff-charge-entry">
-      ${input("palletCount", "No of Pallets", "1", false, "number")}
-      ${input("palletLength", "Length", "100", false, "number")}
-      ${input("palletWidth", "Width", "120", false, "number")}
-      ${input("palletHeight", "Height", "120", false, "number")}
-      <button type="button" class="secondary-button" data-dialog-action="add-pallet-line">Add</button>
-    </div>
-    <div class="tariff-charge-table" data-pallet-lines-list></div>
-  </section>`;
-}
-
-function userDialogBody() {
-  const checkedSections = sectionAccessSet("Dashboard, Shipment / Airway, Reports");
-  return `
-    ${input("userName", "User Name", "")}
-    ${passwordField("password", "Password", "")}
-    ${input("email", "Email", "", false, "email")}
-    ${select("role", "User Role", roleOptions(), "Operations")}
-    ${select("accountStatus", "User Account", accountStatusOptions(), "Active")}
-    ${select("branchAccess", "Branch Access", branchAccessOptions(), branchOptions()[0])}
-    ${sectionAccessCheckboxes(checkedSections)}
-    ${checkbox("canViewAllEntry", "User can view all entry")}
-    ${checkbox("canViewOnlySelfEntry", "User can view only self entry", true)}
-    ${checkbox("canEditAllEntry", "User can edit all entry")}
-    ${checkbox("canViewUpdatedHistory", "User can view updated history", true)}
-    ${input("notes", "Notes", "Created from admin panel")}
-  `;
-}
-
-function sectionAccessCheckboxes(checkedSections = new Set()) {
-  return `<fieldset class="section-access-grid">
-    <legend>Menu Access Permissions</legend>
-    ${modules.map(([name]) => checkbox("sectionAccessList", name, checkedSections.has(name), name)).join("")}
-  </fieldset>`;
-}
-
-function sectionAccessSet(value) {
-  const normalized = normalizeSectionAccess(value || "");
-  if (normalized === "All") return new Set(modules.map(([name]) => name));
-  return new Set(normalized.split(",").map((item) => item.trim()).filter(Boolean));
-}
-
-function openBlockRequestDialog(record) {
-  openDialog({
-    title: record.requestNo,
-    typeLabel: "Block / Unblock Request",
-    body: `
-      <label>Request Type<input value="${escapeHtml(record.requestType || "Unblock")}" readonly /></label>
-      <label>Target<input value="${escapeHtml(record.targetType || "Customer")}" readonly /></label>
-      <label>Reference<input value="${escapeHtml(record.referenceNo || record.customerName)}" readonly /></label>
-      <label>Requested By<input value="${escapeHtml(record.requestedBy)}" readonly /></label>
-      <label>Status<input value="${escapeHtml(record.status)}" readonly /></label>
-      <label>Reason<textarea rows="4" readonly>${escapeHtml(record.reason)}</textarea></label>
-      <label>Approval Notes<textarea name="approvalNotes" rows="4">${escapeHtml(record.notes || "")}</textarea></label>
-    `,
-    saveLabel: "Approve Request",
-    secondaryLabel: "Reject Request",
-    async onSave() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      await approveBlockRequest(record, data.approvalNotes || "");
-      recordDialog.close();
-      render();
-    },
-    async onSecondary() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      await rejectBlockRequest(record, data.approvalNotes || "");
-      recordDialog.close();
-      render();
-    }
-  });
-}
-
-function chargeDialogBody() {
-  const invoiceOptions = ["", ...state.invoices.map((row) => row.invoiceNo)];
-  return `
-    ${input("refNo", "Receipt / Reference No", nextAdditionalChargeNumber(), false)}
-    ${selectFrom("shipmentNo", "Shipment No", shipmentOptions())}
-    ${input("chargeDate", "Charge Date", today(), false, "date")}
-    ${selectFrom("supplier", "Supplier / Vendor", state.suppliers.map((row) => row.name))}
-    ${input("referenceNo", "Reference No", "")}
-    ${select("invoiceNo", "Invoice No", invoiceOptions, "")}
-    ${input("taxPercent", "Tax %", "0", false, "number")}
-    ${select("currency", "Currency", ["KWD", "AED", "USD"], "KWD")}
-    <input type="hidden" name="chargeLines" value="[]" />
-    <section class="charge-line-builder" data-charge-line-builder>
-      <div class="charge-line-entry">
-        ${select("lineChargeType", "Charge Type", chargeTypeOptions())}
-        ${input("lineAmount", "Amount", "0.000", false, "number")}
-        <button type="button" class="secondary-button" data-dialog-action="add-charge-line">Add</button>
+    <div class="dialog-grid">
+      <div>
+        <label>Job Number</label>
+        <input type="text" id="field_jobNo" name="jobNo" value="${displayJobNo}" readonly disabled />
       </div>
-      <div class="charge-line-list" data-charge-lines-list></div>
-      <p class="empty-state">Add one or more charge lines to the same receipt/reference number.</p>
-    </section>
-    ${input("attachmentName", "Attachment Upload", "")}
-    ${select("status", "Status", chargeStatusOptions(), isAdminSession() ? "Approved" : "Pending Approval")}
-    ${textarea("remarks", "Remarks", "")}
+      <div>
+        <label>Branch *</label>
+        <select name="branch" required>
+          ${branchOptions(editing?.branch)}
+        </select>
+      </div>
+      <div>
+        <label>Customer *</label>
+        <select name="customer" required>
+          <option value="">-- Select Customer --</option>
+          ${state.customers.map(c => `<option value="${c.name}" ${editing?.customer === c.name ? "selected" : ""}>${c.name}</option>`).join("")}
+        </select>
+      </div>
+      <div>
+        <label>Origin</label>
+        <input type="text" name="origin" value="${editing?.origin || "DUBAI UAE"}" />
+      </div>
+      <div>
+        <label>Destination</label>
+        <input type="text" name="destination" value="${editing?.destination || "KUWAIT"}" />
+      </div>
+      <div>
+        <label>Transit Days</label>
+        <input type="number" name="transitDays" value="${editing?.transitDays || 3}" />
+      </div>
+      <div>
+        <label>Pieces (Pkgs Total) *</label>
+        <input type="number" name="pieces" id="calc_pieces" value="${editing?.pieces || 1}" min="1" required />
+      </div>
+      <div>
+        <label>No. of Pallets</label>
+        <input type="number" name="palletsCount" id="calc_pallets" value="${editing?.palletsCount || 1}" min="0" />
+      </div>
+      <div>
+        <label>No. of Cartons</label>
+        <input type="number" name="cartonsCount" id="calc_cartons" value="${editing?.cartonsCount || 0}" min="0" />
+      </div>
+      <div>
+        <label>Actual Weight (KG)</label>
+        <input type="number" step="0.01" name="weightKg" id="calc_weight" value="${editing?.weightKg || 41.97}" oninput="updateDimTotals()" />
+      </div>
+      <div>
+        <label>Gross Weight (KG)</label>
+        <input type="number" step="0.01" name="grossWeightKg" id="calc_gross_weight" value="${editing?.grossWeightKg || 41.97}" oninput="updateDimTotals()" />
+      </div>
+      <div>
+        <label>CBM</label>
+        <input type="number" step="0.01" name="cbm" id="calc_cbm" value="${editing?.cbm || 0.60}" oninput="updateDimTotals()" />
+      </div>
+      <div>
+        <label>Chargeable Weight Basis</label>
+        <select name="chargeableWeightBasis" id="calc_chargeable_basis" onchange="updateDimTotals()">
+          <option value="Actual" ${editing?.chargeableWeightBasis === "Actual" ? "selected" : ""}>Use Actual / Gross Weight</option>
+          <option value="Volumetric_Air" ${editing?.chargeableWeightBasis === "Volumetric_Air" ? "selected" : ""}>Volumetric (Air - 1:6000)</option>
+          <option value="Volumetric_Land" ${editing?.chargeableWeightBasis === "Volumetric_Land" ? "selected" : ""}>Volumetric (Land - 1:3000)</option>
+          <option value="CBM_Fixed" ${editing?.chargeableWeightBasis === "CBM_Fixed" ? "selected" : ""}>Fixed CBM Value</option>
+        </select>
+      </div>
+      <div>
+        <label>Total Chargeable Weight (KG)</label>
+        <input type="number" step="0.01" name="chargeableWeight" id="calc_chargeable_weight" value="${editing?.chargeableWeight || 200.00}" style="font-weight: bold;" />
+      </div>
+      <div>
+        <label>Volume Category</label>
+        <select name="volumeCategory">
+          <option value="Land">Land Freight</option>
+          <option value="Air">Air Freight</option>
+        </select>
+      </div>
+      <div>
+        <label>Nature of Goods</label>
+        <input type="text" name="natureOfGoods" value="${editing?.natureOfGoods || "GARMENTS SHOES & ACCESSORIES"}" />
+      </div>
+      <div>
+        <label>TCN Waybill Code Mapping</label>
+        <div style="display: flex; gap: 4px;">
+          <input type="text" name="tcnNumber" id="field_tcn" value="${editing?.tcnNumber || ""}" placeholder="Auto Matches AFS ID" />
+          <button type="button" class="blue-button" onclick="window.triggerLiveTcnPrintWorkflow()" style="background:#425e7b; color:#fff;">Gen & Print TCN</button>
+        </div>
+      </div>
+      <div></div>
+      <div>
+        <label>Sell Revenue (KWD)</label>
+        <input type="number" step="0.001" name="sellRevenue" value="${editing?.sellRevenue || 0}" />
+      </div>
+      <div>
+        <label>Buy Cost (KWD)</label>
+        <input type="number" step="0.001" name="buyCost" value="${editing?.buyCost || 0}" />
+      </div>
+      <div></div>
+      <div>
+        <label>Bill To Account 1 *</label>
+        <input type="text" name="billTo1" value="${editing?.billTo1 || "SSS OMNI-B2B2C (ARAMEX WAREHOUSE)"}" required />
+      </div>
+      <div>
+        <label>Bill To Account 2</label>
+        <input type="text" name="billTo2" value="${editing?.billTo2 || ""}" />
+      </div>
+    </div>
+
+    <div class="pallet-section" style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px;">
+      <h3>Dimension Details & Volumetric Matrix Configuration</h3>
+      ${palletDimensionBuilder(editing?.palletDimensionsJson)}
+    </div>
+
+    <div style="margin-top:20px; padding:12px; background:var(--blue-soft); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <span style="font-weight:bold; color:var(--nav);">Logistics Document Actions:</span><br/>
+        <span style="font-size:12px; color:var(--muted);">Sync entries to local registry and instantly compile standard physical copy outputs.</span>
+      </div>
+      <button type="button" class="blue-button" onclick="window.executeAirwayBillPrintAndRegisterWorkflow()" style="background:var(--accent); border-color:var(--accent-deep); font-weight:bold; color:white; padding:8px 14px;">
+        ✈️ Generate Waybill & Print TCN
+      </button>
+    </div>
   `;
 }
 
-function bindChargeLineBuilder() {
-  const builder = dialogBody.querySelector("[data-charge-line-builder]");
-  if (!builder) return;
-  const hiddenField = dialogBody.querySelector("input[name='chargeLines']");
-  const typeField = dialogBody.querySelector("select[name='lineChargeType']");
-  const amountField = dialogBody.querySelector("input[name='lineAmount']");
-  const list = builder.querySelector("[data-charge-lines-list]");
-  const lines = [];
+function palletDimensionBuilder(jsonStr = "[]") {
+  let rows = [];
+  try { rows = JSON.parse(jsonStr || "[]"); } catch (e) { rows = []; }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    rows = [{ type: "Pallet", length: 120, width: 80, height: 160, weight: 41.97, qty: 1 }];
+  }
 
-  const sync = () => {
-    hiddenField.value = JSON.stringify(lines);
-    const total = lines.reduce((sum, line) => sum + Number(line.amount || 0), 0);
-    list.innerHTML = lines.length
-      ? `${lines
-          .map(
-            (line, index) => `<div class="charge-line-row">
-              <span>${escapeHtml(line.chargeType)}</span>
-              <strong>${money(line.amount)}</strong>
-              <button type="button" class="ghost-button" data-remove-charge-line="${index}">Remove</button>
-            </div>`
-          )
-          .join("")}<div class="charge-line-total"><span>Total Added</span><strong>${money(total)}</strong></div>`
-      : `<p class="empty-state">No charge lines added yet.</p>`;
-  };
+  const tableRowsHtml = rows.map((r, idx) => `
+    <tr data-idx="${idx}">
+      <td>
+        <select class="dim-type" onchange="updateDimTotals()">
+          <option value="Pallet" ${r.type === "Pallet" ? "selected" : ""}>Pallet</option>
+          <option value="Carton" ${r.type === "Carton" ? "selected" : ""}>Carton</option>
+        </select>
+      </td>
+      <td><input type="number" class="dim-qty" value="${r.qty || 1}" min="1" oninput="updateDimTotals()" style="width:70px;" /></td>
+      <td><input type="number" class="dim-l" value="${r.length || 120}" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
+      <td><input type="number" class="dim-w" value="${r.width || 80}" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
+      <td><input type="number" class="dim-h" value="${r.height || 160}" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
+      <td><input type="number" step="0.01" class="dim-weight" value="${r.weight || 41.97}" min="0" oninput="updateDimTotals()" style="width:80px;" /></td>
+      <td><span class="dim-row-cbm">0.00</span></td>
+      <td><span class="dim-row-tot-weight">0.00</span></td>
+      <td><button type="button" class="red-button" onclick="removeDimRow(${idx})" style="padding:2px 8px;">X</button></td>
+    </tr>
+  `).join("");
 
-  builder.addEventListener("click", (event) => {
-    const addButton = event.target.closest("[data-dialog-action='add-charge-line']");
-    if (addButton) {
-      const amount = Number(amountField.value || 0);
-      if (!amount || amount <= 0) {
-        notifyDenied("Line not added", "Enter an amount greater than zero.");
-        return;
-      }
-      lines.push({ chargeType: typeField.value, amount });
-      amountField.value = "0.000";
-      sync();
-      return;
-    }
-
-    const removeButton = event.target.closest("[data-remove-charge-line]");
-    if (removeButton) {
-      lines.splice(Number(removeButton.dataset.removeChargeLine), 1);
-      sync();
-    }
-  });
-
-  sync();
+  return `
+    <table class="data-table" id="dimBuilderTable" style="width:100%; margin-bottom:12px;">
+      <thead>
+        <tr>
+          <th>Unit Type</th><th>Qty</th><th>Length (cm)</th><th>Width (cm)</th><th>Height (cm)</th><th>Weight/Unit (KG)</th><th>Total CBM</th><th>Total Weight (KG)</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody>${tableRowsHtml}</tbody>
+    </table>
+    <div style="display:flex; gap:10px; margin-bottom:12px;">
+      <button type="button" class="secondary-button" onclick="addDimRow('Pallet')">+ Add Pallet Row</button>
+      <button type="button" class="secondary-button" onclick="addDimRow('Carton')">+ Add Carton Row</button>
+    </div>
+    <div style="background:var(--canvas); padding:12px; border-radius:6px; display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; font-size:12px;">
+      <div>Pallets Total Qty: <span id="summary_pallet_qty" style="color:var(--accent); font-weight:bold;">0</span><br/>Weight: <span id="summary_pallet_wt">0.00</span> KG</div>
+      <div>Cartons Total Qty: <span id="summary_carton_qty" style="color:var(--accent); font-weight:bold;">0</span><br/>Weight: <span id="summary_carton_wt">0.00</span> KG</div>
+      <div>Combined Matrix CBM: <span id="summary_total_cbm" style="font-weight:bold;">0.000</span><br/>Accumulated Wt: <span id="summary_total_weight" style="font-weight:bold;">0.00</span> KG</div>
+    </div>
+    <input type="hidden" name="palletDimensionsJson" id="hidden_dim_json" value="" />
+    <script>setTimeout(() => { if(typeof updateDimTotals === "function") updateDimTotals(); }, 150);</script>
+  `;
 }
 
-function consolidationShipmentPicker(initialJobs = "", currentLoadNo = "") {
-  const shipmentOptionIds = availableConsolidationShipmentOptions(initialJobs, currentLoadNo);
-  return `<div class="dialog-picker" data-consolidation-picker>
-    <input type="hidden" name="jobNumbers" value="${escapeHtml(initialJobs)}" />
-    <label>Add Shipment To Manifest
-      <select data-consolidation-job-select>
-        ${shipmentOptionIds.map((jobNo) => {
-          const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
-          return `<option value="${escapeHtml(jobNo)}">${escapeHtml(shipmentItem ? shipmentOptionLabel(shipmentItem) : jobNo)}</option>`;
-        }).join("")}
+// ==========================================
+// VOLUMETRIC METRIC RUNTIME MATHEMATICS
+// ==========================================
+window.updateDimTotals = function() {
+  const table = document.getElementById("dimBuilderTable");
+  if (!table) return;
+  const rows = table.querySelectorAll("tbody tr");
+  
+  let totalPalletQty = 0, totalPalletWeight = 0, totalCartonQty = 0, totalCartonWeight = 0;
+  let accumulatedCbm = 0, accumulatedWeight = 0, totalPieces = 0;
+  let serializedData = [];
+
+  rows.forEach(row => {
+    const type = row.querySelector(".dim-type").value;
+    const qty = parseInt(row.querySelector(".dim-qty").value) || 0;
+    const l = parseFloat(row.querySelector(".dim-l").value) || 0;
+    const w = parseFloat(row.querySelector(".dim-w").value) || 0;
+    const h = parseFloat(row.querySelector(".dim-h").value) || 0;
+    const unitWeight = parseFloat(row.querySelector(".dim-weight").value) || 0;
+
+    const rowCbm = (l * w * h * qty) / 1000000;
+    const rowTotalWeight = unitWeight * qty;
+
+    row.querySelector(".dim-row-cbm").innerText = rowCbm.toFixed(3);
+    row.querySelector(".dim-row-tot-weight").innerText = rowTotalWeight.toFixed(2);
+
+    totalPieces += qty;
+    accumulatedCbm += rowCbm;
+    accumulatedWeight += rowTotalWeight;
+
+    if (type === "Pallet") {
+      totalPalletQty += qty;
+      totalPalletWeight += rowTotalWeight;
+    } else {
+      totalCartonQty += qty;
+      totalCartonWeight += rowTotalWeight;
+    }
+    serializedData.push({ type, length: l, width: w, height: h, weight: unitWeight, qty });
+  });
+
+  const hiddenJson = document.getElementById("hidden_dim_json");
+  if (hiddenJson) hiddenJson.value = JSON.stringify(serializedData);
+
+  document.getElementById("summary_pallet_qty").innerText = totalPalletQty;
+  document.getElementById("summary_pallet_wt").innerText = totalPalletWeight.toFixed(2);
+  document.getElementById("summary_carton_qty").innerText = totalCartonQty;
+  document.getElementById("summary_carton_wt").innerText = totalCartonWeight.toFixed(2);
+  document.getElementById("summary_total_cbm").innerText = accumulatedCbm.toFixed(3);
+  document.getElementById("summary_total_weight").innerText = accumulatedWeight.toFixed(2);
+
+  const mainWeightInput = document.getElementById("calc_weight");
+  const mainGrossWeightInput = document.getElementById("calc_gross_weight");
+  const mainCbmInput = document.getElementById("calc_cbm");
+  const mainPiecesInput = document.getElementById("calc_pieces");
+  const basisSelection = document.getElementById("calc_chargeable_basis");
+  const chargeableWeightInput = document.getElementById("calc_chargeable_weight");
+
+  if (rows.length > 0) {
+    if (mainWeightInput) mainWeightInput.value = accumulatedWeight.toFixed(2);
+    if (mainGrossWeightInput) mainGrossWeightInput.value = accumulatedWeight.toFixed(2);
+    if (mainCbmInput) mainCbmInput.value = accumulatedCbm.toFixed(3);
+    if (mainPiecesInput) mainPiecesInput.value = totalPieces;
+  }
+
+  const activeActualWeight = mainWeightInput && rows.length === 0 ? parseFloat(mainWeightInput.value) || 0 : accumulatedWeight;
+  const activeCbm = mainCbmInput && rows.length === 0 ? parseFloat(mainCbmInput.value) || 0 : accumulatedCbm;
+
+  if (chargeableWeightInput && basisSelection) {
+    const selectedBasis = basisSelection.value;
+    let finalChargeableWeight = 0;
+    if (selectedBasis === "Actual") finalChargeableWeight = activeActualWeight;
+    else if (selectedBasis === "Volumetric_Air") finalChargeableWeight = activeCbm * 166.667;
+    else if (selectedBasis === "Volumetric_Land") finalChargeableWeight = activeCbm * 333.333;
+    else if (selectedBasis === "CBM_Fixed") finalChargeableWeight = activeCbm;
+    
+    chargeableWeightInput.value = finalChargeableWeight.toFixed(2);
+  }
+};
+
+window.addDimRow = function(defaultType = "Pallet") {
+  const table = document.getElementById("dimBuilderTable");
+  if (!table) return;
+  const tbody = table.querySelector("tbody");
+  const nextIdx = tbody.querySelectorAll("tr").length;
+
+  const tr = document.createElement("tr");
+  tr.setAttribute("data-idx", nextIdx);
+  tr.innerHTML = `
+    <td>
+      <select class="dim-type" onchange="updateDimTotals()">
+        <option value="Pallet" ${defaultType === "Pallet" ? "selected" : ""}>Pallet</option>
+        <option value="Carton" ${defaultType === "Carton" ? "selected" : ""}>Carton</option>
       </select>
-    </label>
-    <div class="action-row">
-      <button type="button" class="secondary-button" data-dialog-action="add-consolidation-job">Add Shipment</button>
-    </div>
-    <div class="selected-job-list" data-consolidation-jobs-list></div>
-    <p class="empty-state">${shipmentOptionIds.length ? "Only shipments saved with service type Consolidation are available. Already assigned shipments are hidden." : "No unassigned Consolidation service shipments are available."}</p>
-  </div>`;
-}
+    </td>
+    <td><input type="number" class="dim-qty" value="1" min="1" oninput="updateDimTotals()" style="width:70px;" /></td>
+    <td><input type="number" class="dim-l" value="120" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
+    <td><input type="number" class="dim-w" value="80" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
+    <td><input type="number" class="dim-h" value="160" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
+    <td><input type="number" step="0.01" class="dim-weight" value="41.97" min="0" oninput="updateDimTotals()" style="width:80px;" /></td>
+    <td><span class="dim-row-cbm">0.00</span></td>
+    <td><span class="dim-row-tot-weight">0.00</span></td>
+    <td><button type="button" class="red-button" onclick="removeDimRow(${nextIdx})" style="padding:2px 8px;">X</button></td>
+  `;
+  tbody.appendChild(tr);
+  updateDimTotals();
+};
 
-function bindShipmentDirectionDialog() {
-  const directionSelect = dialogBody.querySelector("select[name='shipmentDirection']");
-  const serviceSelect = dialogBody.querySelector("select[name='shipmentService']");
-  const otherField = dialogBody.querySelector("[name='shipmentServiceOther']");
-  if (!directionSelect || !serviceSelect) return;
+window.removeDimRow = function(idx) {
+  const table = document.getElementById("dimBuilderTable");
+  if (!table) return;
+  const rows = table.querySelectorAll("tbody tr");
+  rows.forEach(row => { if(row.getAttribute("data-idx") == idx) row.remove(); });
+  updateDimTotals();
+};
 
-  const syncOptions = () => {
-    const options = shipmentServiceOptions(directionSelect.value);
-    serviceSelect.innerHTML = options.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("");
-    if (directionSelect.value === "WHC") {
-      serviceSelect.value = "WHC Remark";
-      if (otherField) otherField.placeholder = "Manual warehouse remark";
-    } else {
-      serviceSelect.value = options[0];
-      if (otherField) otherField.placeholder = "Optional other service";
-    }
-  };
+// ==========================================
+// CORE SYSTEM MODULE RENDER HOOK ROUTINES
+// ==========================================
+function render() {
+  const container = document.getElementById("moduleContent");
+  if (!container) return;
 
-  directionSelect.addEventListener("change", syncOptions);
-  syncOptions();
-}
+  if (activeModule === "Dashboard") {
+    container.innerHTML = `
+      <h2>Dashboard Operational Summary</h2>
+      <p>Welcome to Apollo Freight Solutions Enterprise Dashboard ERP workspace controls.</p>
+    `;
+  } 
+  else if (activeModule === "Shipment / Airway") {
+    let tableRows = state.shipments.map(row => `
+      <tr>
+        <td><strong>${row.jobNo}</strong></td>
+        <td>${row.customer}</td>
+        <td>${row.origin} ➡️ ${row.destination}</td>
+        <td>${row.pieces} Pkgs (Pallets: ${row.palletsCount || 0})</td>
+        <td>${row.chargeableWeight || 0} KG</td>
+        <td>
+          <button class="secondary-button" style="padding:2px 6px; font-size:11px;" onclick='window.printUniversalDocument("Airway Bill Cargo Run", ${JSON.stringify(row).replace(/'/g, "&apos;")})'>🖨️ Quick Print</button>
+        </td>
+      </tr>
+    `).join("");
 
-function bindShipmentCustomerTariffs() {
-  const customerField = dialogBody.querySelector("input[name='customer']");
-  const tariffField = dialogBody.querySelector("input[name='tariffNo']");
-  if (!customerField || !tariffField || tariffField.type !== "text") return;
-  const datalistId = tariffField.getAttribute("list");
-  const datalist = datalistId ? dialogBody.querySelector(`#${CSS.escape(datalistId)}`) : null;
-  if (!datalist) return;
-
-  const syncTariffs = () => {
-    const options = tariffOptionsForCustomer(customerField.value);
-    datalist.innerHTML = options.map((option) => `<option value="${escapeHtml(option.value)}" label="${escapeHtml(option.label)}"></option>`).join("");
-    if (!options.some((option) => option.value === tariffField.value)) {
-      tariffField.value = options[0]?.value || "";
-    }
-  };
-
-  customerField.addEventListener("input", syncTariffs);
-  customerField.addEventListener("change", syncTariffs);
-  syncTariffs();
-}
-
-function bindVolumeCalculator() {
-  const categoryField = dialogBody.querySelector("[name='volumeCategory']");
-  const divisorField = dialogBody.querySelector("[name='chargeableDivisor']");
-  const cbmField = dialogBody.querySelector("[name='cbm']");
-  const chargeableField = dialogBody.querySelector("[name='chargeableKg']");
-  if (!categoryField || !divisorField || !cbmField || !chargeableField) return;
-
-  const syncDivisor = () => {
-    const divisor = volumeDivisorFor(categoryField.value);
-    if (divisor) {
-      divisorField.value = String(divisor);
-      divisorField.readOnly = true;
-    } else {
-      divisorField.readOnly = false;
-      if (!Number(divisorField.value || 0)) divisorField.value = "";
-    }
-    syncChargeable();
-  };
-
-  const syncChargeable = () => {
-    const divisor = Number(divisorField.value || 0);
-    const cbm = Number(cbmField.value || 0);
-    if (divisor > 0 && cbm >= 0) {
-      chargeableField.value = String(Number((cbm * divisor).toFixed(3)));
-    }
-  };
-
-  categoryField.addEventListener("change", syncDivisor);
-  cbmField.addEventListener("input", syncChargeable);
-  divisorField.addEventListener("input", syncChargeable);
-  syncDivisor();
-}
-
-function bindPalletDimensionBuilder() {
-  const builder = dialogBody.querySelector("[data-pallet-builder]");
-  const hiddenField = dialogBody.querySelector("input[name='palletDimensionsJson']");
-  const cbmField = dialogBody.querySelector("input[name='cbm']");
-  const chargeableField = dialogBody.querySelector("input[name='chargeableKg']");
-  const tcnField = dialogBody.querySelector("input[name='tcnNumber']");
-  if (!builder || !hiddenField) return;
-
-  const fields = {
-    count: dialogBody.querySelector("input[name='palletCount']"),
-    length: dialogBody.querySelector("input[name='palletLength']"),
-    width: dialogBody.querySelector("input[name='palletWidth']"),
-    height: dialogBody.querySelector("input[name='palletHeight']")
-  };
-  const list = builder.querySelector("[data-pallet-lines-list]");
-  const lines = parsePalletDimensions(hiddenField.value || "[]");
-
-  const sync = () => {
-    const total = lines.reduce((sum, line) => sum + Number(line.total || 0), 0);
-    const roundedTotal = roundUpToHalf(total);
-    hiddenField.value = JSON.stringify(lines);
-    if (cbmField) cbmField.value = String(roundedTotal);
-    const divisor = volumeDivisorFor(dialogBody.querySelector("[name='volumeCategory']")?.value);
-    if (chargeableField) chargeableField.value = String(Number((roundedTotal * divisor).toFixed(3)));
-    list.innerHTML = palletDimensionTable(lines, total, roundedTotal);
-  };
-
-  builder.addEventListener("click", (event) => {
-    const addButton = event.target.closest("[data-dialog-action='add-pallet-line']");
-    if (addButton) {
-      const count = Number(fields.count?.value || 0);
-      const length = Number(fields.length?.value || 0);
-      const width = Number(fields.width?.value || 0);
-      const height = Number(fields.height?.value || 0);
-      if (count <= 0 || length <= 0 || width <= 0 || height <= 0) {
-        notifyDenied("Pallet line not added", "Enter pallet count, length, width, and height.");
-        return;
-      }
-      lines.push({ count, length, width, height, total: count * length * width * height / 1000000 });
-      sync();
-      return;
-    }
-
-    const removeButton = event.target.closest("[data-remove-pallet-line]");
-    if (removeButton) {
-      lines.splice(Number(removeButton.dataset.removePalletLine), 1);
-      sync();
-    }
-  });
-
-  dialogBody.querySelector("[data-dialog-action='generate-tcn']")?.addEventListener("click", () => {
-    const data = collectFormValues(dialogBody.closest("form"));
-    const tcn = data.tcnNumber || nextNumber("TCN", state.shipments, "tcnNumber");
-    if (tcnField) tcnField.value = tcn;
-    openPrintableDocument(tcnDocumentHtml({ ...data, tcnNumber: tcn, palletDimensionsJson: hiddenField.value }));
-  });
-
-  dialogBody.querySelector("[name='volumeCategory']")?.addEventListener("change", sync);
-  sync();
-}
-
-function palletDimensionTable(lines, total, roundedTotal) {
-  const rows = lines.length
-    ? lines.map((line, index) => `<tr>
-      <td>${index + 1}</td><td>${line.count}</td><td>${line.length}</td><td>${line.width}</td><td>${line.height}</td><td>${money(line.total)}</td>
-      <td><button type="button" class="ghost-button" data-remove-pallet-line="${index}">Remove</button></td>
-    </tr>`).join("")
-    : `<tr><td colspan="7" class="empty-state">No pallet dimensions added.</td></tr>`;
-  return `<div class="table-wrap"><table class="tariff-charges-table pallet-dimensions-table">
-    <colgroup>
-      <col class="pallet-col-sr" />
-      <col class="pallet-col-count" />
-      <col class="pallet-col-measure" />
-      <col class="pallet-col-measure" />
-      <col class="pallet-col-measure" />
-      <col class="pallet-col-total" />
-      <col class="pallet-col-button" />
-    </colgroup>
-    <thead><tr><th>Sr no</th><th>No of pallets</th><th>Length</th><th>Width</th><th>Height</th><th>Total</th><th>Button</th></tr></thead>
-    <tbody>${rows}</tbody>
-    <tfoot><tr><th colspan="5">Grand total CBM</th><th>${money(total)} -> ${roundedTotal}</th><th></th></tr></tfoot>
-  </table></div>`;
-}
-
-function tariffAdditionalChargesBuilder(initialValue = "[]") {
-  return `<section class="tariff-charge-builder" data-tariff-charge-builder>
-    <input type="hidden" name="additionalChargesJson" value="${escapeHtml(initialValue)}" />
-    <input type="hidden" name="additionalChargesTotal" value="0" />
-    <input type="hidden" name="grandTotal" value="0" />
-    <div class="tariff-charge-entry">
-      ${input("tariffChargeDescription", "Additional Charge Description", "")}
-      ${input("tariffChargeQuotation", "Quotation Per Unit", "0.000", false, "number")}
-      ${input("tariffChargeUnits", "Units", "1", false, "number")}
-      <button type="button" class="secondary-button" data-dialog-action="add-tariff-charge">Add More</button>
-    </div>
-    <div class="tariff-charge-table" data-tariff-charge-list></div>
-  </section>`;
-}
-
-function bindTariffAdditionalCharges(initialValue = "[]") {
-  const builder = dialogBody.querySelector("[data-tariff-charge-builder]");
-  if (!builder) return;
-  const hiddenField = builder.querySelector("input[name='additionalChargesJson']");
-  const totalField = builder.querySelector("input[name='additionalChargesTotal']");
-  const grandField = builder.querySelector("input[name='grandTotal']");
-  const minChargeField = dialogBody.querySelector("input[name='minCharge']");
-  const descriptionField = builder.querySelector("input[name='tariffChargeDescription']");
-  const quotationField = builder.querySelector("input[name='tariffChargeQuotation']");
-  const unitsField = builder.querySelector("input[name='tariffChargeUnits']");
-  const list = builder.querySelector("[data-tariff-charge-list]");
-  let lines = parseTariffChargeLines(initialValue || hiddenField.value);
-
-  const sync = () => {
-    const total = lines.reduce((sum, line) => sum + Number(line.total || 0), 0);
-    const grandTotal = Number(minChargeField?.value || 0) + total;
-    hiddenField.value = JSON.stringify(lines);
-    totalField.value = String(total);
-    grandField.value = String(grandTotal);
-    list.innerHTML = tariffChargeTable(lines, total, grandTotal);
-  };
-
-  builder.addEventListener("click", (event) => {
-    const addButton = event.target.closest("[data-dialog-action='add-tariff-charge']");
-    if (addButton) {
-      const description = descriptionField.value.trim();
-      const quotation = Number(quotationField.value || 0);
-      const units = Number(unitsField.value || 0);
-      if (!description || quotation <= 0 || units <= 0) {
-        notifyDenied("Line not added", "Enter description, quotation, and units.");
-        return;
-      }
-      lines.push({ description, quotation, units, total: quotation * units });
-      descriptionField.value = "";
-      quotationField.value = "0.000";
-      unitsField.value = "1";
-      sync();
-      return;
-    }
-
-    const removeButton = event.target.closest("[data-remove-tariff-charge]");
-    if (removeButton) {
-      lines.splice(Number(removeButton.dataset.removeTariffCharge), 1);
-      sync();
-    }
-  });
-
-  minChargeField?.addEventListener("input", sync);
-  sync();
-}
-
-function parseTariffChargeLines(value) {
-  try {
-    const parsed = JSON.parse(value || "[]");
-    return Array.isArray(parsed)
-      ? parsed.map((line, index) => ({
-          description: line.description || "",
-          quotation: Number(line.quotation || 0),
-          units: Number(line.units || 0),
-          total: Number(line.total || Number(line.quotation || 0) * Number(line.units || 0)),
-          srNo: index + 1
-        })).filter((line) => line.description)
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function tariffChargeTable(lines, total, grandTotal, showActions = true) {
-  const actionHeader = showActions ? "<th>Button</th>" : "";
-  const footerAction = showActions ? "<th></th>" : "";
-  const emptyColspan = showActions ? 6 : 5;
-  const rows = lines.length
-    ? lines.map((line, index) => `<tr>
-        <td>${index + 1}</td>
-        <td>${escapeHtml(line.description)}</td>
-        <td>${money(line.quotation)}</td>
-        <td>${escapeHtml(line.units)}</td>
-        <td>${money(line.total)}</td>
-        ${showActions ? `<td><button type="button" class="ghost-button" data-remove-tariff-charge="${index}">Remove</button></td>` : ""}
-      </tr>`).join("")
-    : `<tr><td colspan="${emptyColspan}" class="empty-state">No additional charges added.</td></tr>`;
-  return `<div class="table-wrap"><table class="tariff-charges-table">
-    <thead><tr><th>Sr no</th><th>Description</th><th>Quotation per unit</th><th>Units</th><th>Total</th>${actionHeader}</tr></thead>
-    <tbody>${rows}</tbody>
-    <tfoot>
-      <tr><th colspan="4">Total for additional charges</th><th>${money(total)}</th>${footerAction}</tr>
-      <tr><th colspan="4">Grand total</th><th>${money(grandTotal)}</th>${footerAction}</tr>
-    </tfoot>
-  </table></div>`;
-}
-
-function bindDialogPasswordToggles() {
-  dialogBody.querySelectorAll("[data-dialog-action='toggle-password']").forEach((button) => {
-    button.addEventListener("click", () => {
-      const field = button.closest(".password-input-wrap")?.querySelector("input");
-      if (!field) return;
-      const shouldShow = field.type === "password";
-      field.type = shouldShow ? "text" : "password";
-      button.textContent = shouldShow ? "Hide" : "View";
-    });
-  });
-}
-
-function bindConsolidationJobPicker() {
-  const picker = dialogBody.querySelector("[data-consolidation-picker]");
-  if (!picker) return;
-
-  const selectField = picker.querySelector("[data-consolidation-job-select]");
-  const hiddenField = picker.querySelector("input[name='jobNumbers']");
-  const list = picker.querySelector("[data-consolidation-jobs-list]");
-  const selectedJobs = new Set(
-    String(hiddenField.value || "")
-      .split(",")
-      .map((jobNo) => jobNo.trim())
-      .filter(Boolean)
-  );
-
-  const syncSelectedJobs = () => {
-    hiddenField.value = [...selectedJobs].join(", ");
-    list.innerHTML = selectedJobs.size
-      ? [...selectedJobs].map((jobNo) => {
-          const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
-          return `<span class="job-chip selected-job-chip"><strong>${escapeHtml(jobNo)}</strong><small>${escapeHtml(shipmentItem ? `${shipmentItem.customer} | ${shipmentItem.origin} to ${shipmentItem.destination}` : "Shipment details not found")}</small><button type="button" class="ghost-button" data-remove-consolidation-job="${escapeHtml(jobNo)}">Remove</button></span>`;
-        }).join("")
-      : `<p class="empty-state">No shipments added yet.</p>`;
-  };
-
-  picker.addEventListener("click", (event) => {
-    const addButton = event.target.closest("[data-dialog-action='add-consolidation-job']");
-    if (addButton) {
-      const jobNo = selectField?.value || "";
-      if (jobNo) selectedJobs.add(jobNo);
-      else notifyDenied("No shipment selected", "Create a shipment with service type Consolidation first.");
-      syncSelectedJobs();
-      return;
-    }
-
-    const removeButton = event.target.closest("[data-remove-consolidation-job]");
-    if (removeButton) {
-      selectedJobs.delete(removeButton.dataset.removeConsolidationJob);
-      syncSelectedJobs();
-    }
-  });
-
-  syncSelectedJobs();
-}
-
-function collectFormValues(form) {
-  const formData = new FormData(form);
-  const data = Object.fromEntries(formData.entries());
-  if (form.querySelectorAll("input[name='sectionAccessList']").length) {
-    data.sectionAccess = normalizeSectionAccess(formData.getAll("sectionAccessList").join(", ") || "Dashboard");
-  }
-  form.querySelectorAll("input[type='checkbox'][name]").forEach((input) => {
-    if (input.name === "sectionAccessList") return;
-    data[input.name] = input.checked;
-  });
-  return data;
-}
-
-function bindInvoiceShipmentTariff() {
-  const shipmentField = dialogBody.querySelector("input[name='shipmentNo']");
-  const customerField = dialogBody.querySelector("input[name='customer']");
-  const tariffField = dialogBody.querySelector("input[name='tariffNo']");
-  const revenueField = dialogBody.querySelector("input[name='revenue']");
-  const supplierCostField = dialogBody.querySelector("input[name='supplierCost']");
-  if (!shipmentField) return;
-
-  const sync = () => {
-    const shipmentItem = state.shipments.find((row) => row.jobNo === shipmentField.value);
-    if (!shipmentItem) return;
-    const tariffItem = assignedTariffForShipment(shipmentItem);
-    if (customerField) customerField.value = shipmentItem.customer || "";
-    if (tariffField) tariffField.value = shipmentItem.tariffNo || tariffItem?.tariffNo || "";
-    if (revenueField) revenueField.value = numericInputValue(tariffItem?.grandTotal || shipmentItem.sell || 0);
-    if (supplierCostField) supplierCostField.value = numericInputValue(shipmentItem.buyCost || 0);
-  };
-
-  shipmentField.addEventListener("input", sync);
-  shipmentField.addEventListener("change", sync);
-  sync();
-}
-
-function assignedTariffForShipment(shipmentItem) {
-  return state.tariffs.find((row) => row.tariffNo === shipmentItem?.tariffNo)
-    || state.tariffs.find((row) => row.customer === shipmentItem?.customer && row.origin === shipmentItem?.origin && row.destination === shipmentItem?.destination)
-    || null;
-}
-
-function numericInputValue(value) {
-  return Number(value || 0).toFixed(3);
-}
-
-function applyChargeFilters() {
-  state.ui.chargeFilters = {
-    shipmentNo: dialogSafeValue("chargeShipmentNo"),
-    chargeType: dialogSafeValue("chargeTypeFilter", "All"),
-    supplier: dialogSafeValue("chargeSupplierFilter", "All"),
-    status: dialogSafeValue("chargeStatusFilter", "All"),
-    fromDate: dialogSafeValue("chargeFromDate"),
-    toDate: dialogSafeValue("chargeToDate")
-  };
-  saveState();
-  render();
-}
-
-function applyAuditFilters() {
-  state.ui.auditFilters = {
-    query: dialogSafeValue("auditQuery"),
-    fromDate: dialogSafeValue("auditFromDate"),
-    toDate: dialogSafeValue("auditToDate")
-  };
-  saveState();
-  render();
-}
-
-function dialogSafeValue(name, fallback = "") {
-  return moduleContent.querySelector(`[name='${name}']`)?.value || fallback;
-}
-
-function summarizeChanges(previous, next) {
-  return Object.keys(next)
-    .filter((key) => String(previous[key] ?? "") !== String(next[key] ?? ""))
-    .map((key) => `${key}: ${previous[key] ?? ""} -> ${next[key] ?? ""}`)
-    .join(" | ");
-}
-
-function coerceValue(previous, next) {
-  if (typeof previous === "number") return Number(next) || 0;
-  if (typeof previous === "boolean") return next === "true" || next === "Yes";
-  return next;
-}
-
-function isChecked(value) {
-  return value === true || value === "true" || value === "on" || value === "Yes";
-}
-
-function parseChangeSummary(summary) {
-  return String(summary || "")
-    .split("|")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .reduce((patch, item) => {
-      const [keyPart, valuePart] = item.split(":");
-      if (!keyPart || !valuePart || !valuePart.includes("->")) return patch;
-      const nextValue = valuePart.split("->").slice(1).join("->").trim();
-      patch[keyPart.trim()] = nextValue;
-      return patch;
-    }, {});
-}
-
-function previewReport() {
-  const reportType = moduleContent.querySelector("[name='reportType']")?.value || state.ui.reportType || "Daily shipments";
-  const reportFormat = moduleContent.querySelector("[name='reportFormat']")?.value || state.ui.reportFormat || "PDF";
-  const rows = reportRows(reportType);
-  const revenue = rows.reduce((sum, row) => sum + Number(row.sell || 0), 0);
-  const cost = rows.reduce((sum, row) => sum + Number(row.buyCost || 0), 0);
-  state.ui.reportType = reportType;
-  state.ui.reportFormat = reportFormat;
-  state.ui.reportPreview = {
-    reportType,
-    format: reportFormat,
-    rows,
-    summary: `${rows.length} shipment(s) | Revenue ${money(revenue)} | Cost ${money(cost)} | Margin ${money(revenue - cost)}`
-  };
-  saveState();
-  render();
-}
-
-function reportRows(reportType) {
-  const rows = filteredRows(visibleRows(state.shipments));
-  if (reportType === "Open / in-transit / delivered") {
-    return rows.filter((row) => ["Booked", "In-Transit", "Delivered"].includes(row.status));
-  }
-
-  if (reportType === "Pending POD / invoice") {
-    return rows.filter((row) => row.podStatus !== "Uploaded" || ["Unbilled", "Draft", "Overdue"].includes(row.invoiceStatus));
-  }
-
-  return rows;
-}
-
-function exportReport() {
-  const preview = state.ui.reportPreview;
-  if (!preview) {
-    window.alert("Preview the report first.");
-    return;
-  }
-
-  if (preview.format === "Excel CSV") {
-    downloadCsv(preview);
-    return;
-  }
-
-  const printWindow = window.open("", "_blank", "width=1080,height=760");
-  if (!printWindow) {
-    window.alert("Allow popups to print the PDF preview.");
-    return;
-  }
-
-  const tableHtml = table("shipment", preview.rows, shipmentColumns(), false);
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>${escapeHtml(preview.reportType)}</title>
-        <style>
-          body { font-family: "Segoe UI", sans-serif; padding: 24px; color: #16202a; }
-          h1 { margin: 0 0 6px; font-size: 26px; }
-          p { margin: 0 0 18px; color: #50606f; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { border: 1px solid #dbe3ea; padding: 8px; text-align: left; font-size: 12px; }
-          th { background: #f5f8fb; text-transform: uppercase; }
-        </style>
-      </head>
-      <body>
-        <h1>${escapeHtml(preview.reportType)}</h1>
-        <p>${escapeHtml(preview.summary)}</p>
-        ${tableHtml}
-      </body>
-    </html>
-  `);
-  printWindow.document.close();
-  printWindow.focus();
-  setTimeout(() => printWindow.print(), 150);
-}
-
-function downloadCsv(preview) {
-  const columns = shipmentColumns();
-  const header = columns.map(([, label]) => `"${label.replace(/"/g, '""')}"`).join(",");
-  const lines = preview.rows.map((row) =>
-    columns
-      .map(([key]) => `"${String(display(row[key])).replace(/"/g, '""')}"`)
-      .join(",")
-  );
-  const blob = new Blob([[header, ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `${preview.reportType.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${today()}.csv`;
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-
-function generateRecordDocument(type, id, download = false) {
-  const record = collectionFor(type).find((row) => rowId(type, row) === id);
-  if (!record) {
-    notifyDenied("Document not generated", "Select a saved record first.");
-    return;
-  }
-  const html = type === "invoice" ? invoiceDocumentHtml(record) : tariffDocumentHtml(record);
-  const fileName = `${type === "invoice" ? "bill" : "tariff"}-${rowId(type, record)}.html`.toLowerCase();
-  if (download) {
-    downloadHtml(fileName, html);
-    notifySuccess("Export ready", `${rowId(type, record)} was exported.`);
-    return;
-  }
-  openPrintableDocument(html);
-}
-
-function invoiceDocumentHtml(record) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === record.shipmentNo);
-  const tariffItem = assignedTariffForShipment(shipmentItem);
-  const tariffCharges = parseTariffChargeLines(tariffItem?.additionalChargesJson || "[]");
-  return documentShell(
-    `Bill ${record.invoiceNo}`,
-    "Tax Invoice / Bill",
-    record.invoiceNo,
-    record.date,
-    `
-      <section class="document-summary">
-        <div>
-          <span>Bill To</span>
-          <strong>${escapeHtml(shipmentItem?.billTo1 || record.customer)}</strong>
-          ${shipmentItem?.billTo2 ? `<small>${escapeHtml(shipmentItem.billTo2)}</small>` : `<small>Shipment ${escapeHtml(record.shipmentNo)}</small>`}
-        </div>
-        <div>
-          <span>Amount</span>
-          <strong>${money(record.revenue)}</strong>
-          <small>Status: ${escapeHtml(record.status)}</small>
-        </div>
-      </section>
-      <section class="meta">
-        <p><strong>Invoice No</strong><span>${escapeHtml(record.invoiceNo)}</span></p>
-        <p><strong>Date</strong><span>${escapeHtml(record.date)}</span></p>
-        <p><strong>Customer</strong><span>${escapeHtml(record.customer)}</span></p>
-        <p><strong>Shipment No</strong><span>${escapeHtml(record.shipmentNo)}</span></p>
-        <p><strong>Assigned Tariff</strong><span>${escapeHtml(shipmentItem?.tariffNo || "")}</span></p>
-        <p><strong>Nature of Goods</strong><span>${escapeHtml(shipmentItem?.natureOfGoods || "")}</span></p>
-        <p><strong>Status</strong><span>${escapeHtml(record.status)}</span></p>
-      </section>
-      <table><tbody>
-        <tr><th>Origin</th><td>${escapeHtml(shipmentItem?.origin || "")}</td><th>Destination</th><td>${escapeHtml(shipmentItem?.destination || "")}</td></tr>
-        <tr><th>Revenue</th><td>${money(record.revenue)}</td><th>Supplier Cost</th><td>${money(record.supplierCost)}</td></tr>
-        <tr><th>Gross Profit</th><td colspan="3">${money(record.grossProfit)}</td></tr>
-      </tbody></table>
-      <h2>Tariff Additional Charges</h2>
-      ${tariffChargeTable(tariffCharges, Number(tariffItem?.additionalChargesTotal || 0), Number(tariffItem?.grandTotal || record.revenue || 0), false)}
-    `
-  );
-}
-
-function tariffDocumentHtml(record) {
-  const charges = parseTariffChargeLines(record.additionalChargesJson || "[]");
-  return documentShell(
-    `Tariff ${record.tariffNo}`,
-    "Tariff Quotation",
-    record.tariffNo,
-    today(),
-    `
-      <section class="document-summary">
-        <div>
-          <span>Customer</span>
-          <strong>${escapeHtml(record.customer)}</strong>
-          <small>${escapeHtml(record.origin)} to ${escapeHtml(record.destination)}</small>
-        </div>
-        <div>
-          <span>Grand Total</span>
-          <strong>${money(record.grandTotal)}</strong>
-          <small>Minimum charge ${money(record.minCharge)}</small>
-        </div>
-      </section>
-      <section class="meta">
-        <p><strong>Tariff Number</strong><span>${escapeHtml(record.tariffNo)}</span></p>
-        <p><strong>Customer</strong><span>${escapeHtml(record.customer)}</span></p>
-        <p><strong>Origin</strong><span>${escapeHtml(record.origin)}</span></p>
-        <p><strong>Destination</strong><span>${escapeHtml(record.destination)}</span></p>
-        <p><strong>Main Section</strong><span>${escapeHtml(record.mainSection)}</span></p>
-        <p><strong>Weight Section</strong><span>${escapeHtml(record.weightSection)}</span></p>
-        <p><strong>Minimum Up To</strong><span>${escapeHtml(record.minUpTo)}</span></p>
-        <p><strong>Rate</strong><span>${money(record.rate)}</span></p>
-        <p><strong>Minimum Charge</strong><span>${money(record.minCharge)}</span></p>
-      </section>
-      <h2>Additional Charges</h2>
-      ${tariffChargeTable(charges, Number(record.additionalChargesTotal || 0), Number(record.grandTotal || 0), false)}
-    `
-  );
-}
-
-function tcnDocumentHtml(record) {
-  const pallets = parsePalletDimensions(record.palletDimensionsJson || "[]");
-  const totalCbm = roundUpToHalf(pallets.reduce((sum, line) => sum + Number(line.total || 0), 0));
-  return documentShell(
-    `TCN ${record.tcnNumber}`,
-    "TCN / Airway Bill",
-    record.tcnNumber,
-    record.bookingDate || today(),
-    `
-      <section class="document-summary">
-        <div>
-          <span>Consignee</span>
-          <strong>${escapeHtml(record.customer)}</strong>
-          <small>${escapeHtml(record.origin)} to ${escapeHtml(record.destination)}</small>
-        </div>
-        <div>
-          <span>Total Chargeable Weight</span>
-          <strong>${money(record.chargeableKg)} KG</strong>
-          <small>Volume CBM ${escapeHtml(record.cbm || totalCbm)}</small>
-        </div>
-      </section>
-      <section class="meta">
-        <p><strong>Airway Bill No</strong><span>${escapeHtml(record.jobNo)}</span></p>
-        <p><strong>Date</strong><span>${escapeHtml(record.bookingDate || today())}</span></p>
-        <p><strong>Pick Up Location</strong><span>${escapeHtml(record.tariffNo)}</span></p>
-        <p><strong>Packages</strong><span>${escapeHtml(record.pieces)}</span></p>
-        <p><strong>Bill To 1</strong><span>${escapeHtml(record.billTo1 || "")}</span></p>
-        <p><strong>Bill To 2</strong><span>${escapeHtml(record.billTo2 || "")}</span></p>
-        <p><strong>Manual Chargeable KG</strong><span>${money(record.manualChargeableKg || 0)}</span></p>
-        <p><strong>Nature of Goods</strong><span>${escapeHtml(record.natureOfGoods || "")}</span></p>
-        <p><strong>Shipper Reference</strong><span>${escapeHtml(record.shipmentServiceOther || "")}</span></p>
-      </section>
-      ${palletDimensionPrintTable(pallets, totalCbm)}
-    `
-  );
-}
-
-function parsePalletDimensions(value) {
-  try {
-    const parsed = JSON.parse(value || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function roundUpToHalf(value) {
-  return Math.ceil(Number(value || 0) * 2) / 2;
-}
-
-function palletDimensionPrintTable(lines, roundedTotal) {
-  const rows = lines.length
-    ? lines.map((line, index) => `<tr><td>${index + 1}</td><td>${line.count}</td><td>${line.length}</td><td>${line.width}</td><td>${line.height}</td><td>${money(line.total)}</td></tr>`).join("")
-    : `<tr><td colspan="6">No pallet dimensions added.</td></tr>`;
-  return `<h2>Pallet Dimensions</h2><table>
-    <thead><tr><th>Sr no</th><th>No of pallets</th><th>Length</th><th>Width</th><th>Height</th><th>Total</th></tr></thead>
-    <tbody>${rows}</tbody>
-    <tfoot><tr><th colspan="5">Grand total CBM</th><th>${roundedTotal}</th></tr></tfoot>
-  </table>`;
-}
-
-function documentShell(title, documentLabel, documentNo, documentDate, body) {
-  const printedAt = new Date().toLocaleString();
-  const generatedBy = currentUserName();
-  const companyName = state.settings.companyName || "APOLLO FREIGHT SOLUTIONS";
-  const logoUrl = String(state.settings.companyLogoUrl || "").trim() || defaultDocumentLogoUrl();
-  const logoMarkup = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(companyName)} logo" />`
-    : `<span>AFS</span>`;
-  return `<!doctype html>
-  <html>
-    <head>
-      <title>${escapeHtml(title)}</title>
-      <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; background: #edf2f7; color: #172033; font-family: Arial, sans-serif; }
-        .page { max-width: 920px; min-height: 100vh; margin: 0 auto; background: #fff; box-shadow: 0 20px 55px rgba(22, 32, 51, .16); }
-        .toolbar { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; background: #f8fafc; border-bottom: 1px solid #dbe5ef; }
-        button { border: 0; border-radius: 6px; padding: 10px 14px; background: #165c7d; color: #fff; font-weight: 700; cursor: pointer; }
-        .document-head { display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 28px 34px; color: #172033; background: #fff; border-top: 8px solid #1f7a8c; border-bottom: 1px solid #dbe5ef; }
-        .brand { display: flex; align-items: center; gap: 16px; }
-        .logo { display: grid; place-items: center; width: 92px; height: 92px; border-radius: 12px; background: #fff; color: #165c7d; font-size: 22px; font-weight: 800; overflow: hidden; border: 1px solid #dbe5ef; }
-        .logo img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
-        h1 { margin: 0; color: #1f7a8c; font-size: 28px; letter-spacing: 0; }
-        .brand p, .doc-meta p { margin: 4px 0 0; color: #607080; }
-        .doc-meta { text-align: right; min-width: 210px; }
-        .doc-meta strong { display: block; color: #114b67; font-size: 20px; }
-        main { padding: 28px 34px 34px; }
-        .document-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 22px; }
-        .document-summary div { padding: 18px; border-left: 5px solid #1f7a8c; background: #f5f9fb; }
-        .document-summary span, .meta strong, th, .signature span { color: #5d6c7b; text-transform: uppercase; font-size: 11px; font-weight: 800; letter-spacing: 0; }
-        .document-summary strong { display: block; margin-top: 7px; color: #172033; font-size: 22px; }
-        .document-summary small { display: block; margin-top: 5px; color: #607080; }
-        h2 { margin: 26px 0 8px; color: #114b67; }
-        .meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
-        .meta p { display: grid; gap: 5px; margin: 0; padding: 12px; border: 1px solid #dbe5ef; background: #fbfdff; }
-        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-        th { background: #eaf3f7; text-align: left; }
-        th, td { border: 1px solid #dbe5ef; padding: 10px; }
-        tfoot th { background: #f4f8fb; color: #172033; font-size: 13px; }
-        .signature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 48px; }
-        .signature { min-height: 86px; border-top: 1px solid #718093; padding-top: 10px; }
-        .signature strong { display: block; margin-top: 5px; }
-        .footer-note { margin-top: 26px; padding-top: 14px; border-top: 1px solid #dbe5ef; color: #607080; font-size: 12px; text-align: center; }
-        @media print { body { background: #fff; } .toolbar { display: none; } .page { max-width: none; box-shadow: none; } main { padding-bottom: 18mm; } }
-      </style>
-    </head>
-    <body>
-      <div class="page">
-        <div class="toolbar"><button onclick="window.print()">Print / Save PDF</button></div>
-        <header class="document-head">
-          <div class="brand">
-            <div class="logo">${logoMarkup}</div>
-            <div>
-              <h1>${escapeHtml(companyName)}</h1>
-              <p>Freight, logistics and customs documentation</p>
-            </div>
-          </div>
-          <div class="doc-meta">
-            <strong>${escapeHtml(documentLabel)}</strong>
-            <p>No: ${escapeHtml(documentNo)}</p>
-            <p>Date: ${escapeHtml(documentDate)}</p>
-          </div>
-        </header>
-        <main>
-          ${body}
-          <section class="signature-grid">
-            <div class="signature"><span>Generated By</span><strong>${escapeHtml(generatedBy)}</strong></div>
-            <div class="signature"><span>Receiver Sign</span><strong>&nbsp;</strong></div>
-            <div class="signature"><span>Authorized Signature</span><strong>&nbsp;</strong></div>
-          </section>
-          <p class="footer-note">Printed date and time: ${escapeHtml(printedAt)}</p>
-        </main>
+    container.innerHTML = `
+      <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
+        <h2>Shipment & Airway Registry</h2>
+        <button class="blue-button" onclick="openCreateDialog()">+ New Shipment / Airway Window</button>
       </div>
-    </body>
-  </html>`;
-}
+      <table class="data-table" style="width:100%;">
+        <thead>
+          <tr><th>Job No</th><th>Customer</th><th>Route Lane</th><th>Pieces Matrix</th><th>Chargeable Weight</th><th>Actions</th></tr>
+        </thead>
+        <tbody>${tableRows || "<tr><td colspan='6'>No active records found.</td></tr>"}</tbody>
+      </table>
+    `;
+  } 
+  else if (activeModule === "Manifest") {
+    let rowsHtml = state.manifests.map(row => `
+      <tr>
+        <td><strong>${row.loadNo || 'ALT66466'}</strong></td>
+        <td>${row.truckNo || '48221 DXB'}</td>
+        <td>${row.driverName || 'FAHAD MAHMOUD'}</td>
+        <td>${row.origin} ➡️ ${row.destination}</td>
+        <td><span class="badge" style="background:#eef3f8; padding:2px 6px; border-radius:4px;">${row.status || 'Active'}</span></td>
+        <td>
+          <button class="blue-button" style="padding:2px 6px; font-size:11px; background:#12202f;" onclick='window.printUniversalDocument("Consolidation Manifest", ${JSON.stringify(row).replace(/'/g, "&apos;")})'>
+            🖨️ Print Manifest PDF
+          </button>
+        </td>
+      </tr>
+    `).join("");
 
-function defaultDocumentLogoUrl() {
-  if (!window.location?.origin || window.location.origin === "null") return "";
-  return `${window.location.origin}/web/assets/logo.png`;
-}
+    container.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+        <div>
+          <h2>Consolidation & Land Voyage Manifests</h2>
+          <p style="font-size:12px; color:var(--muted); margin:0;">Manage border clearances, declarations, truck info, and multi-job consolidation tracking sheets.</p>
+        </div>
+        <button class="blue-button" onclick="window.openManifestCreateForm()">+ Create Land Voyage Manifest</button>
+      </div>
 
-function openPrintableDocument(html) {
-  const printWindow = window.open("", "_blank", "width=1000,height=800");
-  if (!printWindow) {
-    notifyDenied("Popup blocked", "Allow popups to preview the document.");
-    return;
-  }
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-}
+      <div id="manifestFormWrapper" style="display:none; background:var(--canvas); border:1px solid var(--line); padding:15px; border-radius:6px; margin-bottom:20px;">
+        <h3 style="margin-top:0; margin-bottom:12px; border-bottom:1px solid var(--line); padding-bottom:6px; color:var(--nav);">New Land Flight / Border Manifest Builder</h3>
+        <form id="activeManifestForm" onsubmit="window.saveManifestEntry(event)">
+          <div class="dialog-grid" style="grid-template-columns: repeat(4, 1fr); gap:10px;">
+            <div><label>Manifest / ALT Number *</label><input type="text" name="loadNo" value="ALT66466" required /></div>
+            <div><label>Truck Plate No *</label><input type="text" name="truckNo" value="48221 DXB" required /></div>
+            <div><label>Driver Full Name</label><input type="text" name="driverName" value="FAHAD MAHMOUD AL NASER" /></div>
+            <div><label>Driver Mobile No</label><input type="text" name="driverMob" value="971 52 110 3672" /></div>
+            <div><label>From (Origin Hub)</label><input type="text" name="origin" value="JBL-UAE" /></div>
+            <div><label>To (Destination)</label><input type="text" name="destination" value="KUWAIT" /></div>
+            <div><label>ETD Departure Date</label><input type="date" name="etdDate" value="2026-06-06" /></div>
+            <div><label>Customs / Clearance Point</label><input type="text" name="customsRoute" value="PUBLIC WAREHOUSE - SAIL SHIPPING" /></div>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-top:12px;">
+            <div><label>Container Seal Numbers</label><input type="text" name="sealNo" value="303-01055290-26" /></div>
+            <div><label>Customs Declarations / BOE Lines</label><textarea name="declarationsList" rows="3" style="width:100%; font-family:monospace;">3030105313626\n303-01056277-26\n303-01054530-26</textarea></div>
+            <div><label>Commercial Invoices Linked</label><textarea name="invoicesList" rows="3" style="width:100%; font-family:monospace;">4130243800\nGECS052400\nINV 156000000002745</textarea></div>
+          </div>
+          <div style="margin-top:12px; display:flex; gap:10px; justify-content:flex-end;">
+            <button type="button" class="secondary-button" onclick="document.getElementById('manifestFormWrapper').style.display='none'">Cancel</button>
+            <button type="submit" class="blue-button" style="background:var(--accent); border:none; color:white;">Save & Sync Manifest</button>
+          </div>
+        </form>
+      </div>
 
-function downloadHtml(fileName, html) {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
+      <table class="data-table" style="width:100%;">
+        <thead>
+          <tr><th>Manifest No</th><th>Truck Plate No</th><th>Driver Name</th><th>Route Lane</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>${rowsHtml || "<tr><td colspan='6'>No active manifests on file.</td></tr>"}</tbody>
+      </table>
+    `;
+  } 
+  else if (activeModule === "POD / Delivery") {
+    let rows = state.shipments.map(row => `
+      <tr>
+        <td><strong>${row.jobNo}</strong></td>
+        <td>${row.customer}</td>
+        <td>${row.podStatus || 'Pending Target Drop'}</td>
+        <td>
+          <button class="secondary-button" style="padding:2px 6px; font-size:11px;" onclick='window.printUniversalDocument("Proof Of Delivery Report", ${JSON.stringify(row).replace(/'/g, "&apos;")})'>🖨️ Print POD</button>
+        </td>
+      </tr>
+    `).join("");
 
-async function submitAdminRequest(targetModule, referenceNo, details, proposedValues, requestType = "Change Request") {
-  const request = adminRequest(
-    nextNumber("ADM", state.adminRequests, "requestNo"),
-    requestType,
-    targetModule,
-    referenceNo,
-    currentSession()?.userName || "operations",
-    "Pending",
-    today(),
-    details,
-    proposedValues
-  );
-  state.adminRequests.unshift(request);
-  await postRecord("adminRequest", request);
-  return request;
-}
-
-async function submitBlockRequest(type, id, requestType) {
-  const record = collectionFor(type).find((row) => rowId(type, row) === id);
-  if (!record) {
-    notifyDenied("Request not sent", "Select a saved record first.");
-    return false;
-  }
-  const targetType = type === "shipment" ? "Shipment" : type === "suppliers" ? "Supplier" : "Customer";
-  const displayName = record.customer || record.name || id;
-  const request = {
-    requestNo: nextNumber("REQ", state.unblockRequests, "requestNo"),
-    requestType,
-    targetType,
-    referenceNo: id,
-    customerName: displayName,
-    requestedBy: currentUserName(),
-    reason: `${requestType} requested for ${targetType.toLowerCase()} ${id}`,
-    status: "Pending",
-    date: today(),
-    approvedBy: "",
-    notes: ""
-  };
-  state.unblockRequests.unshift(request);
-  await postRecord("unblock", request);
-  addHistory(`Submitted ${requestType.toLowerCase()} request`, `${targetType} ${id}`);
-  saveState();
-  notifySuccess("Request sent", `${requestType} request for ${id} was sent to admin.`);
-  render();
-  return true;
-}
-
-async function approveBlockRequest(request, approvalNotes = "") {
-  request.status = "Approved";
-  request.approvedBy = currentUserName();
-  request.notes = approvalNotes;
-  await applyBlockRequestToRecord(request);
-  await persistRecord("unblock", request);
-  addHistory(`Approved ${String(request.requestType || "").toLowerCase()} request`, request.referenceNo || request.customerName);
-  saveState();
-}
-
-async function rejectBlockRequest(request, approvalNotes = "") {
-  request.status = "Rejected";
-  request.approvedBy = currentUserName();
-  request.notes = approvalNotes;
-  await persistRecord("unblock", request);
-  addHistory(`Rejected ${String(request.requestType || "").toLowerCase()} request`, request.referenceNo || request.customerName);
-  saveState();
-}
-
-async function applyBlockRequestToRecord(request) {
-  const isBlock = String(request.requestType || "").toLowerCase() === "block";
-  const target = String(request.targetType || "").toLowerCase();
-  const id = request.referenceNo || request.customerName;
-  if (target === "shipment") {
-    const shipmentItem = state.shipments.find((row) => row.jobNo === id);
-    if (shipmentItem) {
-      shipmentItem.status = isBlock ? "Blocked" : "Booked";
-      await persistRecord("shipment", shipmentItem);
-    }
-    return;
-  }
-
-  const collectionKey = target === "supplier" ? "suppliers" : "customers";
-  const record = state[collectionKey].find((row) => row.code === id || row.name === id);
-  if (record) {
-    record.status = isBlock ? "Blocked" : "Active";
-    record.isAccountOverdue = isBlock;
-    await persistRecord(collectionKey, record);
+    container.innerHTML = `
+      <h2>POD / Delivery Management Center</h2>
+      <table class="data-table" style="width:100%;">
+        <thead><tr><th>Job No</th><th>Customer</th><th>POD Status</th><th>Actions</th></tr></thead>
+        <tbody>${rows || "<tr><td colspan='4'>No entries found in registry layout.</td></tr>"}</tbody>
+      </table>`;
+  } 
+  else {
+    container.innerHTML = `<h2>${activeModule}</h2><p>Workspace section initialized successfully.</p>`;
   }
 }
 
-async function approveAdminRequest(request, approvalNotes = "") {
-  request.status = "Approved";
-  request.approvedBy = currentSession()?.userName || "admin";
-  request.approvalNotes = approvalNotes;
-  await persistRecord("adminRequest", request);
-
-  if (request.targetModule === "Additional Charges") {
-    const charge = state.additionalCharges.find((row) => row.refNo === request.referenceNo);
-    if (charge) {
-      const changes = parseChangeSummary(request.proposedValues);
-      Object.entries(changes).forEach(([key, value]) => {
-        if (["amount", "taxPercent", "taxAmount", "totalAmount"].includes(key)) {
-          charge[key] = Number(value) || 0;
-        } else {
-          charge[key] = value;
-        }
-      });
-      const refreshed = additionalCharge(
-        charge.refNo,
-        charge.shipmentNo,
-        charge.chargeDate,
-        charge.chargeType,
-        charge.chargeBasis,
-        charge.supplier,
-        charge.referenceNo,
-        charge.invoiceNo,
-        charge.amount,
-        charge.taxPercent,
-        charge.currency,
-        charge.remarks,
-        charge.attachmentName,
-        "Approved",
-        charge.requestedBy || request.requestedBy,
-        request.approvedBy,
-        approvalNotes
-      );
-      Object.assign(charge, refreshed);
-      await persistRecord("charge", charge);
-    }
+// ==========================================
+// ACTION TRIGGERS & FORM EVENT INTEGRATIONS
+// ==========================================
+window.openManifestCreateForm = function() {
+  const formBox = document.getElementById("manifestFormWrapper");
+  if(formBox) {
+    formBox.style.display = "block";
+    formBox.scrollIntoView({ behavior: 'smooth' });
   }
+};
 
-  if (request.targetModule === "Consolidation") {
-    const loadItem = state.loads.find((row) => row.loadNo === request.referenceNo);
-    if (loadItem) {
-      loadItem.manifestStatus = "Approved";
-      loadItem.lastManifestRequestNo = request.requestNo;
-      await persistRecord("load", loadItem);
-    }
-  }
-
-  addHistory("Approved admin request", request.requestNo);
-  saveState();
-}
-
-async function rejectAdminRequest(request, approvalNotes = "") {
-  request.status = "Rejected";
-  request.approvedBy = currentSession()?.userName || "admin";
-  request.approvalNotes = approvalNotes;
-  await persistRecord("adminRequest", request);
-
-  if (request.targetModule === "Additional Charges") {
-    const charge = state.additionalCharges.find((row) => row.refNo === request.referenceNo && row.status === "Pending Approval");
-    if (charge) {
-      charge.status = "Rejected";
-      charge.approvedBy = request.approvedBy;
-      charge.approvalNotes = approvalNotes;
-      await persistRecord("charge", charge);
-    }
-  }
-
-  if (request.targetModule === "Consolidation") {
-    const loadItem = state.loads.find((row) => row.loadNo === request.referenceNo);
-    if (loadItem) {
-      loadItem.manifestStatus = "Rejected";
-      loadItem.lastManifestRequestNo = request.requestNo;
-      await persistRecord("load", loadItem);
-    }
-  }
-
-  addHistory("Rejected admin request", request.requestNo);
-  saveState();
-}
-
-function manifestChangeSummary(loadItem) {
-  return [
-    `route: ${loadItem.route}`,
-    `transporter: ${loadItem.transporter}`,
-    `vehicleNo: ${loadItem.vehicleNo}`,
-    `tripDate: ${loadItem.tripDate}`,
-    `status: ${loadItem.status}`,
-    `jobNumbers: ${loadItem.jobNumbers}`
-  ].join(" | ");
-}
-
-async function requestLoadManifest(loadNo) {
-  const loadItem = state.loads.find((row) => row.loadNo === loadNo);
-  if (!loadItem) return;
-  const request = await submitAdminRequest(
-    "Consolidation",
-    loadNo,
-    "Generate loading list / manifest",
-    manifestChangeSummary(loadItem),
-    "Manifest Approval"
-  );
-  loadItem.manifestStatus = "Pending Approval";
-  loadItem.lastManifestRequestNo = request.requestNo;
-  await persistRecord("load", loadItem);
-  addHistory("Submitted manifest approval request", `${loadNo} - ${request.requestNo}`);
-  saveState();
-  render();
-}
-
-async function approveLoadManifest(loadNo) {
-  if (!isAdminSession()) {
-    window.alert("Only admin users can approve consolidation manifests.");
-    return;
-  }
-  const loadItem = state.loads.find((row) => row.loadNo === loadNo);
-  if (!loadItem) return;
-  loadItem.manifestStatus = "Approved";
-  await persistRecord("load", loadItem);
-  addHistory("Generated and approved manifest", loadNo);
-  saveState();
-  render();
-}
-
-async function handleModuleSubmit(event) {
+window.saveManifestEntry = function(event) {
   event.preventDefault();
-  const form = event.target.closest("form[data-form]");
-  if (!form) return;
-  const data = Object.fromEntries(new FormData(form).entries());
-  rememberDropdownOptions(data);
-  const type = form.dataset.form;
-  const handlers = {
-    shipment: () => createShipment(data),
-    load: () => createLoad(data),
-    customers: () => createParty("customers", data),
-    suppliers: () => createParty("suppliers", data),
-    user: () => createUser(data),
-    tariff: () => createTariff(data),
-    document: () => createDocument(data),
-    invoice: () => createInvoice(data),
-    pod: () => updatePod(data),
-    status: () => updateStatus(data),
-    settings: () => updateSettings(data)
+  const form = event.target;
+  const formData = new FormData(form);
+  
+  const newManifest = {
+    loadNo: formData.get("loadNo"),
+    truckNo: formData.get("truckNo"),
+    driverName: formData.get("driverName"),
+    driverMob: formData.get("driverMob"),
+    origin: formData.get("origin"),
+    destination: formData.get("destination"),
+    etdDate: formData.get("etdDate"),
+    customsRoute: formData.get("customsRoute"),
+    sealNo: formData.get("sealNo"),
+    declarationsList: formData.get("declarationsList"),
+    invoicesList: formData.get("invoicesList"),
+    status: "Active / In Transit"
   };
-  const saved = await handlers[type]?.();
-  if (saved === false) {
-    return;
-  }
-  saveState();
-  render();
-}
 
-async function createShipment(data) {
-  if (duplicateRecordExists("shipment", data.jobNo)) {
-    notifyDuplicate(data.jobNo);
-    return false;
-  }
-  if (!String(data.billTo1 || "").trim() && !String(data.billTo2 || "").trim()) {
-    notifyDenied("Bill To required", "Enter at least one Bill To value.");
-    return false;
-  }
-  if (data.entryMode !== "airway") {
-    const allowedTariffs = tariffOptionsForCustomer(data.customer).map((option) => option.value);
-    if (data.tariffNo && !allowedTariffs.includes(data.tariffNo)) {
-      notifyDenied("Tariff not allowed", "Select a tariff created for the selected consignee.");
-      return false;
+  state.manifests.unshift(newManifest);
+  saveState();
+  form.reset();
+  document.getElementById("manifestFormWrapper").style.display = "none";
+  notifySuccess("Manifest Created", `Voyage list ${newManifest.loadNo} saved.`);
+  render();
+};
+
+function openCreateDialog() {
+  editing = null;
+  const dialog = document.getElementById("recordDialog");
+  const body = document.getElementById("dialogBody");
+  if (!dialog || !body) return;
+
+  document.getElementById("dialogTitle").innerText = "Generate New Airway Cargo Run";
+  body.innerHTML = shipmentDialogBody("shipment");
+  
+  const actionsBar = dialog.querySelector(".dialog-actions");
+  if (actionsBar) {
+    const existingActivePrint = document.getElementById("dialog_active_window_print");
+    if (!existingActivePrint) {
+      const printBtn = document.createElement("button");
+      printBtn.type = "button";
+      printBtn.id = "dialog_active_window_print";
+      printBtn.className = "secondary-button";
+      printBtn.style.marginRight = "auto";
+      printBtn.innerText = "🖨️ Print Active Window";
+      printBtn.onclick = function() {
+        const activeData = window.captureActiveDialogFormData();
+        window.printUniversalDocument("ERP Live Profile Update", activeData);
+      };
+      actionsBar.insertBefore(printBtn, actionsBar.firstChild);
     }
   }
-  const tariffItem = state.tariffs.find((row) => row.tariffNo === data.tariffNo);
-  const record = shipment(
-    data.jobNo,
-    data.branch,
-    data.customer,
-    data.origin,
-    data.destination,
-    "Booked",
-    Number(data.pieces),
-    Number(data.actualKg),
-    Number(data.cbm),
-    Number(data.chargeableKg),
-    Number(tariffItem?.grandTotal || tariffItem?.minCharge || 0),
-    0,
-    "Pending",
-    "Unbilled",
-    data.bookingDate || today(),
-    data.airwayBillNo || data.jobNo?.replace("AFS", "AWB"),
-    data.tariffNo || "TAR-1001",
-    Number(data.transitDays || 0),
-    data.shipmentDirection || "Export",
-    data.shipmentService || "AE",
-    data.shipmentServiceOther || "",
-    data.volumeCategory || "Land",
-    Number(data.chargeableDivisor || volumeDivisorFor(data.volumeCategory || "Land") || 0),
-    currentUserName(),
-    shipmentMetaNotes(data)
-  );
-  state.shipments.unshift(record);
-  await postRecord("shipment", record);
-  addHistory("Created shipment", data.jobNo);
-  notifySuccess("Shipment created", `${data.jobNo} was saved successfully.`);
-  return true;
+
+  dialog.showModal();
+  updateDimTotals();
 }
 
-async function createLoad(data) {
-  if (duplicateRecordExists("load", data.loadNo)) {
-    notifyDuplicate(data.loadNo);
-    return false;
-  }
-  const jobs = normalizeConsolidationJobs(data.jobNumbers);
-  if (!jobs.length) {
-    notifyDenied("Consolidation not created", "Add at least one unassigned shipment with service type Consolidation.");
-    return false;
-  }
-  const item = load(data.loadNo, data.tripDate, data.route, data.transporter, data.vehicleNo, data.status, jobs.join(", "), data.manifestStatus || "Not Generated", data.lastManifestRequestNo || "", currentUserName(), loadMetaNotes(data));
-  recalculateLoad(item);
-  state.loads.unshift(item);
-  await postRecord("load", item);
-  addHistory("Created consolidation", data.loadNo);
-  notifySuccess("Consolidation created", `${data.loadNo} was saved successfully.`);
-  return true;
-}
-
-async function createParty(key, data) {
-  if (duplicateRecordExists(key, data.code)) {
-    notifyDuplicate(data.code);
-    return false;
-  }
-  const record = party(data.code, data.name, data.locationOrLane, data.email, data.terms, data.status, false, data.branch, currentUserName(), data.fullAddress || "");
-  state[key].unshift(record);
-  await postRecord(key, record);
-  addHistory(`Created ${key}`, data.code);
-  notifySuccess("Record created", `${data.code} was saved successfully.`);
-  return true;
-}
-
-async function createUser(data) {
-  const userName = String(data.userName || "").trim();
-  const password = String(data.password || "");
-  const email = String(data.email || "").trim();
-
-  if (!userName || !password || !email) {
-    window.alert("User name, password, and email are required.");
-    return false;
-  }
-
-  if (state.users.some((record) => record.userName.toLowerCase() === userName.toLowerCase())) {
-    window.alert("User name already used or duplicate entry.");
-    return false;
-  }
-
-  if (state.users.some((record) => record.email.toLowerCase() === email.toLowerCase())) {
-    window.alert("Email already used or duplicate entry.");
-    return false;
-  }
-
-  const record = user(
-    userName,
-    email,
-    data.role,
-    data.accountStatus,
-    data.branchAccess,
-    normalizeSectionAccess(data.sectionAccess || "All"),
-    isChecked(data.canViewAllEntry),
-    isChecked(data.canViewOnlySelfEntry),
-    isChecked(data.canEditAllEntry),
-    isChecked(data.canViewUpdatedHistory),
-    password,
-    data.notes || "Created from admin panel"
-  );
-
-  state.users.unshift(record);
-  const apiSaved = await postRecord("user", record);
-  addHistory("Created user account", `${userName} - ${data.branchAccess}`);
-  notifySuccess("User created", `${userName} was saved successfully.`);
-  if (apiSaved) setTimeout(() => syncFromApi(), 300);
-  return true;
-}
-
-async function createTariff(data) {
-  if (duplicateRecordExists("tariff", data.tariffNo)) {
-    notifyDuplicate(data.tariffNo);
-    return false;
-  }
-  const record = tariff(
-    data.tariffNo,
-    data.customer,
-    data.origin,
-    data.destination,
-    data.mainSection,
-    data.weightSection,
-    data.minUpTo,
-    Number(data.rate),
-    Number(data.minCharge),
-    data.additionalChargesJson || "[]",
-    Number(data.additionalChargesTotal || 0),
-    Number(data.grandTotal || 0)
-  );
-  state.tariffs.unshift(record);
-  await postRecord("tariff", record);
-  addHistory("Created tariff", data.tariffNo);
-  notifySuccess("Tariff created", `${data.tariffNo} was saved successfully.`);
-  return true;
-}
-
-async function createDocument(data) {
-  if (duplicateRecordExists("document", data.documentNo)) {
-    notifyDuplicate(data.documentNo);
-    return false;
-  }
-  const uploadedName = data.fileUpload && typeof data.fileUpload === "object" ? data.fileUpload.name || "" : "";
-  const record = documentRow(data.documentNo, data.linkedNo, data.type, data.status, data.date, data.owner || currentUserName(), uploadedName, currentUserName());
-  state.documents.unshift(record);
-  await postRecord("document", record);
-  addHistory("Tagged document", data.documentNo);
-  notifySuccess("Document saved", `${data.documentNo} was saved successfully.`);
-  return true;
-}
-
-async function createCharge(data) {
-  if (duplicateRecordExists("charge", data.refNo)) {
-    notifyDuplicate(data.refNo);
-    return false;
-  }
-  const sessionUser = currentSession()?.userName || "operations";
-  const isAdmin = isAdminSession();
-  const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
-  if (!shipmentItem) {
-    notifyFailed("Charge failed", "Select a valid shipment first.");
-    return false;
-  }
-  const existingCharges = state.additionalCharges.filter((row) => row.shipmentNo === data.shipmentNo);
-  const existingInvoiceNo = existingCharges.find((row) => row.invoiceNo)?.invoiceNo || "";
-  if (existingInvoiceNo && data.invoiceNo && data.invoiceNo !== existingInvoiceNo) {
-    notifyDenied("Charge denied", `Shipment ${data.shipmentNo} already uses invoice ${existingInvoiceNo}.`);
-    return false;
-  }
-  const invoiceNo = existingInvoiceNo || data.invoiceNo || "";
-  const chargeLines = parseChargeLines(data);
-  if (!chargeLines.length) {
-    notifyDenied("Charge denied", "Add at least one charge line before saving.");
-    return false;
-  }
-  const taxPercent = Number(data.taxPercent || 0);
-  const newTotal = chargeLines.reduce((sum, line) => {
-    const amount = Number(line.amount || 0);
-    return sum + amount + amount * (taxPercent / 100);
-  }, 0);
-  const existingTotal = existingCharges.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
-  const projectedProfit = Number(shipmentItem.sell || 0) - Number(shipmentItem.buyCost || 0) - existingTotal - newTotal;
-  if (projectedProfit < 0) {
-    notifyDenied("Charge denied", `This charge puts shipment ${data.shipmentNo} in loss (${money(projectedProfit)}).`);
-    return false;
-  }
-  const receiptNo = data.referenceNo || data.refNo;
-  const request = !isAdmin
-    ? await submitAdminRequest(
-        "Additional Charges",
-        data.refNo,
-        "New additional charge submitted for approval.",
-        `receipt: -> ${receiptNo} | lines: -> ${chargeLines.map((line) => `${line.chargeType} ${line.amount}`).join(", ")} | taxPercent: -> ${data.taxPercent} | shipmentNo: -> ${data.shipmentNo}`,
-        "Additional Charge Approval"
-      )
-    : null;
-
-  const records = chargeLines.map((line, index) =>
-    additionalCharge(
-      chargeLineRef(data.refNo, index, chargeLines.length),
-      data.shipmentNo,
-      data.chargeDate || today(),
-      line.chargeType,
-      line.chargeBasis || "Per Shipment",
-      data.supplier,
-      receiptNo,
-      invoiceNo,
-      Number(line.amount || 0),
-      taxPercent,
-      data.currency || "KWD",
-      data.remarks || "",
-      data.attachmentName || "",
-      isAdmin ? data.status || "Approved" : "Pending Approval",
-      sessionUser,
-      isAdmin ? sessionUser : "",
-      request?.requestNo || "",
-      sessionUser
-    )
-  );
-
-  state.additionalCharges.unshift(...records);
-  await Promise.all(records.map((record) => postRecord("charge", record)));
-  addHistory(isAdmin ? "Created additional charge" : "Submitted additional charge", data.refNo);
-  notifySuccess(isAdmin ? "Charge receipt saved" : "Charge receipt submitted", `${data.refNo} saved with ${records.length} line(s).`);
-  return true;
-}
-
-function parseChargeLines(data) {
-  try {
-    const parsed = JSON.parse(data.chargeLines || "[]");
-    if (Array.isArray(parsed)) {
-      return parsed
-        .map((line) => ({ chargeType: line.chargeType, amount: Number(line.amount || 0), chargeBasis: line.chargeBasis || "Per Shipment" }))
-        .filter((line) => line.chargeType && line.amount > 0);
-    }
-  } catch {}
-
-  if (data.chargeType && Number(data.amount || 0) > 0) {
-    return [{ chargeType: data.chargeType, amount: Number(data.amount || 0), chargeBasis: data.chargeBasis || "Per Shipment" }];
-  }
-  return [];
-}
-
-function chargeLineRef(baseRef, index, count) {
-  return count <= 1 ? baseRef : `${baseRef}-${String(index + 1).padStart(2, "0")}`;
-}
-
-async function createInvoice(data) {
-  if (duplicateRecordExists("invoice", data.invoiceNo)) {
-    notifyDuplicate(data.invoiceNo);
-    return false;
-  }
-  const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
-  const tariffItem = assignedTariffForShipment(shipmentItem);
-  const customer = shipmentItem?.customer || data.customer;
-  const revenue = Number(data.revenue || tariffItem?.grandTotal || shipmentItem?.sell || 0);
-  const supplierCost = Number(data.supplierCost || shipmentItem?.buyCost || 0);
-  const record = invoice(data.invoiceNo, customer, data.shipmentNo, revenue, supplierCost, data.status, data.date);
-  state.invoices.unshift(record);
-  await postRecord("invoice", record);
-  if (shipmentItem) shipmentItem.invoiceStatus = data.invoiceNo;
-  addHistory("Generated invoice", data.invoiceNo);
-  notifySuccess("Invoice saved", `${data.invoiceNo} was saved successfully.`);
-  return true;
-}
-
-async function updatePod(data) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === data.jobNo);
-  if (!shipmentItem) return false;
-  shipmentItem.status = "Delivered";
-  shipmentItem.podStatus = "Uploaded";
-  await persistRecord("shipment", shipmentItem);
-  const documentRecord = documentRow(nextNumber("DOC", state.documents, "documentNo"), data.jobNo, "POD", "Uploaded", today(), "delivery");
-  state.documents.unshift(documentRecord);
-  await postRecord("document", documentRecord);
-  addHistory("Marked delivered and uploaded POD", `${data.jobNo} - ${data.receiver}`);
-  notifySuccess("POD updated", `${data.jobNo} was marked delivered.`);
-  return true;
-}
-
-async function updateStatus(data) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === data.jobNo);
-  if (!shipmentItem) return false;
-  shipmentItem.status = data.status;
-  shipmentItem.podStatus = data.podStatus;
-  shipmentItem.invoiceStatus = data.invoiceStatus;
-  await persistRecord("shipment", shipmentItem);
-  addHistory("Updated shipment status", `${data.jobNo} - ${data.notes}`);
-  notifySuccess("Status updated", `${data.jobNo} was saved successfully.`);
-  return true;
-}
-
-async function updateSettings(data) {
-  state.settings = { ...state.settings, ...data, settingsKey: state.settings.settingsKey || "default" };
-  const apiSaved = await persistRecord("settings", state.settings);
-  addHistory("Saved company settings", data.companyName);
-  notifySuccess("Settings saved", "Company settings were updated successfully.");
-  if (apiSaved) setTimeout(() => syncFromApi(), 300);
-  return true;
-}
-
-function endpointFor(type) {
-  return {
-    shipment: "shipments",
-    load: "consolidations",
-    customers: "customers",
-    suppliers: "suppliers",
-    tariff: "tariffs",
-    document: "documents",
-    charge: "additional-charges",
-    invoice: "invoices",
-    user: "users",
-    unblock: "unblock-requests",
-    adminRequest: "admin-requests",
-    audit: "audit",
-    settings: "settings"
-  }[type];
-}
-
-async function postRecord(type, record) {
-  const endpoint = endpointFor(type);
-  if (!endpoint) return false;
-  try {
-    const result = await fetchJson(`/api/${endpoint}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(record)
-    });
-    if (result.mode === "demo") throw new Error("Database tables are not ready yet.");
-    return true;
-  } catch (error) {
-    markApiWriteError(error);
-    return false;
-  }
-}
-
-async function persistRecord(type, record) {
-  const endpoint = endpointFor(type);
-  const id = rowId(type, record);
-  if (!endpoint || !id || type === "audit") return false;
-  try {
-    const result = await fetchJson(`/api/${endpoint}/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(record)
-    });
-    if (result.mode === "demo") throw new Error("Database tables are not ready yet.");
-    return true;
-  } catch (error) {
-    markApiWriteError(error);
-    return false;
-  }
-}
-
-async function deleteRecord(type, id) {
-  const endpoint = endpointFor(type);
-  if (!endpoint || !id) return false;
-  try {
-    const result = await fetchJson(`/api/${endpoint}/${encodeURIComponent(id)}`, {
-      method: "DELETE"
-    });
-    if (result.mode === "demo") throw new Error("Database tables are not ready yet.");
-    return true;
-  } catch (error) {
-    markApiWriteError(error);
-    return false;
-  }
-}
-
-function markApiWriteError(error) {
-  state.api = {
-    ...state.api,
-    status: "API save warning",
-    database: state.api.database || "unknown",
-    mode: "browser",
-    error: error?.message || "Live database save failed."
-  };
-  notifyFailed("Live database save failed", state.api.error);
-}
-
-function selectedDeleteId(type) {
-  return moduleContent.querySelector(`[data-delete-select='${type}']`)?.value || "";
-}
-
-function typeLabel(type) {
-  return {
-    shipment: "shipment",
-    load: "consolidation",
-    customers: "customer",
-    suppliers: "supplier / transporter",
-    tariff: "tariff",
-    document: "document",
-    charge: "additional charge",
-    invoice: "invoice",
-    user: "user account"
-  }[type] || type;
-}
-
-async function deleteSelectedRecord(type) {
-  if (!isAdminSession()) {
-    notifyDenied("Delete denied", "Only admin users can delete records.");
-    return;
-  }
-
-  const id = selectedDeleteId(type);
-  if (!id) {
-    notifyDenied("Delete denied", `Select a ${typeLabel(type)} to delete.`);
-    return;
-  }
-
-  const record = collectionFor(type).find((row) => rowId(type, row) === id);
-  if (!record) {
-    notifyFailed("Delete failed", `${typeLabel(type)} not found.`);
-    return;
-  }
-
-  if (type === "user" && id === currentSession()?.userName) {
-    notifyDenied("Delete denied", "You cannot delete the user account you are currently using.");
-    return;
-  }
-
-  const message = type === "shipment"
-    ? `Delete shipment ${id} and its linked records?`
-    : `Delete ${typeLabel(type)} ${id}?`;
-  if (!window.confirm(message)) return;
-
-  if (type === "shipment") {
-    await deleteShipmentById(id);
-    return;
-  }
-
-  const affectedShipments = type === "invoice"
-    ? state.shipments.filter((shipmentItem) => shipmentItem.invoiceStatus === id)
-    : [];
-  const deleted = await deleteRecord(type, id);
-  if (!deleted) return;
-  removeLocalRecord(type, id);
-  await Promise.all(affectedShipments.map((shipmentItem) => persistRecord("shipment", shipmentItem)));
-  addHistory(`Deleted ${typeLabel(type)}`, id);
-  saveState();
-  notifySuccess("Record deleted", `${id} was deleted successfully.`);
-  render();
-}
-
-async function deleteRecordById(type, id) {
-  if (!isAdminSession()) {
-    notifyDenied("Delete denied", "Only admin users can delete records.");
-    return;
-  }
-  if (!id) {
-    notifyDenied("Delete denied", `Select a ${typeLabel(type)} to delete.`);
-    return;
-  }
-  if (!window.confirm(`Delete ${typeLabel(type)} ${id}?`)) return;
-  const deleted = await deleteRecord(type, id);
-  if (!deleted) return;
-  removeLocalRecord(type, id);
-  addHistory(`Deleted ${typeLabel(type)}`, id);
-  saveState();
-  notifySuccess("Record deleted", `${id} was deleted successfully.`);
-  render();
-}
-
-async function deleteAuditLog() {
-  if (!isAdminSession()) {
-    notifyDenied("Delete denied", "Only admin users can delete audit logs.");
-    return;
-  }
-  const id = selectedDeleteId("audit");
-  if (!id) {
-    notifyDenied("Delete denied", "Select a log entry to delete.");
-    return;
-  }
-  if (!window.confirm(`Delete audit log ${id}?`)) return;
-  const deleted = await deleteRecord("audit", id);
-  if (!deleted) return;
-  state.audit = state.audit.filter((row) => String(rowId("audit", row)) !== String(id));
-  saveState();
-  notifySuccess("Audit log deleted", `Log ${id} was deleted successfully.`);
-  render();
-}
-
-function removeLocalRecord(type, id) {
-  const keep = (row) => rowId(type, row) !== id;
-  if (type === "load") {
-    state.loads = state.loads.filter(keep);
-    if (state.ui.selectedLoadNo === id) state.ui.selectedLoadNo = "";
-    return;
-  }
-  if (type === "customers") state.customers = state.customers.filter(keep);
-  if (type === "suppliers") state.suppliers = state.suppliers.filter(keep);
-  if (type === "tariff") state.tariffs = state.tariffs.filter(keep);
-  if (type === "document") state.documents = state.documents.filter(keep);
-  if (type === "charge") state.additionalCharges = state.additionalCharges.filter(keep);
-  if (type === "invoice") {
-    state.invoices = state.invoices.filter(keep);
-    state.shipments.forEach((shipmentItem) => {
-      if (shipmentItem.invoiceStatus === id) shipmentItem.invoiceStatus = "Unbilled";
+// ==========================================
+// CORE APP ENTRYPOINT EVENTS DOM CONTENT
+// ==========================================
+document.addEventListener("DOMContentLoaded", () => {
+  // Setup standard base manifest layout fallback if empty 
+  state.manifests = state.manifests || [];
+  if (state.manifests.length === 0) {
+    state.manifests.push({
+      loadNo: "ALT66466",
+      truckNo: "48221 DXB",
+      driverName: "FAHAD MAHMOUD AL NASER",
+      driverMob: "971 52 110 3672",
+      origin: "JBL-UAE",
+      destination: "KUWAIT",
+      etdDate: "2026-06-06",
+      customsRoute: "PUBLIC WAREHOUSE - SAIL SHIPPING",
+      sealNo: "303-01055290-26",
+      declarationsList: "3030105313626\n303-01056277-26\n303-01054530-26",
+      invoicesList: "4130243800\nGECS052400\nINV 156000000002745",
+      status: "In Transit"
     });
   }
-  if (type === "user") state.users = state.users.filter(keep);
-}
 
-async function deleteShipmentById(jobNo) {
-  const linkedDocuments = state.documents.filter((row) => row.linkedNo === jobNo);
-  const linkedInvoices = state.invoices.filter((row) => row.shipmentNo === jobNo);
-  const linkedCharges = state.additionalCharges.filter((row) => row.shipmentNo === jobNo);
-
-  const shipmentDeleted = await deleteRecord("shipment", jobNo);
-  if (!shipmentDeleted) return;
-  await Promise.all([
-    ...linkedDocuments.map((row) => deleteRecord("document", row.documentNo)),
-    ...linkedInvoices.map((row) => deleteRecord("invoice", row.invoiceNo)),
-    ...linkedCharges.map((row) => deleteRecord("charge", row.refNo))
-  ]);
-
-  state.shipments = state.shipments.filter((row) => row.jobNo !== jobNo);
-  state.documents = state.documents.filter((row) => row.linkedNo !== jobNo);
-  state.invoices = state.invoices.filter((row) => row.shipmentNo !== jobNo);
-  state.additionalCharges = state.additionalCharges.filter((row) => row.shipmentNo !== jobNo);
-
-  for (const loadItem of state.loads) {
-    const jobs = String(loadItem.jobNumbers || "")
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .filter((item) => item !== jobNo);
-    loadItem.jobNumbers = jobs.join(", ");
-    recalculateLoad(loadItem);
-    await persistRecord("load", loadItem);
-  }
-
-  addHistory("Deleted shipment", jobNo);
-  saveState();
-  notifySuccess("Shipment deleted", `${jobNo} and linked records were deleted successfully.`);
   render();
-}
+  
+  document.querySelectorAll(".nav-item, .nav-list li").forEach(item => {
+    item.addEventListener("click", (e) => {
+      const text = item.textContent.trim().split("\n")[0];
+      const match = modules.find(m => m[0] === text || text.startsWith(m[0]));
+      if (match) {
+        activeModule = match[0];
+        render();
+      }
+    });
+  });
 
-async function removeJobFromLoad(loadNo, jobNo) {
-  if (!isAdminSession()) {
-    notifyDenied("Remove denied", "Only admin users can remove shipments from a consolidation.");
-    return;
+  const dialogSaveBtn = document.getElementById("dialogSave");
+  if (dialogSaveBtn) {
+    dialogSaveBtn.addEventListener("click", () => {
+      const data = window.captureActiveDialogFormData();
+      state.shipments.unshift(data);
+      saveState();
+      document.getElementById("recordDialog")?.close();
+      render();
+    });
   }
-
-  const loadItem = state.loads.find((row) => row.loadNo === loadNo);
-  if (!loadItem) return;
-
-  loadItem.jobNumbers = String(loadItem.jobNumbers || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .filter((item) => item !== jobNo)
-    .join(", ");
-
-  recalculateLoad(loadItem);
-  await persistRecord("load", loadItem);
-  addHistory("Removed shipment from consolidation", `${loadNo} - ${jobNo}`);
-  saveState();
-  notifySuccess("Shipment removed", `${jobNo} was removed from ${loadNo}.`);
-  render();
-}
-
-function sendShipmentStatusEmail(jobNo) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
-  if (!shipmentItem) {
-    window.alert("Select a shipment first.");
-    return;
-  }
-
-  const customer = state.customers.find((row) => row.name === shipmentItem.customer);
-  if (!customer?.email) {
-    window.alert("No customer email is stored for this shipment.");
-    return;
-  }
-
-  const subject = encodeURIComponent(`Shipment Update ${shipmentItem.jobNo}`);
-  const body = encodeURIComponent(
-    [
-      `Dear ${shipmentItem.customer},`,
-      "",
-      `Shipment No: ${shipmentItem.jobNo}`,
-      `Origin: ${shipmentItem.origin}`,
-      `Destination: ${shipmentItem.destination}`,
-      `Status: ${shipmentItem.status}`,
-      `POD Status: ${shipmentItem.podStatus}`,
-      `Invoice Status: ${shipmentItem.invoiceStatus}`,
-      "",
-      "Regards,",
-      "Apollo Freight Solutions"
-    ].join("\n")
-  );
-
-  window.location.href = `mailto:${encodeURIComponent(customer.email)}?subject=${subject}&body=${body}`;
-}
-
-boot();
+});
