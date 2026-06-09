@@ -60,6 +60,225 @@ function openEnterprisePrintJob(htmlContentString) {
   printWindow.document.close();
 }
 
+// ==========================================================================
+// OFFICIAL DOCUMENT PRINT TEMPLATE GENERATORS
+// ==========================================================================
+function renderAirwayBillTcnPrint(shipmentItem) {
+  let meta = {};
+  try { meta = JSON.parse(shipmentItem.notes || '{}'); } catch(e) { meta = {}; }
+  const natureOfGoods = shipmentItem.natureOfGoods || meta.natureOfGoods || "GARMENTS, SHOES & ACCESSORIES";
+  const direction = shipmentItem.shipmentDirection || "Export";
+  const service = shipmentItem.shipmentService || "LTL";
+
+  return `
+    <div class="printable-document">
+      <header class="print-doc-header">
+        <div class="print-brand-info">
+          <h1>APOLLO FREIGHT SOLUTIONS</h1>
+          <p>We bring continents closer...</p>
+        </div>
+        <div class="print-meta-info">
+          <h2>TRUCK CONSIGNMENT NOTE - TCN/WAYBILL</h2>
+          <div class="print-doc-id">WAYBILL NO: ${escapeHtml(shipmentItem.airwayBillNo || shipmentItem.jobNo)}</div>
+          <p style="margin: 4px 0 0 0; font-size: 9pt;"><strong>Date / Place:</strong> ${escapeHtml(shipmentItem.bookingDate || "")} | ${escapeHtml(shipmentItem.origin || "")}</p>
+        </div>
+      </header>
+      <div class="print-doc-grid">
+        <div class="print-info-block">
+          <h3>Shipper / Origin Location</h3>
+          <p><strong>${escapeHtml(shipmentItem.customer || "")}</strong></p>
+          <p>Origin Hub: ${escapeHtml(shipmentItem.origin || "")}</p>
+          <p>Direction Mode: ${escapeHtml(direction)}</p>
+        </div>
+        <div class="print-info-block">
+          <h3>Consignee / Destination Hub</h3>
+          <p><strong>${escapeHtml(meta.billTo1 || shipmentItem.customer || "")}</strong></p>
+          <p>Notify & Delivery Address: ${escapeHtml(shipmentItem.destination || "")}</p>
+          <p>Carrier No / Service Level: ${escapeHtml(service)}</p>
+        </div>
+      </div>
+      <table class="print-table">
+        <thead>
+          <tr>
+            <th>Cargo Details / Nature of Goods</th>
+            <th style="text-align: right;">No of Pieces/Pallets</th>
+            <th style="text-align: right;">Gross Weight (Kgs)</th>
+            <th style="text-align: right;">Volume Weight (CBM)</th>
+            <th style="text-align: right;">Chargeable Wt (Kg)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${escapeHtml(natureOfGoods)}</td>
+            <td style="text-align: right;">${Number(shipmentItem.pieces || 0).toString().padStart(2, '0')} Units</td>
+            <td style="text-align: right;">${typeof money === 'function' ? money(shipmentItem.actualKg) : shipmentItem.actualKg} Kg</td>
+            <td style="text-align: right;">${Number(shipmentItem.cbm || 0).toFixed(3)} CBM</td>
+            <td style="text-align: right;"><strong>${typeof money === 'function' ? money(shipmentItem.chargeableKg) : shipmentItem.chargeableKg} Kg</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="print-info-block" style="margin-top: 10px;">
+        <h3>Declaration References</h3>
+        <p>Operational Status Category: <strong>${escapeHtml(shipmentItem.status || "")}</strong> | Volumetric Divisor: ${escapeHtml(shipmentItem.chargeableDivisor || "250")}</p>
+      </div>
+      <div class="print-sign-row">
+        <div class="print-sign-box">SHIPPER'S SIGNATURE</div>
+        <div class="print-sign-box">RECEIVER'S SIGNATURE & STAMP</div>
+      </div>
+      <footer class="print-footer-clauses">
+        <p><strong>Terms and Conditions:</strong></p>
+        <p>1. The consignor certifies that he is either the owner of the goods or is duly authorized by the owner to act as his agent.</p>
+        <p>2. The consignor agrees to indemnify the carrier against any claims arising out of damage to the goods or any injury to any person caused by the goods.</p>
+        <p>3. The carrier is not liable for any damage caused by delay, negligence, or any other reason beyond the control of the carrier.</p>
+        <p>4. The carrier's liability for loss or damage to any goods is limited to the lesser of the actual value of the goods or standard international conventions.</p>
+        <p style="text-align: center; font-weight: bold; margin-top: 8px;">System generated document. Securely recorded in Apollo ERP.</p>
+      </footer>
+    </div>
+  `;
+}
+
+function renderManifestConsolidationPrint(loadItem, linkedShipments) {
+  return `
+    <div class="printable-document">
+      <header class="print-doc-header">
+        <div class="print-brand-info">
+          <h1>APOLLO FREIGHT SOLUTIONS</h1>
+          <p>Consolidation Line-Haul Manifest</p>
+        </div>
+        <div class="print-meta-info">
+          <h2>TRUCK MANIFEST LOADING LIST</h2>
+          <div class="print-doc-id">MANIFEST NO: ${escapeHtml(loadItem.loadNo || "")}</div>
+          <p style="margin: 4px 0 0 0; font-size: 9pt;"><strong>ETD / Run Date:</strong> ${escapeHtml(loadItem.tripDate || "")}</p>
+        </div>
+      </header>
+      <div class="print-doc-grid">
+        <div class="print-info-block">
+          <h3>Fleet Vehicle Setup</h3>
+          <p><strong>Truck Registration No:</strong> ${escapeHtml(loadItem.vehicleNo || "N/A")}</p>
+          <p><strong>Driver Full Name:</strong> ${escapeHtml(loadItem.driverName || "FAHAD MAHMOUD AL NASER")}</p>
+          <p><strong>Driver Contact Mobile:</strong> ${escapeHtml(loadItem.driverNumber || "N/A")}</p>
+        </div>
+        <div class="print-info-block">
+          <h3>Routing & Customs</h3>
+          <p><strong>From Lane / Origin:</strong> ${escapeHtml((loadItem.route || "").split('-')[0] || "JBL-UAE")}</p>
+          <p><strong>To Destination:</strong> ${escapeHtml((loadItem.route || "").split('-')[1] || "KUWAIT")}</p>
+          <p><strong>Customs Clearance Node:</strong> PUBLIC WAREHOUSE - SAIL SHIPPING</p>
+        </div>
+      </div>
+      <table class="print-table">
+        <thead>
+          <tr>
+            <th>Waybill / Job No</th>
+            <th>Client Account</th>
+            <th>Commodity</th>
+            <th style="text-align: right;">Pieces</th>
+            <th style="text-align: right;">Gross Weight (Kg)</th>
+            <th style="text-align: right;">CBM</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${linkedShipments.map(item => `
+            <tr>
+              <td><strong>${escapeHtml(item.jobNo || "")}</strong></td>
+              <td>${escapeHtml(item.customer || "")}</td>
+              <td>${escapeHtml(item.natureOfGoods || "MIXED COMMODITY")}</td>
+              <td style="text-align: right;">${Number(item.pieces || 0)}</td>
+              <td style="text-align: right;">${typeof money === 'function' ? money(item.actualKg) : item.actualKg}</td>
+              <td style="text-align: right;">${Number(item.cbm || 0).toFixed(2)}</td>
+              <td><span style="font-size: 8pt; font-weight: bold;">${escapeHtml(item.podStatus || "PENDING")}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <div class="print-sign-row" style="margin-top: 50px;">
+        <div class="print-sign-box">DISPATCHING OPERATIONS AGENT</div>
+        <div class="print-sign-box">LINE-HAUL DRIVER ACKNOWLEDGEMENT</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPodPrint(shipmentItem) {
+  return `
+    <div class="printable-document">
+      <header class="print-doc-header">
+        <div class="print-brand-info">
+          <h1>APOLLO FREIGHT SOLUTIONS</h1>
+          <p>Delivery Run Verification Receipt</p>
+        </div>
+        <div class="print-meta-info">
+          <h2>FINAL MILE PROOF OF DELIVERY (POD)</h2>
+          <div class="print-doc-id">JOB REF: ${escapeHtml(shipmentItem.jobNo || "")}</div>
+        </div>
+      </header>
+      <div class="print-info-block" style="margin-bottom: 20px;">
+        <h3>Consignment Consignee Details</h3>
+        <p style="font-size: 11pt; margin: 3px 0;"><strong>Customer Store:</strong> ${escapeHtml(shipmentItem.customer || "")}</p>
+        <p><strong>Delivery Location:</strong> ${escapeHtml(shipmentItem.destination || "")}</p>
+      </div>
+      <table class="print-table">
+        <thead>
+          <tr>
+            <th>Airway Bill Number</th>
+            <th style="text-align: right;">Units</th>
+            <th style="text-align: right;">Weight (Kg)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>${escapeHtml(shipmentItem.airwayBillNo || "No Linked AWB")}</strong></td>
+            <td style="text-align: right;">${Number(shipmentItem.pieces || 0)} Pcs</td>
+            <td style="text-align: right;">${typeof money === 'function' ? money(shipmentItem.actualKg) : shipmentItem.actualKg} Kgs</td>
+            <td><strong>${escapeHtml(shipmentItem.podStatus || "PENDING")}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="print-sign-row" style="margin-top: 50px;">
+        <div class="print-sign-box">Delivering Driver Verification</div>
+        <div class="print-sign-box">Consignee Signature & Stamp</div>
+      </div>
+    </div>
+  `;
+}
+// ==========================================================================
+// ENTERPRISE HARDWARE PRINT ENGINE LAUNCHER
+// ==========================================================================
+function openEnterprisePrintJob(htmlContentString) {
+  const printWindow = window.open("", "_blank", "width=950,height=750");
+  if (!printWindow) {
+    if (typeof notifyDenied === "function") {
+      notifyDenied("Popup Blocked", "Please permit popups to render document printing jobs.");
+    } else {
+      window.alert("Popup Blocked! Please permit the system to present print sheets.");
+    }
+    return;
+  }
+  
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <title>Apollo Print Engine</title>
+        <link rel="stylesheet" href="./styles.css">
+      </head>
+      <body>
+        ${htmlContentString}
+        <script>
+          window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+              window.print();
+              window.close();
+            }, 350);
+          });
+        </script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
 const loginScreen = document.querySelector("#loginScreen");
 const appShell = document.querySelector("#appShell");
 const loginForm = document.querySelector("#loginForm");
