@@ -24,6 +24,10 @@ let editing = null;
 let dialogState = null;
 let lastPendingNotificationCount = 0;
 
+const loginScreen = document.querySelector("#loginScreen");
+const appShell = document.querySelector("#appShell");
+const loginForm = document.querySelector("#loginForm");
+
 // ==========================================
 // UNIVERSAL DOCUMENT & MANIFEST PRINT ENGINE
 // ==========================================
@@ -34,14 +38,13 @@ window.printUniversalDocument = function(documentType, data) {
     return;
   }
 
-  // Current operational date formatting
   const today = new Date();
   const formattedDate = today.getDate().toString().padStart(2, '0') + '-' + 
                         today.toLocaleString('en-US', { month: 'short' }) + '-' + 
                         today.getFullYear();
 
   // ----------------------------------------------------
-  // ROUTE A: IF PRINTING THE TRUCK CONSOLIDATION MANIFEST
+  // ROUTE A: PRINTING THE TRUCK CONSOLIDATION MANIFEST
   // ----------------------------------------------------
   if (documentType === "Consolidation Manifest" || data.truckNo || data.sealNo) {
     const decs = (data.declarationsList || "").split("\n").map(d => d.trim()).filter(Boolean);
@@ -59,31 +62,22 @@ window.printUniversalDocument = function(documentType, data) {
       `;
     }
 
-    // Filter matching active shipment rows for this lane to embed inside manifest
     let consolidatedCargoRowsHtml = "";
     const filteredJobs = (state.shipments || []).filter(j => j.destination === data.destination || j.origin === data.origin);
     
     if (filteredJobs.length > 0) {
-      let totalQty = 0;
-      let totalGross = 0;
-      
-      consolidatedCargoRowsHtml = filteredJobs.map(job => {
-        totalQty += (parseInt(job.pieces) || 1);
-        totalGross += (parseFloat(job.grossWeightKg || job.weightKg) || 0);
-        return `
-          <tr>
-            <td style="border:1px solid #000; padding:5px;">${data.loadNo || 'ALT66466'}<br><strong>${job.jobNo || 'AFS261146'}</strong></td>
-            <td style="border:1px solid #000; padding:5px;">${job.tcnNumber || 'INV#' + (job.jobNo || '')}</td>
-            <td style="border:1px solid #000; padding:5px;"><strong>${job.customer || 'GENERAL COMMODITY'}</strong></td>
-            <td style="border:1px solid #000; padding:5px; text-align:center;">${job.pieces || 1}</td>
-            <td style="border:1px solid #000; padding:5px; text-align:right;">${(parseFloat(job.grossWeightKg || job.weightKg || 0)).toFixed(2)}</td>
-            <td style="border:1px solid #000; padding:5px;">${job.natureOfGoods || 'GENERAL COMMODITY'}</td>
-            <td style="border:1px solid #000; padding:5px; font-size:10px;">${job.billTo1 || 'As Per Border Documents'}</td>
-          </tr>
-        `;
-      }).join('');
+      consolidatedCargoRowsHtml = filteredJobs.map(job => `
+        <tr>
+          <td style="border:1px solid #000; padding:5px;">${data.loadNo || 'ALT66466'}<br><strong>${job.jobNo || 'AFS261146'}</strong></td>
+          <td style="border:1px solid #000; padding:5px;">${job.tcnNumber || 'INV#' + (job.jobNo || '')}</td>
+          <td style="border:1px solid #000; padding:5px;"><strong>${job.customer || 'GENERAL COMMODITY'}</strong></td>
+          <td style="border:1px solid #000; padding:5px; text-align:center;">${job.pieces || 1}</td>
+          <td style="border:1px solid #000; padding:5px; text-align:right;">${(parseFloat(job.grossWeightKg || job.weightKg || 0)).toFixed(2)}</td>
+          <td style="border:1px solid #000; padding:5px;">${job.natureOfGoods || 'GENERAL COMMODITY'}</td>
+          <td style="border:1px solid #000; padding:5px; font-size:10px;">${job.billTo1 || 'As Per Border Documents'}</td>
+        </tr>
+      `).join('');
     } else {
-      // Direct text fallback matching the required structural template document layout exactly
       consolidatedCargoRowsHtml = `
         <tr>
           <td style="border:1px solid #000; padding:5px;">ALT66466<br><strong>AFS261146</strong></td>
@@ -162,7 +156,7 @@ window.printUniversalDocument = function(documentType, data) {
           </tr>
         </table>
 
-        <div style="font-weight:bold; margin-bottom:3px; text-transform:uppercase;">Customs Declaration & Commercial Invoice Audit Reference</div>
+        <div style="font-weight:bold; margin-bottom:3px; text-transform:uppercase;">Customs Declaration & Commercial Invoice Reference</div>
         <table style="width:100%; margin-bottom:15px;">
           <thead>
             <tr style="background:#f2f2f2;">
@@ -383,7 +377,7 @@ window.printUniversalDocument = function(documentType, data) {
 };
 
 // ==========================================
-// FORM STATE DATA DATA EXTRACTION CAPTURE
+// FORM STATE DATA EXTRACTION CAPTURE
 // ==========================================
 window.captureActiveDialogFormData = function() {
   const dialog = document.getElementById("recordDialog");
@@ -458,6 +452,121 @@ window.triggerLiveTcnPrintWorkflow = function() {
 };
 
 // ==========================================
+// VOLUMETRIC METRIC RUNTIME MATHEMATICS
+// ==========================================
+window.updateDimTotals = function() {
+  const table = document.getElementById("dimBuilderTable");
+  if (!table) return;
+  const rows = table.querySelectorAll("tbody tr");
+  
+  let totalPalletQty = 0, totalPalletWeight = 0, totalCartonQty = 0, totalCartonWeight = 0;
+  let accumulatedCbm = 0, accumulatedWeight = 0, totalPieces = 0;
+  let serializedData = [];
+
+  rows.forEach(row => {
+    const type = row.querySelector(".dim-type").value;
+    const qty = parseInt(row.querySelector(".dim-qty").value) || 0;
+    const l = parseFloat(row.querySelector(".dim-l").value) || 0;
+    const w = parseFloat(row.querySelector(".dim-w").value) || 0;
+    const h = parseFloat(row.querySelector(".dim-h").value) || 0;
+    const unitWeight = parseFloat(row.querySelector(".dim-weight").value) || 0;
+
+    const rowCbm = (l * w * h * qty) / 1000000;
+    const rowTotalWeight = unitWeight * qty;
+
+    row.querySelector(".dim-row-cbm").innerText = rowCbm.toFixed(3);
+    row.querySelector(".dim-row-tot-weight").innerText = rowTotalWeight.toFixed(2);
+
+    totalPieces += qty;
+    accumulatedCbm += rowCbm;
+    accumulatedWeight += rowTotalWeight;
+
+    if (type === "Pallet") {
+      totalPalletQty += qty;
+      totalPalletWeight += rowTotalWeight;
+    } else {
+      totalCartonQty += qty;
+      totalCartonWeight += rowTotalWeight;
+    }
+    serializedData.push({ type, length: l, width: w, height: h, weight: unitWeight, qty });
+  });
+
+  const hiddenJson = document.getElementById("hidden_dim_json");
+  if (hiddenJson) hiddenJson.value = JSON.stringify(serializedData);
+
+  document.getElementById("summary_pallet_qty").innerText = totalPalletQty;
+  document.getElementById("summary_pallet_wt").innerText = totalPalletWeight.toFixed(2);
+  document.getElementById("summary_carton_qty").innerText = totalCartonQty;
+  document.getElementById("summary_carton_wt").innerText = totalCartonWeight.toFixed(2);
+  document.getElementById("summary_total_cbm").innerText = accumulatedCbm.toFixed(3);
+  document.getElementById("summary_total_weight").innerText = accumulatedWeight.toFixed(2);
+
+  const mainWeightInput = document.getElementById("calc_weight");
+  const mainGrossWeightInput = document.getElementById("calc_gross_weight");
+  const mainCbmInput = document.getElementById("calc_cbm");
+  const mainPiecesInput = document.getElementById("calc_pieces");
+  const basisSelection = document.getElementById("calc_chargeable_basis");
+  const chargeableWeightInput = document.getElementById("calc_chargeable_weight");
+
+  if (rows.length > 0) {
+    if (mainWeightInput) mainWeightInput.value = accumulatedWeight.toFixed(2);
+    if (mainGrossWeightInput) mainGrossWeightInput.value = accumulatedWeight.toFixed(2);
+    if (mainCbmInput) mainCbmInput.value = accumulatedCbm.toFixed(3);
+    if (mainPiecesInput) mainPiecesInput.value = totalPieces;
+  }
+
+  const activeActualWeight = mainWeightInput && rows.length === 0 ? parseFloat(mainWeightInput.value) || 0 : accumulatedWeight;
+  const activeCbm = mainCbmInput && rows.length === 0 ? parseFloat(mainCbmInput.value) || 0 : accumulatedCbm;
+
+  if (chargeableWeightInput && basisSelection) {
+    const selectedBasis = basisSelection.value;
+    let finalChargeableWeight = 0;
+    if (selectedBasis === "Actual") finalChargeableWeight = activeActualWeight;
+    else if (selectedBasis === "Volumetric_Air") finalChargeableWeight = activeCbm * 166.667;
+    else if (selectedBasis === "Volumetric_Land") finalChargeableWeight = activeCbm * 333.333;
+    else if (selectedBasis === "CBM_Fixed") finalChargeableWeight = activeCbm;
+    
+    chargeableWeightInput.value = finalChargeableWeight.toFixed(2);
+  }
+};
+
+window.addDimRow = function(defaultType = "Pallet") {
+  const table = document.getElementById("dimBuilderTable");
+  if (!table) return;
+  const tbody = table.querySelector("tbody");
+  const nextIdx = tbody.querySelectorAll("tr").length;
+
+  const tr = document.createElement("tr");
+  tr.setAttribute("data-idx", nextIdx);
+  tr.innerHTML = `
+    <td>
+      <select class="dim-type" onchange="updateDimTotals()">
+        <option value="Pallet" ${defaultType === "Pallet" ? "selected" : ""}>Pallet</option>
+        <option value="Carton" ${defaultType === "Carton" ? "selected" : ""}>Carton</option>
+      </select>
+    </td>
+    <td><input type="number" class="dim-qty" value="1" min="1" oninput="updateDimTotals()" style="width:70px;" /></td>
+    <td><input type="number" class="dim-l" value="120" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
+    <td><input type="number" class="dim-w" value="80" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
+    <td><input type="number" class="dim-h" value="160" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
+    <td><input type="number" step="0.01" class="dim-weight" value="41.97" min="0" oninput="updateDimTotals()" style="width:80px;" /></td>
+    <td><span class="dim-row-cbm">0.00</span></td>
+    <td><span class="dim-row-tot-weight">0.00</span></td>
+    <td><button type="button" class="red-button" onclick="removeDimRow(${nextIdx})" style="padding:2px 8px;">X</button></td>
+  `;
+  tbody.appendChild(tr);
+  updateDimTotals();
+};
+
+window.removeDimRow = function(idx) {
+  const table = document.getElementById("dimBuilderTable");
+  if (!table) return;
+  const rows = table.querySelectorAll("tbody tr");
+  rows.forEach(row => { if(row.getAttribute("data-idx") == idx) row.remove(); });
+  updateDimTotals();
+};
+
+// ==========================================
 // COMPONENT CORE BACKBONE LOGIC STATE UTILS
 // ==========================================
 function loadState() {
@@ -505,7 +614,6 @@ function branchOptions(selected) {
 // MODAL FORMS DIALOG LAYOUT GENERATION HTML
 // ==========================================
 function shipmentDialogBody(mode = "shipment") {
-  const isAirway = mode === "airway";
   let displayJobNo = editing ? editing.jobNo : "";
   if (!editing) {
     displayJobNo = nextShipmentNumber();
@@ -682,121 +790,6 @@ function palletDimensionBuilder(jsonStr = "[]") {
     <script>setTimeout(() => { if(typeof updateDimTotals === "function") updateDimTotals(); }, 150);</script>
   `;
 }
-
-// ==========================================
-// VOLUMETRIC METRIC RUNTIME MATHEMATICS
-// ==========================================
-window.updateDimTotals = function() {
-  const table = document.getElementById("dimBuilderTable");
-  if (!table) return;
-  const rows = table.querySelectorAll("tbody tr");
-  
-  let totalPalletQty = 0, totalPalletWeight = 0, totalCartonQty = 0, totalCartonWeight = 0;
-  let accumulatedCbm = 0, accumulatedWeight = 0, totalPieces = 0;
-  let serializedData = [];
-
-  rows.forEach(row => {
-    const type = row.querySelector(".dim-type").value;
-    const qty = parseInt(row.querySelector(".dim-qty").value) || 0;
-    const l = parseFloat(row.querySelector(".dim-l").value) || 0;
-    const w = parseFloat(row.querySelector(".dim-w").value) || 0;
-    const h = parseFloat(row.querySelector(".dim-h").value) || 0;
-    const unitWeight = parseFloat(row.querySelector(".dim-weight").value) || 0;
-
-    const rowCbm = (l * w * h * qty) / 1000000;
-    const rowTotalWeight = unitWeight * qty;
-
-    row.querySelector(".dim-row-cbm").innerText = rowCbm.toFixed(3);
-    row.querySelector(".dim-row-tot-weight").innerText = rowTotalWeight.toFixed(2);
-
-    totalPieces += qty;
-    accumulatedCbm += rowCbm;
-    accumulatedWeight += rowTotalWeight;
-
-    if (type === "Pallet") {
-      totalPalletQty += qty;
-      totalPalletWeight += rowTotalWeight;
-    } else {
-      totalCartonQty += qty;
-      totalCartonWeight += rowTotalWeight;
-    }
-    serializedData.push({ type, length: l, width: w, height: h, weight: unitWeight, qty });
-  });
-
-  const hiddenJson = document.getElementById("hidden_dim_json");
-  if (hiddenJson) hiddenJson.value = JSON.stringify(serializedData);
-
-  document.getElementById("summary_pallet_qty").innerText = totalPalletQty;
-  document.getElementById("summary_pallet_wt").innerText = totalPalletWeight.toFixed(2);
-  document.getElementById("summary_carton_qty").innerText = totalCartonQty;
-  document.getElementById("summary_carton_wt").innerText = totalCartonWeight.toFixed(2);
-  document.getElementById("summary_total_cbm").innerText = accumulatedCbm.toFixed(3);
-  document.getElementById("summary_total_weight").innerText = accumulatedWeight.toFixed(2);
-
-  const mainWeightInput = document.getElementById("calc_weight");
-  const mainGrossWeightInput = document.getElementById("calc_gross_weight");
-  const mainCbmInput = document.getElementById("calc_cbm");
-  const mainPiecesInput = document.getElementById("calc_pieces");
-  const basisSelection = document.getElementById("calc_chargeable_basis");
-  const chargeableWeightInput = document.getElementById("calc_chargeable_weight");
-
-  if (rows.length > 0) {
-    if (mainWeightInput) mainWeightInput.value = accumulatedWeight.toFixed(2);
-    if (mainGrossWeightInput) mainGrossWeightInput.value = accumulatedWeight.toFixed(2);
-    if (mainCbmInput) mainCbmInput.value = accumulatedCbm.toFixed(3);
-    if (mainPiecesInput) mainPiecesInput.value = totalPieces;
-  }
-
-  const activeActualWeight = mainWeightInput && rows.length === 0 ? parseFloat(mainWeightInput.value) || 0 : accumulatedWeight;
-  const activeCbm = mainCbmInput && rows.length === 0 ? parseFloat(mainCbmInput.value) || 0 : accumulatedCbm;
-
-  if (chargeableWeightInput && basisSelection) {
-    const selectedBasis = basisSelection.value;
-    let finalChargeableWeight = 0;
-    if (selectedBasis === "Actual") finalChargeableWeight = activeActualWeight;
-    else if (selectedBasis === "Volumetric_Air") finalChargeableWeight = activeCbm * 166.667;
-    else if (selectedBasis === "Volumetric_Land") finalChargeableWeight = activeCbm * 333.333;
-    else if (selectedBasis === "CBM_Fixed") finalChargeableWeight = activeCbm;
-    
-    chargeableWeightInput.value = finalChargeableWeight.toFixed(2);
-  }
-};
-
-window.addDimRow = function(defaultType = "Pallet") {
-  const table = document.getElementById("dimBuilderTable");
-  if (!table) return;
-  const tbody = table.querySelector("tbody");
-  const nextIdx = tbody.querySelectorAll("tr").length;
-
-  const tr = document.createElement("tr");
-  tr.setAttribute("data-idx", nextIdx);
-  tr.innerHTML = `
-    <td>
-      <select class="dim-type" onchange="updateDimTotals()">
-        <option value="Pallet" ${defaultType === "Pallet" ? "selected" : ""}>Pallet</option>
-        <option value="Carton" ${defaultType === "Carton" ? "selected" : ""}>Carton</option>
-      </select>
-    </td>
-    <td><input type="number" class="dim-qty" value="1" min="1" oninput="updateDimTotals()" style="width:70px;" /></td>
-    <td><input type="number" class="dim-l" value="120" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
-    <td><input type="number" class="dim-w" value="80" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
-    <td><input type="number" class="dim-h" value="160" min="0" oninput="updateDimTotals()" style="width:70px;" /></td>
-    <td><input type="number" step="0.01" class="dim-weight" value="41.97" min="0" oninput="updateDimTotals()" style="width:80px;" /></td>
-    <td><span class="dim-row-cbm">0.00</span></td>
-    <td><span class="dim-row-tot-weight">0.00</span></td>
-    <td><button type="button" class="red-button" onclick="removeDimRow(${nextIdx})" style="padding:2px 8px;">X</button></td>
-  `;
-  tbody.appendChild(tr);
-  updateDimTotals();
-};
-
-window.removeDimRow = function(idx) {
-  const table = document.getElementById("dimBuilderTable");
-  if (!table) return;
-  const rows = table.querySelectorAll("tbody tr");
-  rows.forEach(row => { if(row.getAttribute("data-idx") == idx) row.remove(); });
-  updateDimTotals();
-};
 
 // ==========================================
 // CORE SYSTEM MODULE RENDER HOOK ROUTINES
@@ -991,10 +984,58 @@ function openCreateDialog() {
 }
 
 // ==========================================
+// SESSION MANAGEMENT & SECURITY VALIDATIONS
+// ==========================================
+if (loginForm) {
+  loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const currentFormData = new FormData(loginForm);
+    const uName = currentFormData.get("userName")?.trim();
+    const pWord = currentFormData.get("password");
+
+    if (!uName || !pWord) {
+      alert("Please fill in both fields.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userName: uName, password: pWord }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        alert(`Authentication Error: ${errText || response.statusText}`);
+        return;
+      }
+
+      const sessionObj = await response.json();
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(sessionObj));
+
+      if (loginScreen) loginScreen.classList.add("is-hidden");
+      if (appShell) appShell.classList.remove("is-hidden");
+
+      notifySuccess("Access Granted", `Welcome back, ${sessionObj.name || uName}.`);
+      render();
+    } catch (err) {
+      console.error(err);
+      alert("Server sync failure. Loading local offline demo profile.");
+      
+      // Local fallback routine for development testing
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ name: uName, role: "Administrator" }));
+      if (loginScreen) loginScreen.classList.add("is-hidden");
+      if (appShell) appShell.classList.remove("is-hidden");
+      render();
+    }
+  });
+}
+
+// ==========================================
 // CORE APP ENTRYPOINT EVENTS DOM CONTENT
 // ==========================================
 document.addEventListener("DOMContentLoaded", () => {
-  // Setup standard base manifest layout fallback if empty 
   state.manifests = state.manifests || [];
   if (state.manifests.length === 0) {
     state.manifests.push({
@@ -1011,6 +1052,14 @@ document.addEventListener("DOMContentLoaded", () => {
       invoicesList: "4130243800\nGECS052400\nINV 156000000002745",
       status: "In Transit"
     });
+  }
+
+  // Check existing session on load
+  const existingSession = sessionStorage.getItem(SESSION_KEY);
+  if (existingSession) {
+    if (loginScreen) loginScreen.classList.add("is-hidden");
+    if (appShell) appShell.classList.remove("is-hidden");
+    render();
   }
 
   render();
