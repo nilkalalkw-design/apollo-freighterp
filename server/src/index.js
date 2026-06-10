@@ -408,6 +408,24 @@ const resources = {
       field("approval_notes", ["approvalNotes", "approval_notes"])
     ]
   },
+  "shipment-cargo-items": {
+    table: "shipment_cargo_items",
+    key: "id",
+    order: "id asc",
+    fields: [
+      field("job_no", ["jobNo", "job_no"], true),
+      field("package_type", ["packageType", "package_type"]),
+      field("quantity"),
+      field("length"),
+      field("width"),
+      field("height"),
+      field("dimension_unit", ["dimensionUnit", "dimension_unit"]),
+      field("weight"),
+      field("weight_unit", ["weightUnit", "weight_unit"]),
+      field("volume_weight", ["volumeWeight", "volume_weight"]),
+      field("remarks")
+    ]
+  },
   audit: {
     table: "audit_log",
     key: "id",
@@ -658,6 +676,7 @@ async function checkDatabaseReady() {
     "unblock_requests",
     "admin_requests",
     "additional_charges",
+    "shipment_cargo_items",
     "app_settings"
   ];
   const result = await query(

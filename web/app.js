@@ -189,13 +189,98 @@ function parseJsonMeta(value) {
 
 function shipmentMetaNotes(data) {
   return JSON.stringify({
+    shipmentDate: String(data.shipmentDate || "").trim(),
+    transportMode: String(data.transportMode || "").trim(),
+    customerCode: String(data.customerCode || "").trim(),
+    customerContactPerson: String(data.customerContactPerson || "").trim(),
+    customerMobile: String(data.customerMobile || "").trim(),
+    customerEmail: String(data.customerEmail || "").trim(),
+    internalReferenceNo: String(data.internalReferenceNo || "").trim(),
+    salesPerson: String(data.salesPerson || "").trim(),
+    shipperName: String(data.shipperName || "").trim(),
+    shipperAddress: String(data.shipperAddress || "").trim(),
+    shipperContactPerson: String(data.shipperContactPerson || "").trim(),
+    shipperMobile: String(data.shipperMobile || "").trim(),
+    shipperEmail: String(data.shipperEmail || "").trim(),
+    shipperVatTrn: String(data.shipperVatTrn || "").trim(),
+    shipperCountry: String(data.shipperCountry || "").trim(),
+    consigneeName: String(data.consigneeName || data.customer || "").trim(),
+    consigneeAddress: String(data.consigneeAddress || "").trim(),
+    consigneeContactPerson: String(data.consigneeContactPerson || "").trim(),
+    consigneeMobile: String(data.consigneeMobile || "").trim(),
+    consigneeEmail: String(data.consigneeEmail || "").trim(),
+    consigneeCountry: String(data.consigneeCountry || "").trim(),
+    pickupLocation: String(data.pickupLocation || "").trim(),
+    pickupAddress: String(data.pickupAddress || "").trim(),
+    pickupContactPerson: String(data.pickupContactPerson || "").trim(),
+    pickupMobile: String(data.pickupMobile || "").trim(),
+    pickupDate: String(data.pickupDate || "").trim(),
+    pickupTime: String(data.pickupTime || "").trim(),
+    deliveryLocation: String(data.deliveryLocation || "").trim(),
+    deliveryAddress: String(data.deliveryAddress || "").trim(),
+    deliveryContactPerson: String(data.deliveryContactPerson || "").trim(),
+    deliveryMobile: String(data.deliveryMobile || "").trim(),
+    deliveryDate: String(data.deliveryDate || "").trim(),
+    deliveryTime: String(data.deliveryTime || "").trim(),
+    notifyPartyName: String(data.notifyPartyName || "").trim(),
+    notifyPartyAddress: String(data.notifyPartyAddress || "").trim(),
+    notifyContactPerson: String(data.notifyContactPerson || "").trim(),
+    notifyMobile: String(data.notifyMobile || "").trim(),
+    notifyEmail: String(data.notifyEmail || "").trim(),
     billTo1: String(data.billTo1 || "").trim(),
     billTo2: String(data.billTo2 || "").trim(),
+    billingParty1Address: String(data.billingParty1Address || "").trim(),
+    billingParty1ContactPerson: String(data.billingParty1ContactPerson || "").trim(),
+    billingParty1Mobile: String(data.billingParty1Mobile || "").trim(),
+    billingParty1Email: String(data.billingParty1Email || "").trim(),
+    billingParty1CreditTerms: String(data.billingParty1CreditTerms || "").trim(),
+    billingParty2Address: String(data.billingParty2Address || "").trim(),
+    billingParty2ContactPerson: String(data.billingParty2ContactPerson || "").trim(),
+    billingParty2Mobile: String(data.billingParty2Mobile || "").trim(),
+    billingParty2Email: String(data.billingParty2Email || "").trim(),
+    billingParty2Percentage: String(data.billingParty2Percentage || "").trim(),
     manualChargeableKg: Number(data.manualChargeableKg || 0),
     natureOfGoods: String(data.natureOfGoods || "").trim(),
+    cargoItemsJson: data.cargoItemsJson || data.palletDimensionsJson || "[]",
+    transitPoint: String(data.transitPoint || "").trim(),
+    route: String(data.route || "").trim(),
+    transporter: String(data.transporter || "").trim(),
+    vehicleNo: String(data.vehicleNo || "").trim(),
+    driverName: String(data.driverName || "").trim(),
+    driverMobile: String(data.driverMobile || "").trim(),
+    tripNo: String(data.tripNo || "").trim(),
+    manifestNo: String(data.manifestNo || "").trim(),
+    currency: String(data.currency || "KWD").trim(),
+    freightAmount: Number(data.freightAmount || 0),
+    otherChargesAmount: Number(data.otherChargesAmount || 0),
+    taxAmount: Number(data.taxAmount || 0),
+    totalAmount: Number(data.totalAmount || 0),
+    paymentMode: String(data.paymentMode || "").trim(),
+    invoiceCopy: String(data.invoiceCopy || "").trim(),
+    packingListCopy: String(data.packingListCopy || "").trim(),
+    podCopy: String(data.podCopy || "").trim(),
+    customsDocuments: String(data.customsDocuments || "").trim(),
+    otherDocuments: String(data.otherDocuments || "").trim(),
+    specialInstructions: String(data.specialInstructions || "").trim(),
+    handlingInstructions: String(data.handlingInstructions || "").trim(),
+    internalNotes: String(data.internalNotes || "").trim(),
     tcnNumber: String(data.tcnNumber || "").trim(),
     palletDimensionsJson: data.palletDimensionsJson || "[]",
-    entryMode: data.entryMode || "shipment"
+    entryMode: data.entryMode || "shipment",
+    deliveryNoteNo: String(data.deliveryNoteNo || "").trim(),
+    ginNo: String(data.ginNo || "").trim(),
+    customerReference: String(data.customerReference || "").trim(),
+    vehicleType: String(data.vehicleType || "").trim(),
+    deliveryRemarks: String(data.deliveryRemarks || "").trim(),
+    pocName: String(data.pocName || "").trim(),
+    pocMobile: String(data.pocMobile || "").trim(),
+    additionalContact: String(data.additionalContact || "").trim(),
+    preparedBy: String(data.preparedBy || "").trim(),
+    deliveredBy: String(data.deliveredBy || "").trim(),
+    receivedBy: String(data.receivedBy || data.receiver || "").trim(),
+    receiverPhone: String(data.receiverPhone || "").trim(),
+    deliveryDatetime: String(data.deliveryDatetime || "").trim(),
+    receiverSignature: String(data.receiverSignature || "").trim()
   });
 }
 
@@ -258,13 +343,98 @@ function shipment(
     shipmentServiceOther,
     volumeCategory,
     chargeableDivisor,
+    shipmentDate: meta.shipmentDate || "",
+    transportMode: meta.transportMode || "",
+    customerCode: meta.customerCode || "",
+    customerContactPerson: meta.customerContactPerson || "",
+    customerMobile: meta.customerMobile || "",
+    customerEmail: meta.customerEmail || "",
+    internalReferenceNo: meta.internalReferenceNo || "",
+    salesPerson: meta.salesPerson || "",
+    shipperName: meta.shipperName || "",
+    shipperAddress: meta.shipperAddress || "",
+    shipperContactPerson: meta.shipperContactPerson || "",
+    shipperMobile: meta.shipperMobile || "",
+    shipperEmail: meta.shipperEmail || "",
+    shipperVatTrn: meta.shipperVatTrn || "",
+    shipperCountry: meta.shipperCountry || "",
+    consigneeName: meta.consigneeName || customer,
+    consigneeAddress: meta.consigneeAddress || "",
+    consigneeContactPerson: meta.consigneeContactPerson || "",
+    consigneeMobile: meta.consigneeMobile || "",
+    consigneeEmail: meta.consigneeEmail || "",
+    consigneeCountry: meta.consigneeCountry || "",
+    pickupLocation: meta.pickupLocation || "",
+    pickupAddress: meta.pickupAddress || "",
+    pickupContactPerson: meta.pickupContactPerson || "",
+    pickupMobile: meta.pickupMobile || "",
+    pickupDate: meta.pickupDate || "",
+    pickupTime: meta.pickupTime || "",
+    deliveryLocation: meta.deliveryLocation || "",
+    deliveryAddress: meta.deliveryAddress || "",
+    deliveryContactPerson: meta.deliveryContactPerson || "",
+    deliveryMobile: meta.deliveryMobile || "",
+    deliveryDate: meta.deliveryDate || "",
+    deliveryTime: meta.deliveryTime || "",
+    notifyPartyName: meta.notifyPartyName || "",
+    notifyPartyAddress: meta.notifyPartyAddress || "",
+    notifyContactPerson: meta.notifyContactPerson || "",
+    notifyMobile: meta.notifyMobile || "",
+    notifyEmail: meta.notifyEmail || "",
     billTo1: meta.billTo1 || "",
     billTo2: meta.billTo2 || "",
+    billingParty1Address: meta.billingParty1Address || "",
+    billingParty1ContactPerson: meta.billingParty1ContactPerson || "",
+    billingParty1Mobile: meta.billingParty1Mobile || "",
+    billingParty1Email: meta.billingParty1Email || "",
+    billingParty1CreditTerms: meta.billingParty1CreditTerms || "",
+    billingParty2Address: meta.billingParty2Address || "",
+    billingParty2ContactPerson: meta.billingParty2ContactPerson || "",
+    billingParty2Mobile: meta.billingParty2Mobile || "",
+    billingParty2Email: meta.billingParty2Email || "",
+    billingParty2Percentage: meta.billingParty2Percentage || "",
     manualChargeableKg: Number(meta.manualChargeableKg || 0),
     natureOfGoods: meta.natureOfGoods || "",
+    cargoItemsJson: meta.cargoItemsJson || meta.palletDimensionsJson || "[]",
+    transitPoint: meta.transitPoint || "",
+    route: meta.route || "",
+    transporter: meta.transporter || "",
+    vehicleNo: meta.vehicleNo || "",
+    driverName: meta.driverName || "",
+    driverMobile: meta.driverMobile || "",
+    tripNo: meta.tripNo || "",
+    manifestNo: meta.manifestNo || "",
+    currency: meta.currency || "KWD",
+    freightAmount: Number(meta.freightAmount || 0),
+    otherChargesAmount: Number(meta.otherChargesAmount || 0),
+    taxAmount: Number(meta.taxAmount || 0),
+    totalAmount: Number(meta.totalAmount || 0),
+    paymentMode: meta.paymentMode || "",
+    invoiceCopy: meta.invoiceCopy || "",
+    packingListCopy: meta.packingListCopy || "",
+    podCopy: meta.podCopy || "",
+    customsDocuments: meta.customsDocuments || "",
+    otherDocuments: meta.otherDocuments || "",
+    specialInstructions: meta.specialInstructions || "",
+    handlingInstructions: meta.handlingInstructions || "",
+    internalNotes: meta.internalNotes || "",
     tcnNumber: meta.tcnNumber || "",
     palletDimensionsJson: meta.palletDimensionsJson || "[]",
     entryMode: meta.entryMode || (String(jobNo || "").startsWith("AWB") ? "airway" : "shipment"),
+    deliveryNoteNo: meta.deliveryNoteNo || "",
+    ginNo: meta.ginNo || "",
+    customerReference: meta.customerReference || "",
+    vehicleType: meta.vehicleType || "",
+    deliveryRemarks: meta.deliveryRemarks || "",
+    pocName: meta.pocName || "",
+    pocMobile: meta.pocMobile || "",
+    additionalContact: meta.additionalContact || "",
+    preparedBy: meta.preparedBy || "",
+    deliveredBy: meta.deliveredBy || "",
+    receivedBy: meta.receivedBy || "",
+    receiverPhone: meta.receiverPhone || "",
+    deliveryDatetime: meta.deliveryDatetime || "",
+    receiverSignature: meta.receiverSignature || "",
     notes,
     createdBy
   };
@@ -1249,7 +1419,7 @@ function renderShipments() {
         "New button opens the shipment popup window.",
         "Load uses the selected saved shipment from the list.",
         "Shipment type controls service options: Import, Export, WHC, and Consolidation service."
-      ]) + blockRequestControls("shipment", "Shipment"))}
+      ]) + documentActionControls("shipment", "Shipment") + blockRequestControls("shipment", "Shipment"))}
     </section>
     ${adminDeletePanel("shipment", "Shipment", "Deleting a shipment also removes linked consolidation references, documents, invoices, and additional charges.")}`;
 }
@@ -1354,7 +1524,7 @@ function renderPod() {
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("POD Pending / Delivery Board", "Delivery")} ${table("shipment", rows, shipmentColumns())}</article>
-      ${moduleActionPanel("POD Actions", "pod", "Load a shipment into a separate POD window or create a new delivery update popup.")}
+      ${moduleActionPanel("POD Actions", "pod", "Load a shipment into a separate POD window or create a new delivery update popup.", documentActionControls("pod", "Delivery Note / POD"))}
     </section>
     ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for POD-related shipment cleanup.")}`;
 }
@@ -2395,8 +2565,11 @@ function detailFieldControl(type, key, value, record) {
   if (type === "tariff" && ["additionalChargesTotal", "grandTotal"].includes(key)) {
     return "";
   }
+  if (type === "shipment" && key === "cargoItemsJson") {
+    return cargoItemsBuilder(value || record.palletDimensionsJson || "[]");
+  }
   if (type === "shipment" && key === "palletDimensionsJson") {
-    return palletDimensionBuilder(value || "[]");
+    return record.cargoItemsJson ? "" : cargoItemsBuilder(value || "[]");
   }
   if (type === "shipment" && key === "tcnNumber") {
     return `${input(key, labelize(key), value ?? "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>`;
@@ -2643,12 +2816,25 @@ function openStatusDialog(jobNo = "") {
 }
 
 function openPodDialog(jobNo = "") {
+  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo) || visibleRows(state.shipments)[0] || {};
   openDialog({
     title: jobNo ? `POD / Delivery - ${jobNo}` : "Delivery Update",
     typeLabel: "POD",
     body: `
-      ${selectFrom("jobNo", "Shipment No", shipmentOptions(), jobNo || visibleRows(state.shipments)[0]?.jobNo || "")}
-      ${input("receiver", "Receiver", "Receiver Name")}
+      ${selectFrom("jobNo", "Shipment No", shipmentOptions(), shipmentItem.jobNo || "")}
+      ${input("deliveryNoteNo", "Delivery Note No", shipmentItem.deliveryNoteNo || `POD-${shipmentItem.jobNo || nextShipmentNumber()}`)}
+      ${input("ginNo", "GIN Number", shipmentItem.ginNo || "")}
+      ${input("customerReference", "Customer Reference", shipmentItem.customerReference || "")}
+      ${textarea("deliveryRemarks", "Delivery Remarks / Coordinates", shipmentItem.deliveryRemarks || "", false, 3)}
+      ${input("pocName", "POC Name", shipmentItem.pocName || shipmentItem.deliveryContactPerson || "")}
+      ${input("pocMobile", "POC Mobile Number", shipmentItem.pocMobile || shipmentItem.deliveryMobile || "")}
+      ${input("additionalContact", "Additional Contact Person", shipmentItem.additionalContact || "")}
+      ${input("preparedBy", "Prepared By", shipmentItem.preparedBy || currentUserName())}
+      ${input("deliveredBy", "Delivered By", shipmentItem.deliveredBy || shipmentItem.driverName || "")}
+      ${input("receivedBy", "Goods Received By", shipmentItem.receivedBy || "")}
+      ${input("receiverPhone", "Receiver Telephone Number", shipmentItem.receiverPhone || "")}
+      ${input("receiverSignature", "Receiver Signature", shipmentItem.receiverSignature || "")}
+      ${input("deliveryDatetime", "Delivery Date & Time", shipmentItem.deliveryDatetime || new Date().toISOString().slice(0, 16), false, "datetime-local")}
     `,
     saveLabel: "Mark Delivered + Upload POD",
     async onSave() {
@@ -2847,30 +3033,127 @@ function shipmentDialogBody(mode = "shipment") {
   const defaultCustomer = state.customers[0]?.name || "";
   return `
     <input type="hidden" name="entryMode" value="${escapeHtml(mode || "shipment")}" />
-    ${input("jobNo", isAirway ? "Airway Bill Number" : "Shipment Number", isAirway ? nextNumber("AWB", state.shipments, "jobNo") : nextShipmentNumber(), false)}
-    ${isAirway ? input("bookingDate", "Date", today(), false, "date") : input("airwayBillNo", "Airway Bill Number", nextNumber("AWB", state.shipments, "jobNo"), false)}
-    ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
-    ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), "Export")}
-    ${select("shipmentService", "Shipment Service", shipmentServiceOptions("Export"), "AE")}
-    ${isAirway ? "" : input("shipmentServiceOther", "Other Service / WHC Remark", "")}
-    ${selectFrom("customer", "Consignee", state.customers.map((row) => row.name), defaultCustomer)}
-    <label>Bill To 1<input name="billTo1" value="" /></label>
-    <label>Bill To 2<input name="billTo2" value="" /></label>
-    ${isAirway ? input("tariffNo", "Pick Up Location", "", false) : selectFrom("tariffNo", "Applied Tariff", tariffOptionsForCustomer(defaultCustomer))}
-    ${input("origin", "Origin", "Kuwait City")}
-    ${input("destination", "Destination", "Riyadh")}
-    ${input("pieces", isAirway ? "Number of Packages" : "Pieces / Pallets", "1", false, "number")}
-    ${isAirway ? `<input type="hidden" name="actualKg" value="0" />` : input("actualKg", "Actual Weight KG", "100", false, "number")}
-    ${input("manualChargeableKg", "Total Chargeable Weight KG", "0", false, "number")}
-    ${palletDimensionBuilder()}
-    ${select("volumeCategory", "Volume CBM Category", volumeCategoryOptions(), "1 CBM = 250 KG")}
-    <input type="hidden" name="chargeableDivisor" value="250" />
-    ${input("cbm", "Volume CBM", isAirway ? "0" : "1.0", false, "number")}
-    ${input("chargeableKg", "Total Volume Weight", "0", false, "number")}
-    ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
-    ${isAirway ? textarea("shipmentServiceOther", "Shipper Reference", "", false, 4) : select("transitDays", "Transit Time in Days", Array.from({ length: 30 }, (_, index) => String(index + 1)), "3")}
-    ${input("tcnNumber", "TCN Number", "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>
+    ${formSection("Shipment Information", `
+      ${input("jobNo", isAirway ? "Airway Bill Number" : "Shipment Number", isAirway ? nextNumber("AWB", state.shipments, "jobNo") : nextShipmentNumber(), false)}
+      ${input("bookingDate", "Booking Date", today(), false, "date")}
+      ${input("shipmentDate", "Shipment Date", today(), false, "date")}
+      ${select("status", "Status", statusOptions(), "Booked")}
+      ${select("shipmentService", "Service Type", shipmentServiceOptions("Export"), "AE")}
+      ${selectEditable("transportMode", "Transport Mode", "transportMode", ["Air", "Sea", "Land", "Courier"])}
+      ${input("customerReference", "Customer Reference Number", "")}
+      ${input("internalReferenceNo", "Internal Reference Number", "")}
+      ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
+      ${input("salesPerson", "Sales Person", currentUserName())}
+      ${input("airwayBillNo", "Airway Bill / Bill of Lading", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo"), false)}
+    `)}
+    ${formSection("Customer Information", `
+      ${selectFrom("customer", "Customer Name", state.customers.map((row) => row.name), defaultCustomer)}
+      ${input("customerCode", "Customer Code", "")}
+      ${input("customerContactPerson", "Contact Person", "")}
+      ${input("customerMobile", "Mobile Number", "")}
+      ${input("customerEmail", "Email Address", "", false, "email")}
+    `)}
+    ${formSection("Shipper Information", `
+      ${input("shipperName", "Shipper Name", "")}
+      ${textarea("shipperAddress", "Shipper Address", "", false, 3)}
+      ${input("shipperContactPerson", "Contact Person", "")}
+      ${input("shipperMobile", "Mobile Number", "")}
+      ${input("shipperEmail", "Email Address", "", false, "email")}
+      ${input("shipperVatTrn", "VAT / TRN Number", "")}
+      ${input("shipperCountry", "Country", "Kuwait")}
+    `)}
+    ${formSection("Consignee Information", `
+      ${selectFrom("consigneeName", "Consignee Name", state.customers.map((row) => row.name), defaultCustomer)}
+      ${textarea("consigneeAddress", "Consignee Address", "", false, 3)}
+      ${input("consigneeContactPerson", "Contact Person", "")}
+      ${input("consigneeMobile", "Mobile Number", "")}
+      ${input("consigneeEmail", "Email Address", "", false, "email")}
+      ${input("consigneeCountry", "Country", "")}
+    `)}
+    ${formSection("Pickup Information", `
+      ${input("pickupLocation", "Pickup Location", "")}
+      ${textarea("pickupAddress", "Pickup Address", "", false, 3)}
+      ${input("pickupContactPerson", "Pickup Contact Person", "")}
+      ${input("pickupMobile", "Pickup Mobile", "")}
+      ${input("pickupDate", "Pickup Date", today(), false, "date")}
+      ${input("pickupTime", "Pickup Time", "", false, "time")}
+    `)}
+    ${formSection("Delivery Information", `
+      ${input("deliveryLocation", "Delivery Location", "")}
+      ${textarea("deliveryAddress", "Delivery Address", "", false, 3)}
+      ${input("deliveryContactPerson", "Delivery Contact Person", "")}
+      ${input("deliveryMobile", "Delivery Mobile", "")}
+      ${input("deliveryDate", "Delivery Date", "", false, "date")}
+      ${input("deliveryTime", "Delivery Time", "", false, "time")}
+    `)}
+    ${formSection("Notify Party", `
+      ${input("notifyPartyName", "Notify Party Name", "")}
+      ${textarea("notifyPartyAddress", "Notify Party Address", "", false, 3)}
+      ${input("notifyContactPerson", "Contact Person", "")}
+      ${input("notifyMobile", "Mobile Number", "")}
+      ${input("notifyEmail", "Email Address", "", false, "email")}
+    `)}
+    ${formSection("Billing Party 1", `
+      ${input("billTo1", "Billing Party Name", defaultCustomer)}
+      ${textarea("billingParty1Address", "Billing Address", "", false, 3)}
+      ${input("billingParty1ContactPerson", "Contact Person", "")}
+      ${input("billingParty1Mobile", "Mobile Number", "")}
+      ${input("billingParty1Email", "Email Address", "", false, "email")}
+      ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"])}
+    `)}
+    ${formSection("Billing Party 2", `
+      ${input("billTo2", "Secondary Billing Party Name", "")}
+      ${textarea("billingParty2Address", "Secondary Billing Address", "", false, 3)}
+      ${input("billingParty2ContactPerson", "Contact Person", "")}
+      ${input("billingParty2Mobile", "Mobile Number", "")}
+      ${input("billingParty2Email", "Email Address", "", false, "email")}
+      ${input("billingParty2Percentage", "Billing Percentage", "", false, "number")}
+    `)}
+    ${cargoItemsBuilder()}
+    ${formSection("Routing Information", `
+      ${input("origin", "Origin", "Kuwait City")}
+      ${input("destination", "Destination", "Riyadh")}
+      ${input("transitPoint", "Transit Point", "")}
+      ${input("route", "Route", "")}
+    `)}
+    ${formSection("Transport Information", `
+      ${input("transporter", "Transporter", "")}
+      ${input("vehicleNo", "Vehicle Number", "")}
+      ${input("driverName", "Driver Name", "")}
+      ${input("driverMobile", "Driver Mobile", "")}
+      ${input("tripNo", "Trip Number", "")}
+      ${input("manifestNo", "Manifest Number", "")}
+      ${selectEditable("vehicleType", "Vehicle Type", "vehicleType", ["FTL", "LTL"])}
+    `)}
+    ${formSection("Financial Information", `
+      ${selectEditable("currency", "Currency", "currency", ["KWD", "AED", "USD", "SAR", "QAR", "OMR", "BHD"], "KWD")}
+      ${input("freightAmount", "Freight Amount", "0.000", false, "number")}
+      ${input("otherChargesAmount", "Other Charges", "0.000", false, "number")}
+      ${input("taxAmount", "Tax Amount", "0.000", false, "number")}
+      ${input("totalAmount", "Total Amount", "0.000", false, "number")}
+      ${selectEditable("paymentMode", "Payment Mode", "paymentMode", ["Cash", "Credit", "Bank Transfer", "Card"])}
+    `)}
+    ${formSection("Attachments", `
+      ${input("invoiceCopy", "Invoice Copy", "")}
+      ${input("packingListCopy", "Packing List", "")}
+      ${input("podCopy", "POD Copy", "")}
+      ${input("customsDocuments", "Customs Documents", "")}
+      ${input("otherDocuments", "Other Documents", "")}
+    `)}
+    ${formSection("Remarks", `
+      ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
+      ${textarea("specialInstructions", "Special Instructions", "", false, 3)}
+      ${textarea("handlingInstructions", "Handling Instructions", "", false, 3)}
+      ${textarea("internalNotes", "Internal Notes", "", false, 3)}
+      ${isAirway ? textarea("shipmentServiceOther", "Shipper Reference", "", false, 4) : select("transitDays", "Transit Time in Days", Array.from({ length: 30 }, (_, index) => String(index + 1)), "3")}
+      ${input("tcnNumber", "TCN Number", "", true)}
+      <div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>
+    `)}
   `;
+}
+
+function formSection(title, body) {
+  return `<section class="form-section"><h3>${escapeHtml(title)}</h3><div class="form-section-grid">${body}</div></section>`;
 }
 
 function palletDimensionBuilder(initialValue = "[]") {
@@ -2884,6 +3167,37 @@ function palletDimensionBuilder(initialValue = "[]") {
       <button type="button" class="secondary-button" data-dialog-action="add-pallet-line">Add</button>
     </div>
     <div class="tariff-charge-table" data-pallet-lines-list></div>
+  </section>`;
+}
+
+function cargoItemsBuilder(initialValue = "[]") {
+  return `<section class="form-section pallet-builder" data-pallet-builder>
+    <h3>Cargo Details</h3>
+    <input type="hidden" name="cargoItemsJson" value="${escapeHtml(initialValue || "[]")}" />
+    <input type="hidden" name="palletDimensionsJson" value="${escapeHtml(initialValue || "[]")}" />
+    <div class="tariff-charge-entry cargo-entry">
+      ${select("palletPackageType", "Package Type", ["Pallet", "Carton", "Crate", "Box", "Package", "Drum"], "Pallet")}
+      ${input("palletCount", "Quantity", "1", false, "number")}
+      ${input("palletLength", "Length", "100", false, "number")}
+      ${input("palletWidth", "Width", "120", false, "number")}
+      ${input("palletHeight", "Height", "100", false, "number")}
+      ${select("palletDimensionUnit", "Dimension Unit", ["CM", "M", "INCH"], "CM")}
+      ${input("palletWeight", "Weight", "0", false, "number")}
+      ${select("palletWeightUnit", "Weight Unit", ["KG", "LBS"], "KG")}
+      ${input("palletRemarks", "Remarks", "")}
+      <button type="button" class="secondary-button" data-dialog-action="add-pallet-line">Add</button>
+    </div>
+    <div class="form-section-grid cargo-totals">
+      ${input("pieces", "Total Pieces", "0", true, "number")}
+      ${input("actualKg", "Actual Weight", "0", true, "number")}
+      ${select("volumeCategory", "Volume CBM Category", volumeCategoryOptions(), "1 CBM = 250 KG")}
+      <input type="hidden" name="chargeableDivisor" value="250" />
+      ${input("cbm", "Volume Weight / CBM", "0", true, "number")}
+      ${input("chargeableKg", "Chargeable Weight", "0", true, "number")}
+      ${input("manualChargeableKg", "Manual Chargeable Weight", "0", false, "number")}
+    </div>
+    <div class="tariff-charge-table" data-pallet-lines-list></div>
+    <p class="empty-state">Totals update shipment pieces, actual weight, volume weight, and chargeable weight.</p>
   </section>`;
 }
 
@@ -2958,7 +3272,7 @@ function chargeDialogBody() {
     ${input("referenceNo", "Reference No", "")}
     ${select("invoiceNo", "Invoice No", invoiceOptions, "")}
     ${input("taxPercent", "Tax %", "0", false, "number")}
-    ${select("currency", "Currency", ["KWD", "AED", "USD"], "KWD")}
+    ${selectEditable("currency", "Currency", "currency", ["KWD", "AED", "USD", "SAR", "QAR", "OMR", "BHD"], "KWD")}
     <input type="hidden" name="chargeLines" value="[]" />
     <section class="charge-line-builder" data-charge-line-builder>
       <div class="charge-line-entry">
@@ -3122,28 +3436,44 @@ function bindVolumeCalculator() {
 
 function bindPalletDimensionBuilder() {
   const builder = dialogBody.querySelector("[data-pallet-builder]");
-  const hiddenField = dialogBody.querySelector("input[name='palletDimensionsJson']");
+  const hiddenField = dialogBody.querySelector("input[name='cargoItemsJson']") || dialogBody.querySelector("input[name='palletDimensionsJson']");
+  const legacyPalletField = dialogBody.querySelector("input[name='palletDimensionsJson']");
   const cbmField = dialogBody.querySelector("input[name='cbm']");
   const chargeableField = dialogBody.querySelector("input[name='chargeableKg']");
+  const piecesField = dialogBody.querySelector("input[name='pieces']");
+  const actualWeightField = dialogBody.querySelector("input[name='actualKg']");
+  const manualChargeableField = dialogBody.querySelector("input[name='manualChargeableKg']");
   const tcnField = dialogBody.querySelector("input[name='tcnNumber']");
   if (!builder || !hiddenField) return;
 
   const fields = {
+    packageType: dialogBody.querySelector("[name='palletPackageType']"),
     count: dialogBody.querySelector("input[name='palletCount']"),
     length: dialogBody.querySelector("input[name='palletLength']"),
     width: dialogBody.querySelector("input[name='palletWidth']"),
-    height: dialogBody.querySelector("input[name='palletHeight']")
+    height: dialogBody.querySelector("input[name='palletHeight']"),
+    dimensionUnit: dialogBody.querySelector("[name='palletDimensionUnit']"),
+    weight: dialogBody.querySelector("input[name='palletWeight']"),
+    weightUnit: dialogBody.querySelector("[name='palletWeightUnit']"),
+    remarks: dialogBody.querySelector("input[name='palletRemarks']")
   };
   const list = builder.querySelector("[data-pallet-lines-list]");
   const lines = parsePalletDimensions(hiddenField.value || "[]");
 
   const sync = () => {
-    const total = lines.reduce((sum, line) => sum + Number(line.total || 0), 0);
+    const totalPieces = lines.reduce((sum, line) => sum + Number(line.count || line.quantity || 0), 0);
+    const actualWeight = lines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0);
+    const total = lines.reduce((sum, line) => sum + Number(line.total || line.volumeWeight || 0), 0);
     const roundedTotal = roundUpToHalf(total);
     hiddenField.value = JSON.stringify(lines);
+    if (legacyPalletField) legacyPalletField.value = hiddenField.value;
+    if (piecesField) piecesField.value = String(totalPieces || Number(piecesField.value || 0));
+    if (actualWeightField) actualWeightField.value = String(Number(actualWeight.toFixed(3)));
     if (cbmField) cbmField.value = String(roundedTotal);
     const divisor = volumeDivisorFor(dialogBody.querySelector("[name='volumeCategory']")?.value);
-    if (chargeableField) chargeableField.value = String(Number((roundedTotal * divisor).toFixed(3)));
+    const volumeWeight = Number((roundedTotal * divisor).toFixed(3));
+    if (chargeableField) chargeableField.value = String(volumeWeight);
+    if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(Math.max(actualWeight, volumeWeight));
     list.innerHTML = palletDimensionTable(lines, total, roundedTotal);
   };
 
@@ -3158,7 +3488,26 @@ function bindPalletDimensionBuilder() {
         notifyDenied("Pallet line not added", "Enter pallet count, length, width, and height.");
         return;
       }
-      lines.push({ count, length, width, height, total: count * length * width * height / 1000000 });
+      const dimensionUnit = fields.dimensionUnit?.value || "CM";
+      const weight = Number(fields.weight?.value || 0);
+      const weightUnit = fields.weightUnit?.value || "KG";
+      const total = cargoVolumeCbm(count, length, width, height, dimensionUnit);
+      const weightKg = weightUnit === "LBS" ? weight * 0.453592 : weight;
+      lines.push({
+        packageType: fields.packageType?.value || "Pallet",
+        count,
+        quantity: count,
+        length,
+        width,
+        height,
+        dimensionUnit,
+        weight,
+        weightUnit,
+        weightKg,
+        volumeWeight: total,
+        total,
+        remarks: fields.remarks?.value || ""
+      });
       sync();
       return;
     }
@@ -3181,26 +3530,34 @@ function bindPalletDimensionBuilder() {
   sync();
 }
 
+function cargoVolumeCbm(count, length, width, height, unit = "CM") {
+  const divisor = unit === "M" ? 1 : unit === "INCH" ? 61023.7441 : 1000000;
+  return Number((count * length * width * height / divisor).toFixed(3));
+}
+
 function palletDimensionTable(lines, total, roundedTotal) {
   const rows = lines.length
     ? lines.map((line, index) => `<tr>
-      <td>${index + 1}</td><td>${line.count}</td><td>${line.length}</td><td>${line.width}</td><td>${line.height}</td><td>${money(line.total)}</td>
+      <td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${line.count || line.quantity}</td><td>${line.length}</td><td>${line.width}</td><td>${line.height}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.weightKg || line.weight || 0)}</td><td>${money(line.total || line.volumeWeight || 0)}</td>
       <td><button type="button" class="ghost-button" data-remove-pallet-line="${index}">Remove</button></td>
     </tr>`).join("")
-    : `<tr><td colspan="7" class="empty-state">No pallet dimensions added.</td></tr>`;
+    : `<tr><td colspan="10" class="empty-state">No cargo items added.</td></tr>`;
   return `<div class="table-wrap"><table class="tariff-charges-table pallet-dimensions-table">
     <colgroup>
       <col class="pallet-col-sr" />
       <col class="pallet-col-count" />
+      <col class="pallet-col-count" />
+      <col class="pallet-col-measure" />
       <col class="pallet-col-measure" />
       <col class="pallet-col-measure" />
       <col class="pallet-col-measure" />
       <col class="pallet-col-total" />
+      <col class="pallet-col-total" />
       <col class="pallet-col-button" />
     </colgroup>
-    <thead><tr><th>Sr no</th><th>No of pallets</th><th>Length</th><th>Width</th><th>Height</th><th>Total</th><th>Button</th></tr></thead>
+    <thead><tr><th>Sr no</th><th>Package Type</th><th>Qty</th><th>Length</th><th>Width</th><th>Height</th><th>Unit</th><th>Weight KG</th><th>Volume Weight</th><th>Button</th></tr></thead>
     <tbody>${rows}</tbody>
-    <tfoot><tr><th colspan="5">Grand total CBM</th><th>${money(total)} -> ${roundedTotal}</th><th></th></tr></tfoot>
+    <tfoot><tr><th colspan="8">Grand total CBM</th><th>${money(total)} -> ${roundedTotal}</th><th></th></tr></tfoot>
   </table></div>`;
 }
 
@@ -3568,14 +3925,228 @@ function generateRecordDocument(type, id, download = false) {
     notifyDenied("Document not generated", "Select a saved record first.");
     return;
   }
-  const html = type === "invoice" ? invoiceDocumentHtml(record) : tariffDocumentHtml(record);
-  const fileName = `${type === "invoice" ? "bill" : "tariff"}-${rowId(type, record)}.html`.toLowerCase();
+  const documentBuilders = {
+    invoice: invoiceDocumentHtml,
+    tariff: tariffDocumentHtml,
+    shipment: shipmentDocumentHtml,
+    pod: podDocumentHtml,
+    status: shipmentDocumentHtml,
+    tcn: tcnDocumentHtml
+  };
+  const builder = documentBuilders[type] || shipmentDocumentHtml;
+  const html = builder(record);
+  const filePrefix = { invoice: "bill", tariff: "tariff", pod: "pod", shipment: "shipment", status: "shipment", tcn: "tcn" }[type] || type;
+  const fileName = `${filePrefix}-${rowId(type, record)}.html`.toLowerCase();
   if (download) {
     downloadHtml(fileName, html);
     notifySuccess("Export ready", `${rowId(type, record)} was exported.`);
     return;
   }
   openPrintableDocument(html);
+}
+
+function viewDocument(type, id) {
+  return generateRecordDocument(type, id, false);
+}
+
+function editDocument(type, id) {
+  return openRecord(type, id);
+}
+
+function printDocument(type, id) {
+  return generateRecordDocument(type, id, false);
+}
+
+function downloadPdf(type, id) {
+  return generateRecordDocument(type, id, true);
+}
+
+function emailDocument(type, id) {
+  const record = collectionFor(type).find((row) => rowId(type, row) === id);
+  const subject = encodeURIComponent(`${typeLabel(type)} ${id}`);
+  const body = encodeURIComponent(`Please find ${typeLabel(type)} ${id} attached or printed from Apollo Freight ERP.\n\nReference: ${record ? rowId(type, record) : id}`);
+  window.location.href = `mailto:?subject=${subject}&body=${body}`;
+}
+
+function shipmentDocumentHtml(record) {
+  return documentShell(
+    `Shipment ${record.jobNo}`,
+    "Shipment Document",
+    record.jobNo,
+    record.shipmentDate || record.bookingDate || today(),
+    `
+      <section class="document-summary">
+        <div><span>Status</span><strong class="status-pill">${escapeHtml(record.status)}</strong><small>${escapeHtml(record.shipmentService || "")} / ${escapeHtml(record.transportMode || "")}</small></div>
+        <div><span>QR Reference</span>${qrMarkup(record.jobNo)}<small>${escapeHtml(record.customerReference || record.airwayBillNo || "")}</small></div>
+      </section>
+      ${documentBlock("Shipment Information", [
+        ["Shipment Number", record.jobNo],
+        ["Booking Date", record.bookingDate],
+        ["Shipment Date", record.shipmentDate],
+        ["Service Type", record.shipmentService],
+        ["Transport Mode", record.transportMode],
+        ["Customer Reference", record.customerReference],
+        ["Internal Reference", record.internalReferenceNo],
+        ["Branch", record.branch],
+        ["Sales Person", record.salesPerson]
+      ])}
+      ${documentBlock("Customer Information", [
+        ["Customer Name", record.customer],
+        ["Customer Code", record.customerCode],
+        ["Contact Person", record.customerContactPerson],
+        ["Mobile Number", record.customerMobile],
+        ["Email Address", record.customerEmail]
+      ])}
+      ${documentBlock("Shipper Information", [
+        ["Shipper Name", record.shipperName],
+        ["Address", record.shipperAddress],
+        ["Contact Person", record.shipperContactPerson],
+        ["Mobile Number", record.shipperMobile],
+        ["Email Address", record.shipperEmail],
+        ["VAT / TRN", record.shipperVatTrn],
+        ["Country", record.shipperCountry]
+      ])}
+      ${documentBlock("Consignee Information", [
+        ["Consignee Name", record.consigneeName || record.customer],
+        ["Address", record.consigneeAddress],
+        ["Contact Person", record.consigneeContactPerson],
+        ["Mobile Number", record.consigneeMobile],
+        ["Email Address", record.consigneeEmail],
+        ["Country", record.consigneeCountry]
+      ])}
+      ${documentBlock("Pickup Information", [
+        ["Pickup Location", record.pickupLocation],
+        ["Pickup Address", record.pickupAddress],
+        ["Pickup Contact Person", record.pickupContactPerson],
+        ["Pickup Mobile", record.pickupMobile],
+        ["Pickup Date", record.pickupDate],
+        ["Pickup Time", record.pickupTime]
+      ])}
+      ${documentBlock("Delivery Information", [
+        ["Delivery Location", record.deliveryLocation],
+        ["Delivery Address", record.deliveryAddress],
+        ["Delivery Contact Person", record.deliveryContactPerson],
+        ["Delivery Mobile", record.deliveryMobile],
+        ["Delivery Date", record.deliveryDate],
+        ["Delivery Time", record.deliveryTime]
+      ])}
+      ${documentBlock("Notify Party", [
+        ["Notify Party Name", record.notifyPartyName],
+        ["Address", record.notifyPartyAddress],
+        ["Contact Person", record.notifyContactPerson],
+        ["Mobile Number", record.notifyMobile],
+        ["Email Address", record.notifyEmail]
+      ])}
+      ${documentBlock("Billing Party 1", [
+        ["Billing Party Name", record.billTo1],
+        ["Billing Address", record.billingParty1Address],
+        ["Contact Person", record.billingParty1ContactPerson],
+        ["Mobile Number", record.billingParty1Mobile],
+        ["Email Address", record.billingParty1Email],
+        ["Credit Terms", record.billingParty1CreditTerms]
+      ])}
+      ${documentBlock("Billing Party 2", [
+        ["Secondary Billing Party", record.billTo2],
+        ["Secondary Address", record.billingParty2Address],
+        ["Contact Person", record.billingParty2ContactPerson],
+        ["Mobile Number", record.billingParty2Mobile],
+        ["Email Address", record.billingParty2Email],
+        ["Billing Percentage", record.billingParty2Percentage]
+      ])}
+      ${cargoItemsPrintTable(record)}
+      ${documentBlock("Routing Information", [
+        ["Origin", record.origin],
+        ["Destination", record.destination],
+        ["Transit Point", record.transitPoint],
+        ["Route", record.route]
+      ])}
+      ${documentBlock("Transport Information", [
+        ["Transporter", record.transporter],
+        ["Vehicle Number", record.vehicleNo],
+        ["Driver Name", record.driverName],
+        ["Driver Mobile", record.driverMobile],
+        ["Trip Number", record.tripNo],
+        ["Manifest Number", record.manifestNo]
+      ])}
+      ${documentBlock("Financial Summary", [
+        ["Currency", record.currency],
+        ["Freight Amount", money(record.freightAmount)],
+        ["Other Charges", money(record.otherChargesAmount)],
+        ["Tax Amount", money(record.taxAmount)],
+        ["Total Amount", money(record.totalAmount)],
+        ["Payment Mode", record.paymentMode]
+      ])}
+      ${documentBlock("Remarks", [
+        ["Nature of Goods", record.natureOfGoods],
+        ["Special Instructions", record.specialInstructions],
+        ["Handling Instructions", record.handlingInstructions],
+        ["Internal Notes", record.internalNotes]
+      ])}
+      <p class="footer-note">Terms and conditions apply as per Apollo Freight Solutions cargo acceptance and delivery policy.</p>
+    `,
+    { qrValue: record.jobNo }
+  );
+}
+
+function podDocumentHtml(record) {
+  const deliveryNo = record.deliveryNoteNo || `POD-${record.jobNo}`;
+  return documentShell(
+    `POD ${deliveryNo}`,
+    "CARGO DELIVERY NOTE",
+    deliveryNo,
+    record.deliveryDatetime || today(),
+    `
+      <section class="document-summary">
+        <div><span>File Reference Number</span><strong>${escapeHtml(deliveryNo)}</strong><small>${escapeHtml(record.customer || "")}</small></div>
+        <div><span>QR Reference</span>${qrMarkup(deliveryNo)}<small>${escapeHtml(record.jobNo)}</small></div>
+      </section>
+      ${documentBlock("Shipment Information", [
+        ["From", record.origin || record.pickupLocation],
+        ["To", record.destination || record.deliveryLocation],
+        ["Airway Bill / Bill of Lading", record.airwayBillNo],
+        ["Shipment Number (SHPT#)", record.jobNo],
+        ["GIN Number", record.ginNo],
+        ["Customer Reference", record.customerReference]
+      ])}
+      ${documentBlock("Cargo Details", [
+        ["Number of Pieces", record.pieces],
+        ["Weight (Kgs)", money(record.actualKg)],
+        ["Vehicle Type", record.vehicleType],
+        ["Nature of Goods", record.natureOfGoods]
+      ])}
+      ${documentBlock("Delivery Information", [
+        ["Delivery Remarks / Coordinates", record.deliveryRemarks],
+        ["POC Name", record.pocName || record.deliveryContactPerson],
+        ["POC Mobile Number", record.pocMobile || record.deliveryMobile],
+        ["Additional Contact Person", record.additionalContact]
+      ])}
+      <section class="delivery-signatures">
+        <div><span>Prepared By</span><strong>${escapeHtml(record.preparedBy || currentUserName())}</strong><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || new Date().toLocaleString())}</em></div>
+        <div><span>Delivered By</span><strong>${escapeHtml(record.deliveredBy || record.driverName || "")}</strong><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || "")}</em></div>
+        <div><span>Goods Received By</span><strong>${escapeHtml(record.receivedBy || "")}</strong><small>Telephone Number</small><em>${escapeHtml(record.receiverPhone || "")}</em><small>Signature</small><b>${escapeHtml(record.receiverSignature || " ")}</b><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || "")}</em></div>
+      </section>
+      <p class="acknowledgement">This is to confirm that goods have been received in good order and condition. Any discrepancy must be notified within 24 hours from the time of receipt.</p>
+      <p class="acknowledgement">Shipment was opened and checked by customs</p>
+    `,
+    { compact: true, qrValue: deliveryNo, hideDefaultSignatures: true }
+  );
+}
+
+function documentBlock(title, pairs) {
+  return `<h2>${escapeHtml(title)}</h2><section class="meta">${pairs.map(([label, value]) => `<p><strong>${escapeHtml(label)}</strong><span>${escapeHtml(display(value ?? ""))}</span></p>`).join("")}</section>`;
+}
+
+function cargoItemsPrintTable(record) {
+  const lines = parsePalletDimensions(record.cargoItemsJson || record.palletDimensionsJson || "[]");
+  const rows = lines.length
+    ? lines.map((line, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${escapeHtml(line.quantity || line.count || "")}</td><td>${escapeHtml(line.length || "")}</td><td>${escapeHtml(line.width || "")}</td><td>${escapeHtml(line.height || "")}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.weightKg || line.weight || 0)}</td><td>${money(line.volumeWeight || line.total || 0)}</td><td>${escapeHtml(line.remarks || "")}</td></tr>`).join("")
+    : `<tr><td colspan="10">No cargo items recorded.</td></tr>`;
+  return `<h2>Cargo Dimensions Table</h2><table><thead><tr><th>Sr No</th><th>Package Type</th><th>Quantity</th><th>Length</th><th>Width</th><th>Height</th><th>Unit</th><th>Weight</th><th>Volume Weight</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function qrMarkup(value) {
+  const encoded = encodeURIComponent(String(value || ""));
+  return `<img class="qr-code" src="https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=${encoded}" alt="QR ${escapeHtml(value || "")}" />`;
 }
 
 function invoiceDocumentHtml(record) {
@@ -3631,7 +4202,7 @@ function tariffDocumentHtml(record) {
       <section class="document-summary">
         <div>
           <span>Customer</span>
-          <strong>${escapeHtml(record.customer)}</strong>
+          <strong>${escapeHtml(record.consigneeName || record.customer)}</strong>
           <small>${escapeHtml(record.origin)} to ${escapeHtml(record.destination)}</small>
         </div>
         <div>
@@ -3718,7 +4289,7 @@ function palletDimensionPrintTable(lines, roundedTotal) {
   </table>`;
 }
 
-function documentShell(title, documentLabel, documentNo, documentDate, body) {
+function documentShell(title, documentLabel, documentNo, documentDate, body, options = {}) {
   const printedAt = new Date().toLocaleString();
   const generatedBy = currentUserName();
   const companyName = state.settings.companyName || "APOLLO FREIGHT SOLUTIONS";
@@ -3733,7 +4304,7 @@ function documentShell(title, documentLabel, documentNo, documentDate, body) {
       <style>
         * { box-sizing: border-box; }
         body { margin: 0; background: #edf2f7; color: #172033; font-family: Arial, sans-serif; }
-        .page { max-width: 920px; min-height: 100vh; margin: 0 auto; background: #fff; box-shadow: 0 20px 55px rgba(22, 32, 51, .16); }
+        .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; box-shadow: 0 20px 55px rgba(22, 32, 51, .16); }
         .toolbar { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; background: #f8fafc; border-bottom: 1px solid #dbe5ef; }
         button { border: 0; border-radius: 6px; padding: 10px 14px; background: #165c7d; color: #fff; font-weight: 700; cursor: pointer; }
         .document-head { display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 28px 34px; color: #172033; background: #fff; border-top: 8px solid #1f7a8c; border-bottom: 1px solid #dbe5ef; }
@@ -3741,6 +4312,7 @@ function documentShell(title, documentLabel, documentNo, documentDate, body) {
         .logo { display: grid; place-items: center; width: 92px; height: 92px; border-radius: 12px; background: #fff; color: #165c7d; font-size: 22px; font-weight: 800; overflow: hidden; border: 1px solid #dbe5ef; }
         .logo img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
         h1 { margin: 0; color: #1f7a8c; font-size: 28px; letter-spacing: 0; }
+        h1 .afs-initial { color: #f47b20; }
         .brand p, .doc-meta p { margin: 4px 0 0; color: #607080; }
         .doc-meta { text-align: right; min-width: 210px; }
         .doc-meta strong { display: block; color: #114b67; font-size: 20px; }
@@ -3757,11 +4329,19 @@ function documentShell(title, documentLabel, documentNo, documentDate, body) {
         th { background: #eaf3f7; text-align: left; }
         th, td { border: 1px solid #dbe5ef; padding: 10px; }
         tfoot th { background: #f4f8fb; color: #172033; font-size: 13px; }
+        .qr-code { width: 76px; height: 76px; display: block; margin-top: 8px; }
+        .status-pill { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #eaf3f7; color: #114b67; font-size: 16px; }
         .signature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 48px; }
         .signature { min-height: 86px; border-top: 1px solid #718093; padding-top: 10px; }
         .signature strong { display: block; margin-top: 5px; }
+        .delivery-signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 26px; }
+        .delivery-signatures div { min-height: 138px; border: 1px solid #dbe5ef; padding: 12px; background: #fbfdff; }
+        .delivery-signatures span, .delivery-signatures small { display: block; color: #5d6c7b; text-transform: uppercase; font-size: 11px; font-weight: 800; margin-top: 8px; }
+        .delivery-signatures strong, .delivery-signatures em, .delivery-signatures b { display: block; min-height: 22px; margin-top: 6px; color: #172033; font-style: normal; }
+        .acknowledgement { border: 1px solid #dbe5ef; padding: 10px 12px; margin: 12px 0 0; font-size: 12px; color: #172033; }
         .footer-note { margin-top: 26px; padding-top: 14px; border-top: 1px solid #dbe5ef; color: #607080; font-size: 12px; text-align: center; }
-        @media print { body { background: #fff; } .toolbar { display: none; } .page { max-width: none; box-shadow: none; } main { padding-bottom: 18mm; } }
+        @page { size: A4 portrait; margin: 8mm; }
+        @media print { body { background: #fff; } .toolbar { display: none; } .page { width: auto; min-height: auto; box-shadow: none; } main { padding-bottom: 8mm; } .document-head { padding-top: 12px; } h2 { break-after: avoid; } }
       </style>
     </head>
     <body>
@@ -3771,7 +4351,7 @@ function documentShell(title, documentLabel, documentNo, documentDate, body) {
           <div class="brand">
             <div class="logo">${logoMarkup}</div>
             <div>
-              <h1>${escapeHtml(companyName)}</h1>
+              <h1>${companyNameMarkup(companyName)}</h1>
               <p>Freight, logistics and customs documentation</p>
             </div>
           </div>
@@ -3783,11 +4363,11 @@ function documentShell(title, documentLabel, documentNo, documentDate, body) {
         </header>
         <main>
           ${body}
-          <section class="signature-grid">
+          ${options.hideDefaultSignatures ? "" : `<section class="signature-grid">
             <div class="signature"><span>Generated By</span><strong>${escapeHtml(generatedBy)}</strong></div>
             <div class="signature"><span>Receiver Sign</span><strong>&nbsp;</strong></div>
             <div class="signature"><span>Authorized Signature</span><strong>&nbsp;</strong></div>
-          </section>
+          </section>`}
           <p class="footer-note">Printed date and time: ${escapeHtml(printedAt)}</p>
         </main>
       </div>
@@ -3798,6 +4378,14 @@ function documentShell(title, documentLabel, documentNo, documentDate, body) {
 function defaultDocumentLogoUrl() {
   if (!window.location?.origin || window.location.origin === "null") return "";
   return `${window.location.origin}/web/assets/logo.png`;
+}
+
+function companyNameMarkup(name) {
+  return String(name || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => `<span class="afs-initial">${escapeHtml(word.slice(0, 1))}</span>${escapeHtml(word.slice(1))}`)
+    .join(" ");
 }
 
 function openPrintableDocument(html) {
@@ -4085,7 +4673,7 @@ async function createShipment(data) {
     data.customer,
     data.origin,
     data.destination,
-    "Booked",
+    data.status || "Booked",
     Number(data.pieces),
     Number(data.actualKg),
     Number(data.cbm),
@@ -4346,13 +4934,29 @@ async function createInvoice(data) {
 async function updatePod(data) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.jobNo);
   if (!shipmentItem) return false;
+  Object.assign(shipmentItem, {
+    deliveryNoteNo: data.deliveryNoteNo || shipmentItem.deliveryNoteNo,
+    ginNo: data.ginNo || shipmentItem.ginNo,
+    customerReference: data.customerReference || shipmentItem.customerReference,
+    deliveryRemarks: data.deliveryRemarks || shipmentItem.deliveryRemarks,
+    pocName: data.pocName || shipmentItem.pocName,
+    pocMobile: data.pocMobile || shipmentItem.pocMobile,
+    additionalContact: data.additionalContact || shipmentItem.additionalContact,
+    preparedBy: data.preparedBy || shipmentItem.preparedBy,
+    deliveredBy: data.deliveredBy || shipmentItem.deliveredBy,
+    receivedBy: data.receivedBy || shipmentItem.receivedBy,
+    receiverPhone: data.receiverPhone || shipmentItem.receiverPhone,
+    receiverSignature: data.receiverSignature || shipmentItem.receiverSignature,
+    deliveryDatetime: data.deliveryDatetime || shipmentItem.deliveryDatetime
+  });
   shipmentItem.status = "Delivered";
   shipmentItem.podStatus = "Uploaded";
+  shipmentItem.notes = shipmentMetaNotes(shipmentItem);
   await persistRecord("shipment", shipmentItem);
   const documentRecord = documentRow(nextNumber("DOC", state.documents, "documentNo"), data.jobNo, "POD", "Uploaded", today(), "delivery");
   state.documents.unshift(documentRecord);
   await postRecord("document", documentRecord);
-  addHistory("Marked delivered and uploaded POD", `${data.jobNo} - ${data.receiver}`);
+  addHistory("Marked delivered and uploaded POD", `${data.jobNo} - ${data.receivedBy || data.receiver || ""}`);
   notifySuccess("POD updated", `${data.jobNo} was marked delivered.`);
   return true;
 }

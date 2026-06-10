@@ -315,6 +315,23 @@ create table if not exists shipment_status_history (
     updated_at timestamptz not null default now()
 );
 
+create table if not exists shipment_cargo_items (
+    id bigserial primary key,
+    job_no text not null,
+    package_type text not null default 'Pallet',
+    quantity numeric(12, 3) not null default 0,
+    length numeric(12, 3) not null default 0,
+    width numeric(12, 3) not null default 0,
+    height numeric(12, 3) not null default 0,
+    dimension_unit text not null default 'CM',
+    weight numeric(12, 3) not null default 0,
+    weight_unit text not null default 'KG',
+    volume_weight numeric(12, 3) not null default 0,
+    remarks text not null default '',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
 create index if not exists idx_shipments_booking_date on shipments (booking_date desc);
 create index if not exists idx_shipments_customer on shipments (customer_name);
 create index if not exists idx_shipments_status on shipments (status);
@@ -327,6 +344,7 @@ create index if not exists idx_documents_linked_no on documents (linked_no);
 create index if not exists idx_invoices_shipment_no on invoices (shipment_no);
 create index if not exists idx_audit_log_date_time on audit_log (date_time desc);
 create index if not exists idx_status_history_job_no on shipment_status_history (job_no, updated_at desc);
+create index if not exists idx_shipment_cargo_items_job_no on shipment_cargo_items (job_no);
 create index if not exists idx_admin_requests_status on admin_requests (status, date desc);
 create index if not exists idx_additional_charges_shipment on additional_charges (shipment_no, charge_date desc);
 
@@ -354,6 +372,7 @@ begin
         'unblock_requests',
         'admin_requests',
         'additional_charges',
+        'shipment_cargo_items',
         'app_settings'
     ]
     loop
