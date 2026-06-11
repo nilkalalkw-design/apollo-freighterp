@@ -298,10 +298,15 @@ alter table documents add column if not exists created_by text not null default 
 alter table invoices add column if not exists created_by text not null default 'system';
 
 alter table app_settings add column if not exists consolidation_number_format text not null default 'CON-YY###';
+alter table app_settings add column if not exists tcn_number_format text not null default 'TCN-YY###';
+alter table app_settings add column if not exists delivery_note_number_format text not null default 'POD-YY###';
+alter table app_settings add column if not exists document_number_format text not null default 'DOC-YY###';
+alter table app_settings add column if not exists tariff_number_format text not null default 'TAR-###';
 alter table app_settings add column if not exists customer_number_format text not null default 'CUS-###';
 alter table app_settings add column if not exists additional_charge_number_format text not null default 'CHG-YY###';
 alter table app_settings add column if not exists supplier_number_format text not null default 'TRN-###';
 alter table app_settings add column if not exists company_logo_url text not null default '';
+alter table app_settings add column if not exists column_layout_json text not null default '{}';
 alter table app_settings add column if not exists dropdown_options text not null default '{}';
 
 create table if not exists shipment_status_history (

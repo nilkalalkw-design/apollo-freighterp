@@ -153,9 +153,14 @@ function seedState() {
       shipmentNumberFormat: "AFS-SI###",
       invoiceNumberFormat: "INV-YY###",
       consolidationNumberFormat: "CON-YY###",
+      tcnNumberFormat: "TCN-YY###",
+      deliveryNoteNumberFormat: "POD-YY###",
+      documentNumberFormat: "DOC-YY###",
+      tariffNumberFormat: "TAR-###",
       customerNumberFormat: "CUS-###",
       additionalChargeNumberFormat: "CHG-YY###",
       supplierNumberFormat: "TRN-###",
+      columnLayoutJson: "{}",
       defaultVolumetricDivisor: "5000",
       requirePodBeforeInvoice: "Yes",
       branches: "Kuwait 1, Dubai 2",
@@ -693,6 +698,14 @@ function nextInvoiceNumber() {
 
 function nextConsolidationNumber() {
   return configuredNumber(state.settings.consolidationNumberFormat, state.loads, "loadNo", "CON");
+}
+
+function nextTcnNumber() {
+  return configuredNumber(state.settings.tcnNumberFormat, state.shipments, "tcnNumber", "TCN");
+}
+
+function nextDeliveryNoteNumber() {
+  return configuredNumber(state.settings.deliveryNoteNumberFormat, state.shipments, "deliveryNoteNo", "POD");
 }
 
 function nextCustomerNumber() {
@@ -1267,12 +1280,17 @@ function apiSettings(row) {
     shipmentNumberFormat: row.shipment_number_format || state.settings.shipmentNumberFormat,
     invoiceNumberFormat: row.invoice_number_format || state.settings.invoiceNumberFormat,
     consolidationNumberFormat: row.consolidation_number_format || state.settings.consolidationNumberFormat,
+    tcnNumberFormat: row.tcn_number_format || state.settings.tcnNumberFormat,
+    deliveryNoteNumberFormat: row.delivery_note_number_format || state.settings.deliveryNoteNumberFormat,
+    documentNumberFormat: row.document_number_format || state.settings.documentNumberFormat,
+    tariffNumberFormat: row.tariff_number_format || state.settings.tariffNumberFormat,
     customerNumberFormat: row.customer_number_format || state.settings.customerNumberFormat,
     additionalChargeNumberFormat: row.additional_charge_number_format || state.settings.additionalChargeNumberFormat,
     supplierNumberFormat: row.supplier_number_format || state.settings.supplierNumberFormat,
     defaultVolumetricDivisor: row.default_volumetric_divisor || state.settings.defaultVolumetricDivisor,
     requirePodBeforeInvoice: row.require_pod_before_invoice || state.settings.requirePodBeforeInvoice,
     branches: row.branches || state.settings.branches,
+    columnLayoutJson: row.column_layout_json || state.settings.columnLayoutJson || "{}",
     dropdownOptionsJson: row.dropdown_options || state.settings.dropdownOptionsJson || "{}"
   };
 }
@@ -1436,7 +1454,7 @@ function renderConsolidation() {
         ${table("load", rows, loadColumns())}
         ${selectedLoad ? consolidationJobsPanel(selectedLoad) : `<div class="report-preview-empty"><p class="empty-state">Select a manifest from the list to open the related job numbers below.</p></div>`}
       </article>
-      ${moduleActionPanel("Manifest Actions", "load", "Generate, load, and update consolidation manifests from separate popup windows.", actionChecklist([
+      ${moduleActionPanel("Manifest Actions", "load", "Generate, load, print, export, and update consolidation manifests from separate popup windows.", documentActionControls("load", "Manifest") + actionChecklist([
         "Select a manifest, then load it to review or edit.",
         "New button opens a fresh manifest builder.",
         "Click any job below the manifest list to open that shipment.",
@@ -1626,13 +1644,18 @@ function renderSettings() {
           ${input("shipmentNumberFormat", "Shipment Number Format", state.settings.shipmentNumberFormat)}
           ${input("invoiceNumberFormat", "Invoice Number Format", state.settings.invoiceNumberFormat)}
           ${input("consolidationNumberFormat", "Consolidation Number Format", state.settings.consolidationNumberFormat)}
+          ${input("tcnNumberFormat", "TCN Number Format", state.settings.tcnNumberFormat)}
+          ${input("deliveryNoteNumberFormat", "POD / Delivery Note Number Format", state.settings.deliveryNoteNumberFormat)}
+          ${input("documentNumberFormat", "Document Number Format", state.settings.documentNumberFormat)}
+          ${input("tariffNumberFormat", "Tariff Number Format", state.settings.tariffNumberFormat)}
           ${input("customerNumberFormat", "New Customer Number Format", state.settings.customerNumberFormat)}
           ${input("additionalChargeNumberFormat", "Additional Charges Number Format", state.settings.additionalChargeNumberFormat)}
           ${input("supplierNumberFormat", "Supplier / Transporter Number Format", state.settings.supplierNumberFormat)}
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${input("branches", "Branches", state.settings.branches)}
-          <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | consolidation: ${escapeHtml(nextConsolidationNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
+          ${textarea("columnLayoutJson", "Column Layout JSON", state.settings.columnLayoutJson || "{}", false, 5)}
+          <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
       </article>
@@ -1667,6 +1690,7 @@ function moduleActionPanel(title, type, note, extra = "") {
       ${newRecordSelectorMarkup(type)}
       <div class="action-row">
         ${newButtons}
+        <button type="button" class="secondary-button" data-action="export-list" data-type="${escapeHtml(type)}">Export Excel</button>
       </div>
       ${loadSelectorMarkup(type)}
       <div class="action-row">
@@ -1939,7 +1963,7 @@ function safeTable(type, rows, columns, fallbackText) {
 function tableRow(type, row, index, columns, showLoad = true) {
   const id = rowId(type, row);
   const actionCell = showLoad ? `<td>${tableActionButton(type, id)}</td>` : "";
-  return `<tr>${columns.map(([key]) => `<td>${cellHtml(type, key, row)}</td>`).join("")}${actionCell}</tr>`;
+  return `<tr>${columns.map(([key]) => `<td>${cellHtml(type, key, row, index)}</td>`).join("")}${actionCell}</tr>`;
 }
 
 function tableActionButton(type, id) {
@@ -2096,7 +2120,11 @@ function badge(value) {
   return `<span class="status-badge ${tone}">${escapeHtml(value)}</span>`;
 }
 
-function cellHtml(type, key, row) {
+function cellHtml(type, key, row, index = 0) {
+  if (key === "slNo") return escapeHtml(index + 1);
+  if (key === "palletCount") return escapeHtml(cargoPalletCount(row));
+  if (key === "truckDetails") return escapeHtml([row.vehicleNo, row.driverName, row.driverMobile].filter(Boolean).join(" / "));
+
   if (["status", "podStatus", "invoiceStatus", "accountStatus", "manifestStatus"].includes(key)) {
     return badge(display(row[key]));
   }
@@ -2114,6 +2142,12 @@ function cellHtml(type, key, row) {
   }
 
   return escapeHtml(display(row[key]));
+}
+
+function cargoPalletCount(row) {
+  return parsePalletDimensions(row.cargoItemsJson || row.palletDimensionsJson || "[]")
+    .filter((line) => String(line.packageType || "").toLowerCase() === "pallet")
+    .reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0);
 }
 
 function loadCard(loadItem) {
@@ -2211,7 +2245,22 @@ function dropdownKeyForField(name) {
     branchAccess: "branchAccess",
     currency: "currency",
     terms: "terms",
-    volumeCategory: "volumeCategory"
+    volumeCategory: "volumeCategory",
+    transportMode: "transportMode",
+    vehicleType: "vehicleType",
+    paymentMode: "paymentMode",
+    billingParty1CreditTerms: "creditTerms",
+    palletPackageType: "packageType",
+    palletDimensionUnit: "dimensionUnit",
+    palletWeightUnit: "weightUnit",
+    customerCode: "customerCode",
+    customer: "customer",
+    consigneeName: "consignee",
+    origin: "origin",
+    destination: "destination",
+    pickupLocation: "pickupLocation",
+    deliveryLocation: "deliveryLocation",
+    transporter: "transporter"
   }[name];
 }
 
@@ -2235,18 +2284,57 @@ function volumeCategoryOptions() {
   return dropdownOptions("volumeCategory", ["1 CBM = 167 KG", "1 CBM = 200 KG", "1 CBM = 250 KG", "1 CBM = 333 KG"]);
 }
 
+function currencyOptions() {
+  return dropdownOptions("currency", ["KD", "KWD", "AED", "USD", "SAR", "QAR", "OMR", "BHD"]);
+}
+
 function volumeDivisorFor(category) {
   const match = String(category || "").match(/=\s*(\d+(?:\.\d+)?)\s*KG/i);
   if (match) return Number(match[1]);
   return { Sea: 333, Land: 250, Air: 167 }[category] || 0;
 }
 
+function configurableColumns(type, defaults) {
+  try {
+    const config = JSON.parse(state.settings.columnLayoutJson || "{}");
+    const columns = config?.[type];
+    if (Array.isArray(columns) && columns.length) {
+      return columns
+        .map((column) => Array.isArray(column) ? column : [column.key, column.label || labelize(column.key)])
+        .filter(([key]) => key);
+    }
+  } catch {}
+  return defaults;
+}
+
 function shipmentColumns() {
-  return [["jobNo", "Job No"], ["airwayBillNo", "AWB Number"], ["customer", "Consignee"], ["shipmentDirection", "Type"], ["shipmentService", "Service"], ["status", "Status"], ["bookingDate", "Date"], ["invoiceStatus", "Invoice"]];
+  return configurableColumns("shipment", [
+    ["slNo", "SL."],
+    ["bookingDate", "DATE"],
+    ["jobNo", "JOB NO."],
+    ["billTo1", "BILL TO"],
+    ["billingParty1Address", "ADDRESS"],
+    ["shipperName", "SHIPPER"],
+    ["shipperAddress", "SHIPPER ADDRESS"],
+    ["consigneeName", "CONSIGNEE"],
+    ["consigneeAddress", "CONSIGNEE ADDRESS"],
+    ["pickupLocation", "PICK UP LOCATIONS"],
+    ["deliveryLocation", "DELIVERY LOCATION"],
+    ["transportMode", "MODE"],
+    ["shipmentService", "MODE FULL"],
+    ["airwayBillNo", "MAWB"],
+    ["pieces", "PKGS / CARTONS"],
+    ["palletCount", "No# of Pallets"],
+    ["actualKg", "G.WT"],
+    ["manualChargeableKg", "C.WT"],
+    ["customerReference", "SHIPMENT REFERENCE"],
+    ["specialInstructions", "COMMENTS"],
+    ["truckDetails", "TRUCK DETAILS"]
+  ]);
 }
 
 function loadColumns() {
-  return [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]];
+  return configurableColumns("load", [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]]);
 }
 
 function partyColumns() {
@@ -2262,7 +2350,7 @@ function documentColumns() {
 }
 
 function invoiceColumns() {
-  return [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"]];
+  return configurableColumns("invoice", [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"]]);
 }
 
 function additionalChargeColumns() {
@@ -2383,6 +2471,11 @@ async function handleModuleClick(event) {
 
   if (action === "generate-document" || action === "export-document") {
     generateRecordDocument(type, selectedRecordId(type), action === "export-document");
+    return;
+  }
+
+  if (action === "export-list") {
+    exportCollectionCsv(type);
     return;
   }
 
@@ -2512,6 +2605,7 @@ function openRecord(type, id) {
     .join("");
   if (type === "shipment") bindShipmentDirectionDialog();
   if (type === "shipment") bindShipmentCustomerTariffs();
+  if (type === "shipment") bindShipmentCustomerAutofill();
   if (type === "shipment") bindVolumeCalculator();
   if (type === "shipment") bindPalletDimensionBuilder();
   if (type === "tariff") bindTariffAdditionalCharges(record.additionalChargesJson || "[]");
@@ -2613,7 +2707,7 @@ function detailFieldOptions(type, key, record) {
     manifestStatus: ["Not Generated", "Pending Approval", "Approved", "Rejected"],
     chargeType: chargeTypeOptions(),
     chargeBasis: chargeBasisOptions(),
-    currency: ["KWD", "AED", "USD"],
+    currency: currencyOptions(),
     accountStatus: accountStatusOptions(),
     role: roleOptions(),
     branchAccess: branchAccessOptions()
@@ -2822,7 +2916,7 @@ function openPodDialog(jobNo = "") {
     typeLabel: "POD",
     body: `
       ${selectFrom("jobNo", "Shipment No", shipmentOptions(), shipmentItem.jobNo || "")}
-      ${input("deliveryNoteNo", "Delivery Note No", shipmentItem.deliveryNoteNo || `POD-${shipmentItem.jobNo || nextShipmentNumber()}`)}
+      ${input("deliveryNoteNo", "Delivery Note No", shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber())}
       ${input("ginNo", "GIN Number", shipmentItem.ginNo || "")}
       ${input("customerReference", "Customer Reference", shipmentItem.customerReference || "")}
       ${textarea("deliveryRemarks", "Delivery Remarks / Coordinates", shipmentItem.deliveryRemarks || "", false, 3)}
@@ -2889,6 +2983,7 @@ function dialogConfigFor(type, mode = "") {
       afterOpen: () => {
         bindShipmentDirectionDialog();
         bindShipmentCustomerTariffs();
+        bindShipmentCustomerAutofill();
         bindVolumeCalculator();
         bindPalletDimensionBuilder();
       }
@@ -2927,6 +3022,7 @@ function dialogConfigFor(type, mode = "") {
         ${selectEditable("mainSection", "Main Section", "mainSection", ["FTL", "LTL"])}
         ${selectEditable("weightSection", "Weight Section", "weightSection", ["Minimum", "Up to 100 KG", "300 KG", "500 KG", "1000 KG", "More"])}
         ${selectEditable("minUpTo", "Minimum Up To", "minUpTo", ["Minimum", "100 KG", "300 KG", "500 KG", "1000 KG", "More"])}
+        ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
         ${input("rate", "Rate", "0.420", false, "number")}
         ${input("minCharge", "Minimum Charge", "35.000", false, "number")}
         ${tariffAdditionalChargesBuilder()}
@@ -2966,6 +3062,7 @@ function dialogConfigFor(type, mode = "") {
         ${selectFrom("customer", "Consignee", state.customers.map((row) => row.name))}
         ${selectFrom("shipmentNo", "Shipment", shipmentOptions())}
         ${input("tariffNo", "Assigned Tariff", "", true)}
+        ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
         ${input("revenue", "Revenue", "100.000", false, "number")}
         ${input("supplierCost", "Supplier Cost", "70.000", false, "number")}
         ${select("status", "Status", ["Draft", "Approved", "Sent", "Paid", "Overdue"])}
@@ -3048,7 +3145,7 @@ function shipmentDialogBody(mode = "shipment") {
     `)}
     ${formSection("Customer Information", `
       ${selectFrom("customer", "Customer Name", state.customers.map((row) => row.name), defaultCustomer)}
-      ${input("customerCode", "Customer Code", "")}
+      ${selectFrom("customerCode", "Customer Code", state.customers.map((row) => ({ value: row.code, label: `${row.code} | ${row.name}` })), "")}
       ${input("customerContactPerson", "Contact Person", "")}
       ${input("customerMobile", "Mobile Number", "")}
       ${input("customerEmail", "Email Address", "", false, "email")}
@@ -3126,7 +3223,7 @@ function shipmentDialogBody(mode = "shipment") {
       ${selectEditable("vehicleType", "Vehicle Type", "vehicleType", ["FTL", "LTL"])}
     `)}
     ${formSection("Financial Information", `
-      ${selectEditable("currency", "Currency", "currency", ["KWD", "AED", "USD", "SAR", "QAR", "OMR", "BHD"], "KWD")}
+      ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
       ${input("freightAmount", "Freight Amount", "0.000", false, "number")}
       ${input("otherChargesAmount", "Other Charges", "0.000", false, "number")}
       ${input("taxAmount", "Tax Amount", "0.000", false, "number")}
@@ -3272,7 +3369,7 @@ function chargeDialogBody() {
     ${input("referenceNo", "Reference No", "")}
     ${select("invoiceNo", "Invoice No", invoiceOptions, "")}
     ${input("taxPercent", "Tax %", "0", false, "number")}
-    ${selectEditable("currency", "Currency", "currency", ["KWD", "AED", "USD", "SAR", "QAR", "OMR", "BHD"], "KWD")}
+    ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
     <input type="hidden" name="chargeLines" value="[]" />
     <section class="charge-line-builder" data-charge-line-builder>
       <div class="charge-line-entry">
@@ -3401,6 +3498,45 @@ function bindShipmentCustomerTariffs() {
   syncTariffs();
 }
 
+function bindShipmentCustomerAutofill() {
+  const customerField = dialogBody.querySelector("input[name='customer']");
+  const codeField = dialogBody.querySelector("input[name='customerCode']");
+  if (!customerField && !codeField) return;
+
+  const fill = (source) => {
+    const value = String(source?.value || "").trim().toLowerCase();
+    if (!value) return;
+    const customer = state.customers.find((row) =>
+      String(row.name || "").trim().toLowerCase() === value ||
+      String(row.code || "").trim().toLowerCase() === value
+    );
+    if (!customer) return;
+
+    setDialogValue("customer", customer.name);
+    setDialogValue("customerCode", customer.code);
+    setDialogValue("customerEmail", customer.email);
+    setDialogValue("customerContactPerson", customer.name);
+    setDialogValue("consigneeName", customer.name);
+    setDialogValue("consigneeAddress", customer.fullAddress || customer.locationOrLane);
+    setDialogValue("consigneeEmail", customer.email);
+    setDialogValue("billTo1", customer.name);
+    setDialogValue("billingParty1Address", customer.fullAddress || customer.locationOrLane);
+    setDialogValue("billingParty1Email", customer.email);
+    setDialogValue("billingParty1CreditTerms", customer.terms);
+    setDialogValue("branch", customer.branch || defaultUserBranch());
+  };
+
+  customerField?.addEventListener("input", () => fill(customerField));
+  customerField?.addEventListener("change", () => fill(customerField));
+  codeField?.addEventListener("input", () => fill(codeField));
+  codeField?.addEventListener("change", () => fill(codeField));
+}
+
+function setDialogValue(name, value) {
+  const field = dialogBody.querySelector(`[name='${CSS.escape(name)}']`);
+  if (field && value !== undefined && value !== null && value !== "") field.value = value;
+}
+
 function bindVolumeCalculator() {
   const categoryField = dialogBody.querySelector("[name='volumeCategory']");
   const divisorField = dialogBody.querySelector("[name='chargeableDivisor']");
@@ -3521,7 +3657,7 @@ function bindPalletDimensionBuilder() {
 
   dialogBody.querySelector("[data-dialog-action='generate-tcn']")?.addEventListener("click", () => {
     const data = collectFormValues(dialogBody.closest("form"));
-    const tcn = data.tcnNumber || nextNumber("TCN", state.shipments, "tcnNumber");
+    const tcn = data.tcnNumber || nextTcnNumber();
     if (tcnField) tcnField.value = tcn;
     openPrintableDocument(tcnDocumentHtml({ ...data, tcnNumber: tcn, palletDimensionsJson: hiddenField.value }));
   });
@@ -3919,6 +4055,49 @@ function downloadCsv(preview) {
   URL.revokeObjectURL(link.href);
 }
 
+function exportCollectionCsv(type) {
+  const rows = collectionFor(type);
+  const columns = columnsForType(type);
+  if (!rows.length || !columns.length) {
+    notifyDenied("Export not ready", "No rows are available for this section.");
+    return;
+  }
+  const header = columns.map(([, label]) => `"${String(label).replace(/"/g, '""')}"`).join(",");
+  const lines = rows.map((row, index) => columns
+    .map(([key]) => `"${String(displayCellValue(type, key, row, index)).replace(/"/g, '""')}"`)
+    .join(","));
+  const blob = new Blob([[header, ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${typeLabel(type).replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${today()}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+  notifySuccess("Export ready", `${rows.length} row(s) exported.`);
+}
+
+function columnsForType(type) {
+  return {
+    shipment: shipmentColumns,
+    pod: shipmentColumns,
+    status: shipmentColumns,
+    load: loadColumns,
+    customers: partyColumns,
+    suppliers: partyColumns,
+    tariff: tariffColumns,
+    document: documentColumns,
+    charge: additionalChargeColumns,
+    invoice: invoiceColumns,
+    user: userColumns
+  }[type]?.() || [];
+}
+
+function displayCellValue(type, key, row, index = 0) {
+  if (key === "slNo") return index + 1;
+  if (key === "palletCount") return cargoPalletCount(row);
+  if (key === "truckDetails") return [row.vehicleNo, row.driverName, row.driverMobile].filter(Boolean).join(" / ");
+  return row[key] ?? "";
+}
+
 function generateRecordDocument(type, id, download = false) {
   const record = collectionFor(type).find((row) => rowId(type, row) === id);
   if (!record) {
@@ -3929,13 +4108,14 @@ function generateRecordDocument(type, id, download = false) {
     invoice: invoiceDocumentHtml,
     tariff: tariffDocumentHtml,
     shipment: shipmentDocumentHtml,
+    load: manifestDocumentHtml,
     pod: podDocumentHtml,
     status: shipmentDocumentHtml,
     tcn: tcnDocumentHtml
   };
   const builder = documentBuilders[type] || shipmentDocumentHtml;
   const html = builder(record);
-  const filePrefix = { invoice: "bill", tariff: "tariff", pod: "pod", shipment: "shipment", status: "shipment", tcn: "tcn" }[type] || type;
+  const filePrefix = { invoice: "bill", tariff: "tariff", pod: "pod", shipment: "shipment", load: "manifest", status: "shipment", tcn: "tcn" }[type] || type;
   const fileName = `${filePrefix}-${rowId(type, record)}.html`.toLowerCase();
   if (download) {
     downloadHtml(fileName, html);
@@ -4129,6 +4309,65 @@ function podDocumentHtml(record) {
       <p class="acknowledgement">Shipment was opened and checked by customs</p>
     `,
     { compact: true, qrValue: deliveryNo, hideDefaultSignatures: true }
+  );
+}
+
+function manifestDocumentHtml(record) {
+  const jobNos = String(record.jobNumbers || "").split(",").map((item) => item.trim()).filter(Boolean);
+  const shipments = jobNos.map((jobNo) => state.shipments.find((row) => row.jobNo === jobNo)).filter(Boolean);
+  const rows = shipments.length
+    ? shipments.map((shipmentItem, index) => `<tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(shipmentItem.jobNo)}</td>
+        <td>${escapeHtml(shipmentItem.airwayBillNo || "")}</td>
+        <td>${escapeHtml(shipmentItem.consigneeName || shipmentItem.customer || "")}</td>
+        <td>${escapeHtml(shipmentItem.origin || "")}</td>
+        <td>${escapeHtml(shipmentItem.destination || "")}</td>
+        <td>${escapeHtml(shipmentItem.pickupLocation || "")}</td>
+        <td>${escapeHtml(shipmentItem.deliveryLocation || "")}</td>
+        <td>${escapeHtml(shipmentItem.transportMode || "")}</td>
+        <td>${escapeHtml(shipmentItem.pieces || "")}</td>
+        <td>${money(shipmentItem.actualKg || 0)}</td>
+        <td>${money(shipmentItem.manualChargeableKg || shipmentItem.chargeableKg || 0)}</td>
+        <td>${escapeHtml(shipmentItem.natureOfGoods || "")}</td>
+        <td>${escapeHtml([shipmentItem.vehicleNo, shipmentItem.driverName, shipmentItem.driverMobile].filter(Boolean).join(" / "))}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="14">No shipments linked to this manifest.</td></tr>`;
+
+  return documentShell(
+    `Manifest ${record.loadNo}`,
+    "CONSOLIDATION MANIFEST",
+    record.loadNo,
+    record.tripDate || today(),
+    `
+      <section class="document-summary">
+        <div><span>Route</span><strong>${escapeHtml(record.route || "")}</strong><small>${escapeHtml(record.status || "")}</small></div>
+        <div><span>Transport</span><strong>${escapeHtml(record.transporter || "")}</strong><small>${escapeHtml(record.vehicleNo || "")}</small></div>
+      </section>
+      ${documentBlock("Manifest Information", [
+        ["Manifest Number", record.loadNo],
+        ["Trip Date", record.tripDate],
+        ["Route", record.route],
+        ["Transporter", record.transporter],
+        ["Truck Number", record.vehicleNo],
+        ["Driver Name", record.driverName],
+        ["Driver Number", record.driverNumber],
+        ["Status", record.status]
+      ])}
+      <h2>Shipment Manifest Details</h2>
+      <table>
+        <thead><tr><th>SL</th><th>Job No</th><th>MAWB</th><th>Consignee</th><th>Origin</th><th>Destination</th><th>Pickup</th><th>Delivery</th><th>Mode</th><th>Pkgs</th><th>G.WT</th><th>C.WT</th><th>Goods</th><th>Truck Details</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${documentBlock("Manifest Totals", [
+        ["Total Jobs", shipments.length],
+        ["Total Pieces", record.pieces],
+        ["Total Gross Weight", money(record.actualKg || 0)],
+        ["Total Chargeable Weight", money(record.chargeableKg || 0)],
+        ["Total CBM", money(record.cbm || 0)]
+      ])}
+    `,
+    { qrValue: record.loadNo }
   );
 }
 

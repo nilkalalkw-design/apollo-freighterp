@@ -451,12 +451,17 @@ const resources = {
       field("shipment_number_format", ["shipmentNumberFormat", "shipment_number_format"]),
       field("invoice_number_format", ["invoiceNumberFormat", "invoice_number_format"]),
       field("consolidation_number_format", ["consolidationNumberFormat", "consolidation_number_format"]),
+      field("tcn_number_format", ["tcnNumberFormat", "tcn_number_format"]),
+      field("delivery_note_number_format", ["deliveryNoteNumberFormat", "delivery_note_number_format"]),
+      field("document_number_format", ["documentNumberFormat", "document_number_format"]),
+      field("tariff_number_format", ["tariffNumberFormat", "tariff_number_format"]),
       field("customer_number_format", ["customerNumberFormat", "customer_number_format"]),
       field("additional_charge_number_format", ["additionalChargeNumberFormat", "additional_charge_number_format"]),
       field("supplier_number_format", ["supplierNumberFormat", "supplier_number_format"]),
       field("default_volumetric_divisor", ["defaultVolumetricDivisor", "default_volumetric_divisor"]),
       field("require_pod_before_invoice", ["requirePodBeforeInvoice", "require_pod_before_invoice"]),
       field("branches"),
+      field("column_layout_json", ["columnLayoutJson", "column_layout_json"]),
       field("dropdown_options", ["dropdownOptionsJson", "dropdown_options"])
     ]
   }
