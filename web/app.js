@@ -4468,40 +4468,68 @@ function tariffDocumentHtml(record) {
 }
 
 function tcnDocumentHtml(record) {
-  const pallets = parsePalletDimensions(record.palletDimensionsJson || "[]");
-  const totalCbm = roundUpToHalf(pallets.reduce((sum, line) => sum + Number(line.total || 0), 0));
+  const cargoLines = parsePalletDimensions(record.cargoItemsJson || record.palletDimensionsJson || "[]");
+  const totalVolumeWeight = cargoLines.reduce((sum, line) => sum + Number(line.volumeWeight || line.total || 0), 0);
+  const totalGrossWeight = cargoLines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0) || Number(record.actualKg || 0);
   return documentShell(
-    `TCN ${record.tcnNumber}`,
-    "TCN / Airway Bill",
-    record.tcnNumber,
+    `TCN ${record.tcnNumber || record.jobNo}`,
+    "Truck Consignment Note - TCN / WAYBILL",
+    record.tcnNumber || record.jobNo,
     record.bookingDate || today(),
     `
-      <section class="document-summary">
-        <div>
-          <span>Consignee</span>
-          <strong>${escapeHtml(record.customer)}</strong>
-          <small>${escapeHtml(record.origin)} to ${escapeHtml(record.destination)}</small>
-        </div>
-        <div>
-          <span>Total Chargeable Weight</span>
-          <strong>${money(record.chargeableKg)} KG</strong>
-          <small>Volume CBM ${escapeHtml(record.cbm || totalCbm)}</small>
-        </div>
+      <section class="tcn-grid">
+        <div><span>WAYBILL NUMBER</span><strong>${escapeHtml(record.tcnNumber || record.airwayBillNo || record.jobNo)}</strong></div>
+        <div><span>DATE</span><strong>${escapeHtml(record.bookingDate || today())}</strong></div>
+        <div><span>PLACE</span><strong>${escapeHtml(record.origin || record.pickupLocation || "")}</strong></div>
+        <div><span>ORIGIN</span><strong>${escapeHtml(record.origin || "")}</strong></div>
+        <div><span>DESTINATION</span><strong>${escapeHtml(record.destination || "")}</strong></div>
+        <div><span>CARRIER No & DATE</span><strong>${escapeHtml(record.vehicleNo || record.tripNo || "")} ${escapeHtml(record.shipmentDate || "")}</strong></div>
       </section>
-      <section class="meta">
-        <p><strong>Airway Bill No</strong><span>${escapeHtml(record.jobNo)}</span></p>
-        <p><strong>Date</strong><span>${escapeHtml(record.bookingDate || today())}</span></p>
-        <p><strong>Pick Up Location</strong><span>${escapeHtml(record.tariffNo)}</span></p>
-        <p><strong>Packages</strong><span>${escapeHtml(record.pieces)}</span></p>
-        <p><strong>Bill To 1</strong><span>${escapeHtml(record.billTo1 || "")}</span></p>
-        <p><strong>Bill To 2</strong><span>${escapeHtml(record.billTo2 || "")}</span></p>
-        <p><strong>Manual Chargeable KG</strong><span>${money(record.manualChargeableKg || 0)}</span></p>
-        <p><strong>Nature of Goods</strong><span>${escapeHtml(record.natureOfGoods || "")}</span></p>
-        <p><strong>Shipper Reference</strong><span>${escapeHtml(record.shipmentServiceOther || "")}</span></p>
+      <section class="tcn-two-col">
+        <div><span>SHIPPER</span><strong>${escapeHtml(record.shipperName || record.customer || "")}</strong><p>${escapeHtml(record.shipperAddress || "")}</p><p>${escapeHtml(record.shipperCountry || "")}</p></div>
+        <div><span>PICKUP LOCATION</span><strong>${escapeHtml(record.pickupLocation || "")}</strong><p>${escapeHtml(record.pickupAddress || "")}</p><p>${escapeHtml(record.pickupContactPerson || "")} ${escapeHtml(record.pickupMobile || "")}</p></div>
       </section>
-      ${palletDimensionPrintTable(pallets, totalCbm)}
+      <section class="tcn-two-col">
+        <div><span>CONSIGNEE</span><strong>${escapeHtml(record.consigneeName || record.customer || "")}</strong><p>${escapeHtml(record.consigneeAddress || "")}</p><p>${escapeHtml(record.consigneeCountry || "")}</p></div>
+        <div><span>NOTIFY & DELIVERY ADDRESS</span><strong>${escapeHtml(record.notifyPartyName || record.deliveryContactPerson || "")}</strong><p>${escapeHtml(record.deliveryAddress || record.notifyPartyAddress || "")}</p><p>${escapeHtml(record.deliveryMobile || record.notifyMobile || "")}</p></div>
+      </section>
+      <section class="tcn-grid tcn-cargo-head">
+        <div><span>CARGO TYPE</span><strong>${escapeHtml(record.vehicleType || record.transportMode || "GENERAL CARGO")}</strong></div>
+        <div><span>CUSTOMER REF / INVOICE NO</span><strong>${escapeHtml(record.customerReference || record.shipmentServiceOther || "")}</strong></div>
+      </section>
+      <h2>CARGO DETAILS</h2>
+      <table class="tcn-cargo-table">
+        <thead><tr><th>No Of Pieces / Pallets</th><th>Gross Weight (Kgs)</th><th>Volume Weight (Kgs)</th><th>Nature of Goods</th></tr></thead>
+        <tbody><tr><td>${escapeHtml(record.pieces || cargoLines.reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0))}</td><td>${money(totalGrossWeight)}</td><td>${money(record.chargeableKg || totalVolumeWeight)}</td><td>${escapeHtml(record.natureOfGoods || "")}</td></tr></tbody>
+      </table>
+      ${tcnDimensionsTable(cargoLines)}
+      <section class="tcn-signatures">
+        <div><span>RECEIVER'S SIGN</span><strong>${escapeHtml(record.receivedBy || "")}</strong></div>
+        <div><span>SHIPPER'S SIGN</span><strong>${escapeHtml(record.shipperName || record.customer || "")}</strong></div>
+      </section>
+      ${tcnTermsHtml()}
     `
   );
+}
+
+function tcnDimensionsTable(lines) {
+  const rows = lines.length
+    ? lines.map((line, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${escapeHtml(line.quantity || line.count || "")}</td><td>${escapeHtml(line.length || "")}</td><td>${escapeHtml(line.width || "")}</td><td>${escapeHtml(line.height || "")}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.volumeWeight || line.total || 0)}</td></tr>`).join("")
+    : `<tr><td colspan="8">No dimensions recorded.</td></tr>`;
+  return `<h2>DIMENSIONS</h2><table><thead><tr><th>Sr</th><th>Package</th><th>Qty</th><th>Length</th><th>Width</th><th>Height</th><th>Unit</th><th>Volume Weight</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function tcnTermsHtml() {
+  const terms = [
+    "The consignor certifies that he is either the owner of the goods or is duly authorized by the owner to act as his agent.",
+    "The consignor agrees to indemnify the carrier against any claims arising out of damage to the goods or any injury caused by the goods.",
+    "The carrier is not liable for damage caused by delay, negligence, or any reason beyond the carrier control.",
+    "The carrier liability for loss or damage is limited to the declared or applicable cargo value.",
+    "The consignor agrees to pay all transportation charges, including loading and unloading charges if requested.",
+    "The consignor agrees to provide all necessary documentation for transportation of the goods.",
+    "The consignor is considered to have accepted these terms and conditions upon receipt of this consignment note."
+  ];
+  return `<section class="tcn-terms"><h2>Terms and Conditions:</h2><ol>${terms.map((term) => `<li>${escapeHtml(term)}</li>`).join("")}</ol><p>System generated document. No need for signature.</p></section>`;
 }
 
 function parsePalletDimensions(value) {
@@ -4578,6 +4606,21 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
         .delivery-signatures span, .delivery-signatures small { display: block; color: #5d6c7b; text-transform: uppercase; font-size: 11px; font-weight: 800; margin-top: 8px; }
         .delivery-signatures strong, .delivery-signatures em, .delivery-signatures b { display: block; min-height: 22px; margin-top: 6px; color: #172033; font-style: normal; }
         .acknowledgement { border: 1px solid #dbe5ef; padding: 10px 12px; margin: 12px 0 0; font-size: 12px; color: #172033; }
+        .tcn-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid #172033; margin-bottom: 10px; }
+        .tcn-grid div, .tcn-two-col div { min-height: 62px; padding: 9px; border-right: 1px solid #172033; overflow-wrap: anywhere; }
+        .tcn-grid div:last-child, .tcn-two-col div:last-child { border-right: 0; }
+        .tcn-grid span, .tcn-two-col span, .tcn-signatures span { display: block; color: #172033; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-bottom: 6px; }
+        .tcn-grid strong, .tcn-two-col strong { display: block; font-size: 13px; color: #172033; }
+        .tcn-two-col { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #172033; margin-bottom: 10px; }
+        .tcn-two-col p { margin: 5px 0 0; font-size: 12px; line-height: 1.35; }
+        .tcn-cargo-head { grid-template-columns: 1fr 2fr; }
+        .tcn-cargo-table th, .tcn-cargo-table td { text-align: center; }
+        .tcn-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 26px; }
+        .tcn-signatures div { min-height: 78px; border-top: 1px solid #172033; padding-top: 8px; }
+        .tcn-terms { margin-top: 18px; font-size: 10px; line-height: 1.35; }
+        .tcn-terms h2 { margin-top: 0; font-size: 14px; }
+        .tcn-terms ol { margin: 6px 0 0 18px; padding: 0; }
+        .tcn-terms p { font-weight: 700; margin-top: 8px; }
         .footer-note { margin-top: 26px; padding-top: 14px; border-top: 1px solid #dbe5ef; color: #607080; font-size: 12px; text-align: center; }
         @page { size: A4 portrait; margin: 8mm; }
         @media print { body { background: #fff; } .toolbar { display: none; } .page { width: auto; min-height: auto; box-shadow: none; } main { padding-bottom: 8mm; } .document-head { padding-top: 12px; } h2 { break-after: avoid; } }
