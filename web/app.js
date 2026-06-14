@@ -3155,7 +3155,6 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("shipperContactPerson", "Contact Person", "")}
       ${input("shipperMobile", "Mobile Number", "")}
       ${input("shipperEmail", "Email Address", "", false, "email")}
-      ${input("shipperVatTrn", "VAT / TRN Number", "")}
       ${input("shipperCountry", "Country", "Kuwait")}
     `)}
     ${formSection("Consignee Information", `
@@ -3180,12 +3179,10 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("deliveryContactPerson", "Delivery Contact Person", "")}
       ${input("deliveryMobile", "Delivery Mobile", "")}
       ${input("deliveryDate", "Delivery Date", "", false, "date")}
-      ${input("deliveryTime", "Delivery Time", "", false, "time")}
     `)}
     ${formSection("Notify Party", `
-      ${input("notifyPartyName", "Notify Party Name", "")}
+      ${input("notifyPartyNamePerson", "Notify Party Name/Contact Person", "")}
       ${textarea("notifyPartyAddress", "Notify Party Address", "", false, 3)}
-      ${input("notifyContactPerson", "Contact Person", "")}
       ${input("notifyMobile", "Mobile Number", "")}
       ${input("notifyEmail", "Email Address", "", false, "email")}
     `)}
@@ -3203,14 +3200,6 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("billingParty2ContactPerson", "Contact Person", "")}
       ${input("billingParty2Mobile", "Mobile Number", "")}
       ${input("billingParty2Email", "Email Address", "", false, "email")}
-      ${input("billingParty2Percentage", "Billing Percentage", "", false, "number")}
-    `)}
-    ${cargoItemsBuilder()}
-    ${formSection("Routing Information", `
-      ${input("origin", "Origin", "Kuwait City")}
-      ${input("destination", "Destination", "Riyadh")}
-      ${input("transitPoint", "Transit Point", "")}
-      ${input("route", "Route", "")}
     `)}
     ${formSection("Transport Information", `
       ${input("transporter", "Transporter", "")}
@@ -3218,16 +3207,7 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("driverName", "Driver Name", "")}
       ${input("driverMobile", "Driver Mobile", "")}
       ${input("manifestNo", "Manifest Number", "")}
-      ${selectEditable("vehicleType", "Vehicle Type", "vehicleType", ["FTL", "LTL"])}
     `)}
-   ${formSection("Financial Information", `
-  ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
-  ${input("freightAmount", "Freight Amount", "0.000", false, "number")}
-  ${input("otherChargesAmount", "Other Charges", "0.000", false, "number")}
-  ${input("taxAmount", "Tax Amount", "0.000", false, "number")}
-  ${input("totalAmount", "Total Amount", "0.000", false, "number")}
-  ${selectEditable("paymentMode", "Payment Mode", "paymentMode", ["Cash", "Credit", "Bank Transfer", "Card"])}
-`, true)}
     ${formSection("Attachments", `
       ${input("invoiceCopy", "Invoice Copy", "")}
       ${input("packingListCopy", "Packing List", "")}
@@ -3239,7 +3219,6 @@ function shipmentDialogBody(mode = "shipment") {
       ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
       ${textarea("specialInstructions", "Special Instructions", "", false, 3)}
       ${textarea("handlingInstructions", "Handling Instructions", "", false, 3)}
-      ${textarea("internalNotes", "Internal Notes", "", false, 3)}
       ${isAirway ? textarea("shipmentServiceOther", "Shipper Reference", "", false, 4) : select("transitDays", "Transit Time in Days", Array.from({ length: 30 }, (_, index) => String(index + 1)), "3")}
       ${input("tcnNumber", "TCN Number", "", true)}
       <div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>
