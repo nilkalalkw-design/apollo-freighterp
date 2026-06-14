@@ -3135,10 +3135,9 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("bookingDate", "Booking Date", today(), false, "date")}
       ${input("shipmentDate", "Shipment Date", today(), false, "date")}
       ${select("status", "Status", statusOptions(), "Booked")}
-      ${select("shipmentService", "Service Type", shipmentServiceOptions("Export"), "AE")}
+      ${select("shipmentService", "Service Type", shipmentServiceOptions("Export", "Import", "WHC"), "AE")}
       ${selectEditable("transportMode", "Transport Mode", "transportMode", ["Air", "Sea", "Land", "Courier"])}
       ${input("customerReference", "Customer Reference Number", "")}
-      ${input("internalReferenceNo", "Internal Reference Number", "")}
       ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
       ${input("salesPerson", "Sales Person", currentUserName())}
       ${input("airwayBillNo", "Airway Bill / Bill of Lading", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo"), false)}
@@ -3198,7 +3197,7 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("billingParty1Email", "Email Address", "", false, "email")}
       ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"])}
     `)}
-    ${formSection("Billing Party 2", `
+    ${formSection("Shipping Party 2", `
       ${input("billTo2", "Secondary Billing Party Name", "")}
       ${textarea("billingParty2Address", "Secondary Billing Address", "", false, 3)}
       ${input("billingParty2ContactPerson", "Contact Person", "")}
@@ -3218,18 +3217,17 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("vehicleNo", "Vehicle Number", "")}
       ${input("driverName", "Driver Name", "")}
       ${input("driverMobile", "Driver Mobile", "")}
-      ${input("tripNo", "Trip Number", "")}
       ${input("manifestNo", "Manifest Number", "")}
       ${selectEditable("vehicleType", "Vehicle Type", "vehicleType", ["FTL", "LTL"])}
     `)}
-    ${formSection("Financial Information", `
-      ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
-      ${input("freightAmount", "Freight Amount", "0.000", false, "number")}
-      ${input("otherChargesAmount", "Other Charges", "0.000", false, "number")}
-      ${input("taxAmount", "Tax Amount", "0.000", false, "number")}
-      ${input("totalAmount", "Total Amount", "0.000", false, "number")}
-      ${selectEditable("paymentMode", "Payment Mode", "paymentMode", ["Cash", "Credit", "Bank Transfer", "Card"])}
-    `)}
+   ${formSection("Financial Information", `
+  ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
+  ${input("freightAmount", "Freight Amount", "0.000", false, "number")}
+  ${input("otherChargesAmount", "Other Charges", "0.000", false, "number")}
+  ${input("taxAmount", "Tax Amount", "0.000", false, "number")}
+  ${input("totalAmount", "Total Amount", "0.000", false, "number")}
+  ${selectEditable("paymentMode", "Payment Mode", "paymentMode", ["Cash", "Credit", "Bank Transfer", "Card"])}
+`, true)}
     ${formSection("Attachments", `
       ${input("invoiceCopy", "Invoice Copy", "")}
       ${input("packingListCopy", "Packing List", "")}
