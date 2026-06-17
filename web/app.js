@@ -3138,7 +3138,6 @@ function shipmentDialogBody(mode = "shipment") {
       ${select("shipmentService", "Service Type", shipmentServiceOptions("Export"), "AE")}
       ${selectEditable("transportMode", "Transport Mode", "transportMode", ["Air", "Sea", "Land", "Courier"])}
       ${input("customerReference", "Customer Reference Number", "")}
-      ${input("internalReferenceNo", "Internal Reference Number", "")}
       ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
       ${input("salesPerson", "Sales Person", currentUserName())}
       ${input("airwayBillNo", "Airway Bill / Bill of Lading", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo"), false)}
