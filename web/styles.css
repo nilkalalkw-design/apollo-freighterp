@@ -720,7 +720,7 @@ label {
 .tariff-charge-builder {
   grid-column: 1 / -1;
   display: grid;
-  gap: 12px;
+  gap: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
@@ -741,7 +741,7 @@ label {
 .form-section {
   grid-column: 1 / -1;
   display: grid;
-  gap: 12px;
+  gap: 8px;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -758,7 +758,7 @@ label {
 .form-section-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 
 .form-section textarea {
@@ -773,7 +773,7 @@ label {
 .pallet-builder {
   grid-column: 1 / -1;
   display: grid;
-  gap: 12px;
+  gap: 8px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -828,7 +828,7 @@ label {
 .charge-line-total {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 140px auto;
-  gap: 10px;
+  gap: 6px;
   align-items: end;
 }
 
@@ -871,7 +871,7 @@ th {
 .job-list,
 .stack-form {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .alert {
@@ -943,7 +943,7 @@ th {
 .checkbox-field {
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--ink);
   font-size: 13px;
   font-weight: 600;
@@ -958,7 +958,7 @@ th {
 .section-access-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
   margin: 0;
   padding: 14px;
   border: 1px solid var(--line);
@@ -978,7 +978,7 @@ th {
 .summary-card,
 .report-preview-page {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .action-row {
@@ -990,7 +990,7 @@ th {
 .dialog-picker,
 .selected-job-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .selected-job-chip {
@@ -1049,7 +1049,7 @@ th {
 .charge-filter-grid,
 .report-toolbar {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   align-items: end;
 }
 
@@ -1072,7 +1072,7 @@ th {
 .summary-card p {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
 }
@@ -1084,7 +1084,7 @@ th {
 
 .summary-card span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 8px;
 }
 
 .summary-card strong {
@@ -1092,7 +1092,7 @@ th {
 }
 
 .report-preview-shell {
-  padding: 18px;
+  padding: 10px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: #eef4f8;
@@ -1109,7 +1109,7 @@ th {
 .report-preview-heading {
   display: flex;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   align-items: end;
 }
 
@@ -1158,7 +1158,7 @@ th {
 
 .consolidation-jobs {
   display: grid;
-  gap: 14px;
+  gap: 8px;
   margin-top: 18px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
@@ -1172,7 +1172,7 @@ th {
 .job-list-row {
   display: grid;
   grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 8px;
   align-items: start;
   padding: 12px 14px;
   border: 1px solid var(--line);
@@ -1287,7 +1287,7 @@ th {
   }
 
   .sidebar {
-    gap: 16px;
+    gap: 10px;
   }
 
   .nav-list {
