@@ -2020,23 +2020,24 @@ function reportTypeOptions() {
 }
 
 function shipmentDirectionOptions() {
-  return ["Export", "Import", "WHC"];
+  return dropdownOptions("shipmentDirection", ["Export", "Import", "Consoladation"]);
 }
 
 function shipmentServiceOptions(direction) {
   if (direction === "Import") {
-    return ["SI", "AI", "LI", "FI"];
+    return dropdownOptions("shipmentService", ["SI", "AI", "LI", "FI", "WHC"]);
   }
 
-  if (direction === "WHC") {
-    return ["WHC", "Other"];
+  if (direction === "Consoladation" || direction === "Consolidation") {
+    return dropdownOptions("shipmentService", ["Consoladation", "WHC"]);
   }
 
-  return ["SE", "AE", "LE", "FE"];
+  return dropdownOptions("shipmentService", ["SE", "AE", "LE", "FE", "WHC"]);
 }
 
 function isConsolidationShipment(row) {
-  return String(row?.shipmentService || "").toLowerCase() === "consolidation";
+  const values = [row?.shipmentDirection, row?.shipmentService].map((item) => String(item || "").trim().toLowerCase());
+  return values.includes("consoladation") || values.includes("consolidation");
 }
 
 function assignedConsolidationJobs(exceptLoadNo = "") {
@@ -2180,10 +2181,8 @@ function checkbox(name, label, checked = false, value = "on") {
 
 function select(name, label, options, selected = options[0]) {
   const selectedValue = optionValue(selected);
-  return `<label>${escapeHtml(label)}<select name="${escapeHtml(name)}">${options.map((option) => {
-    const value = optionValue(option);
-    return `<option value="${escapeHtml(value)}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(optionLabel(option))}</option>`;
-  }).join("")}</select></label>`;
+  const optionKey = dropdownKeyForField(name) || name;
+  return selectEditable(name, label, optionKey, options, selectedValue);
 }
 
 function selectFrom(name, label, options, value = options[0] || "") {
@@ -2262,7 +2261,7 @@ function dropdownKeyForField(name) {
     pickupLocation: "pickupLocation",
     deliveryLocation: "deliveryLocation",
     transporter: "transporter"
-  }[name];
+  }[name] || name;
 }
 
 function statusOptions() {
@@ -2705,6 +2704,9 @@ function detailFieldControl(type, key, value, record) {
   const options = detailFieldOptions(type, key, record);
   if (type === "shipment" && ["sell", "buyCost"].includes(key)) {
     return "";
+  }
+  if (type === "shipment" && key === "customerReference") {
+    return `<input type="hidden" name="customerReference" value="${escapeHtml(value ?? "")}" />`;
   }
   if (type === "shipment" && ["origin", "destination", "transitPoint", "route", "invoiceCopy", "packingListCopy", "podCopy", "customsDocuments", "otherDocuments"].includes(key)) {
     return `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value ?? "")}" />`;
@@ -3204,7 +3206,6 @@ function shipmentDialogBody(mode = "shipment") {
       ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), "Export")}
       ${select("shipmentService", "Service Type", shipmentServiceOptions("Export"), "SE")}
       ${selectEditable("transportMode", "Transport Mode", "transportMode", ["Air", "Sea", "Land", "Courier"])}
-      ${input("customerReference", "Customer Reference Number", "")}
       ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
       ${input("salesPerson", "Sales Person", currentUserName())}
       ${input("airwayBillNo", "Airway Bill / Bill of Lading", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo"), false)}
@@ -3484,20 +3485,21 @@ function consolidationShipmentPicker(initialJobs = "", currentLoadNo = "") {
 }
 
 function bindShipmentDirectionDialog() {
-  const directionSelect = dialogBody.querySelector("select[name='shipmentDirection']");
-  const serviceSelect = dialogBody.querySelector("select[name='shipmentService']");
+  const directionSelect = dialogBody.querySelector("[name='shipmentDirection']");
+  const serviceSelect = dialogBody.querySelector("[name='shipmentService']");
   const otherField = dialogBody.querySelector("[name='shipmentServiceOther']");
   if (!directionSelect || !serviceSelect) return;
+  const serviceList = dialogBody.querySelector("#shipmentServiceOptions");
 
   const syncOptions = () => {
     const currentValue = serviceSelect.value;
     const options = shipmentServiceOptions(directionSelect.value);
-    serviceSelect.innerHTML = options.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("");
+    if (serviceList) serviceList.innerHTML = options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("");
     if (options.includes(currentValue)) {
       serviceSelect.value = currentValue;
-    } else if (directionSelect.value === "WHC") {
-      serviceSelect.value = "WHC";
-      if (otherField) otherField.placeholder = "Manual warehouse remark";
+    } else if (directionSelect.value === "Consoladation" || directionSelect.value === "Consolidation") {
+      serviceSelect.value = "Consoladation";
+      if (otherField) otherField.placeholder = "Manual consolidation remark";
     } else {
       serviceSelect.value = options[0];
       if (otherField) otherField.placeholder = "Optional other service";
@@ -3949,10 +3951,11 @@ function parseTariffChargeLines(value) {
   }
 }
 
-function tariffChargeTable(lines, total, grandTotal, showActions = true) {
+function tariffChargeTable(lines, total, grandTotal, showActions = true, options = {}) {
   const actionHeader = showActions ? "<th>Button</th>" : "";
   const footerAction = showActions ? "<th></th>" : "";
   const emptyColspan = showActions ? 6 : 5;
+  const showTotalRow = options.showTotalRow !== false;
   const rows = lines.length
     ? lines.map((line, index) => `<tr>
         <td>${index + 1}</td>
@@ -3962,12 +3965,12 @@ function tariffChargeTable(lines, total, grandTotal, showActions = true) {
         <td>${money(line.total)}</td>
         ${showActions ? `<td><button type="button" class="ghost-button" data-remove-tariff-charge="${index}">Remove</button></td>` : ""}
       </tr>`).join("")
-    : `<tr><td colspan="${emptyColspan}" class="empty-state">No additional charges added.</td></tr>`;
+    : `<tr><td colspan="${emptyColspan}" class="empty-state">No charges added.</td></tr>`;
   return `<div class="table-wrap"><table class="tariff-charges-table">
     <thead><tr><th>Sr no</th><th>Description</th><th>Quotation per unit</th><th>Units</th><th>Total</th>${actionHeader}</tr></thead>
     <tbody>${rows}</tbody>
     <tfoot>
-      <tr><th colspan="4">Total for additional charges</th><th>${money(total)}</th>${footerAction}</tr>
+      ${showTotalRow ? `<tr><th colspan="4">Total</th><th>${money(total)}</th>${footerAction}</tr>` : ""}
       <tr><th colspan="4">Grand total</th><th>${money(grandTotal)}</th>${footerAction}</tr>
     </tfoot>
   </table></div>`;
@@ -4586,7 +4589,7 @@ function invoiceDocumentHtml(record) {
         <div>
           <span>Amount</span>
           <strong>${money(record.revenue)}</strong>
-          <small>Status: ${escapeHtml(record.status)}</small>
+          <small>${escapeHtml(record.invoiceNo)}</small>
         </div>
       </section>
       <section class="meta">
@@ -4596,15 +4599,12 @@ function invoiceDocumentHtml(record) {
         <p><strong>Shipment No</strong><span>${escapeHtml(record.shipmentNo)}</span></p>
         <p><strong>Assigned Tariff</strong><span>${escapeHtml(shipmentItem?.tariffNo || "")}</span></p>
         <p><strong>Nature of Goods</strong><span>${escapeHtml(shipmentItem?.natureOfGoods || "")}</span></p>
-        <p><strong>Status</strong><span>${escapeHtml(record.status)}</span></p>
       </section>
       <table><tbody>
         <tr><th>Origin</th><td>${escapeHtml(shipmentItem?.origin || "")}</td><th>Destination</th><td>${escapeHtml(shipmentItem?.destination || "")}</td></tr>
-        <tr><th>Revenue</th><td>${money(record.revenue)}</td><th>Supplier Cost</th><td>${money(record.supplierCost)}</td></tr>
-        <tr><th>Gross Profit</th><td colspan="3">${money(record.grossProfit)}</td></tr>
       </tbody></table>
-      <h2>Tariff Additional Charges</h2>
-      ${tariffChargeTable(tariffCharges, Number(tariffItem?.additionalChargesTotal || 0), Number(tariffItem?.grandTotal || record.revenue || 0), false)}
+      <h2>Charges</h2>
+      ${tariffChargeTable(tariffCharges, Number(tariffItem?.additionalChargesTotal || 0), Number(tariffItem?.grandTotal || record.revenue || 0), false, { showTotalRow: false })}
     `
   );
 }
@@ -4626,7 +4626,7 @@ function tariffDocumentHtml(record) {
         <div>
           <span>Grand Total</span>
           <strong>${money(record.grandTotal)}</strong>
-          <small>Minimum charge ${money(record.minCharge)}</small>
+          <small>${escapeHtml(record.tariffNo)}</small>
         </div>
       </section>
       <section class="meta">
@@ -4635,13 +4635,9 @@ function tariffDocumentHtml(record) {
         <p><strong>Origin</strong><span>${escapeHtml(record.origin)}</span></p>
         <p><strong>Destination</strong><span>${escapeHtml(record.destination)}</span></p>
         <p><strong>Main Section</strong><span>${escapeHtml(record.mainSection)}</span></p>
-        <p><strong>Weight Section</strong><span>${escapeHtml(record.weightSection)}</span></p>
-        <p><strong>Minimum Up To</strong><span>${escapeHtml(record.minUpTo)}</span></p>
-        <p><strong>Rate</strong><span>${money(record.rate)}</span></p>
-        <p><strong>Minimum Charge</strong><span>${money(record.minCharge)}</span></p>
       </section>
-      <h2>Additional Charges</h2>
-      ${tariffChargeTable(charges, Number(record.additionalChargesTotal || 0), Number(record.grandTotal || 0), false)}
+      <h2>Charges</h2>
+      ${tariffChargeTable(charges, Number(record.additionalChargesTotal || 0), Number(record.grandTotal || 0), false, { showTotalRow: false })}
     `
   );
 }
