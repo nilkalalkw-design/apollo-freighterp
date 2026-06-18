@@ -2019,19 +2019,19 @@ function reportTypeOptions() {
 }
 
 function shipmentDirectionOptions() {
-  return ["Import", "Export", "WHC"];
+  return ["Export", "Import", "WHC"];
 }
 
 function shipmentServiceOptions(direction) {
   if (direction === "Import") {
-    return ["SI", "AI", "LI", "Consolidation", "Other"];
+    return ["SI", "AI", "LI", "FI"];
   }
 
   if (direction === "WHC") {
-    return ["WHC Remark", "Consolidation"];
+    return ["WHC", "Other"];
   }
 
-  return ["SE", "AE", "LE", "Consolidation", "Other"];
+  return ["SE", "AE", "LE", "FE"];
 }
 
 function isConsolidationShipment(row) {
@@ -2606,6 +2606,9 @@ function openRecord(type, id) {
   if (type === "shipment") bindShipmentDirectionDialog();
   if (type === "shipment") bindShipmentCustomerTariffs();
   if (type === "shipment") bindShipmentCustomerAutofill();
+  if (type === "shipment") bindShipmentCopySections();
+  if (type === "shipment") bindTransporterAutofill();
+  if (type === "shipment") bindTariffFinancialAutofill();
   if (type === "shipment") bindVolumeCalculator();
   if (type === "shipment") bindPalletDimensionBuilder();
   if (type === "tariff") bindTariffAdditionalCharges(record.additionalChargesJson || "[]");
@@ -2647,6 +2650,9 @@ function detailFieldControl(type, key, value, record) {
   if (type === "shipment" && ["sell", "buyCost"].includes(key)) {
     return "";
   }
+  if (type === "shipment" && ["origin", "destination", "transitPoint", "route", "invoiceCopy", "packingListCopy", "podCopy", "customsDocuments", "otherDocuments"].includes(key)) {
+    return `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value ?? "")}" />`;
+  }
   if (type === "shipment" && key === "actualKg" && record?.entryMode === "airway") {
     return `<input type="hidden" name="actualKg" value="${escapeHtml(value ?? 0)}" />`;
   }
@@ -2683,7 +2689,8 @@ function detailFieldControl(type, key, value, record) {
 
   if (options.length) {
     const optionKey = dropdownKeyForField(key);
-    return optionKey ? selectEditable(key, labelize(key), optionKey, options, String(value ?? "")) : select(key, labelize(key), options, String(value ?? ""));
+    const fieldLabel = type === "shipment" && key === "shipmentDirection" ? "Shipment Type" : labelize(key);
+    return optionKey ? selectEditable(key, fieldLabel, optionKey, options, String(value ?? "")) : select(key, fieldLabel, options, String(value ?? ""));
   }
 
   const inputType = key.toLowerCase().includes("date") ? "date" : typeof value === "number" ? "number" : "text";
@@ -2984,6 +2991,9 @@ function dialogConfigFor(type, mode = "") {
         bindShipmentDirectionDialog();
         bindShipmentCustomerTariffs();
         bindShipmentCustomerAutofill();
+        bindShipmentCopySections();
+        bindTransporterAutofill();
+        bindTariffFinancialAutofill();
         bindVolumeCalculator();
         bindPalletDimensionBuilder();
       }
@@ -3135,7 +3145,8 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("bookingDate", "Booking Date", today(), false, "date")}
       ${input("shipmentDate", "Shipment Date", today(), false, "date")}
       ${select("status", "Status", statusOptions(), "Booked")}
-      ${select("shipmentService", "Service Type", shipmentServiceOptions("Export"), "AE")}
+      ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), "Export")}
+      ${select("shipmentService", "Service Type", shipmentServiceOptions("Export"), "SE")}
       ${selectEditable("transportMode", "Transport Mode", "transportMode", ["Air", "Sea", "Land", "Courier"])}
       ${input("customerReference", "Customer Reference Number", "")}
       ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
@@ -3150,6 +3161,7 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("customerEmail", "Email Address", "", false, "email")}
     `)}
     ${formSection("Shipper Information", `
+      ${checkbox("copyCustomerToShipper", "Same as customer information")}
       ${input("shipperName", "Shipper Name", "")}
       ${textarea("shipperAddress", "Shipper Address", "", false, 3)}
       ${input("shipperContactPerson", "Contact Person", "")}
@@ -3157,23 +3169,25 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("shipperEmail", "Email Address", "", false, "email")}
       ${input("shipperVatTrn", "VAT / TRN Number", "")}
       ${input("shipperCountry", "Country", "Kuwait")}
-    `)}
+    `, true)}
     ${formSection("Consignee Information", `
+      ${checkbox("copyCustomerToConsignee", "Same as customer information")}
       ${selectFrom("consigneeName", "Consignee Name", state.customers.map((row) => row.name), defaultCustomer)}
       ${textarea("consigneeAddress", "Consignee Address", "", false, 3)}
       ${input("consigneeContactPerson", "Contact Person", "")}
       ${input("consigneeMobile", "Mobile Number", "")}
       ${input("consigneeEmail", "Email Address", "", false, "email")}
       ${input("consigneeCountry", "Country", "")}
-    `)}
+    `, true)}
     ${formSection("Pickup Information", `
+      ${checkbox("copyCustomerToPickup", "Same as customer information")}
       ${input("pickupLocation", "Pickup Location", "")}
       ${textarea("pickupAddress", "Pickup Address", "", false, 3)}
       ${input("pickupContactPerson", "Pickup Contact Person", "")}
       ${input("pickupMobile", "Pickup Mobile", "")}
       ${input("pickupDate", "Pickup Date", today(), false, "date")}
       ${input("pickupTime", "Pickup Time", "", false, "time")}
-    `)}
+    `, true)}
     ${formSection("Delivery Information", `
       ${input("deliveryLocation", "Delivery Location", "")}
       ${textarea("deliveryAddress", "Delivery Address", "", false, 3)}
@@ -3181,8 +3195,9 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("deliveryMobile", "Delivery Mobile", "")}
       ${input("deliveryDate", "Delivery Date", "", false, "date")}
       ${input("deliveryTime", "Delivery Time", "", false, "time")}
-    `)}
+    `, true)}
     ${formSection("Notify Party", `
+      ${checkbox("copyDeliveryToNotify", "Same as delivery information")}
       ${input("notifyPartyName", "Notify Party Name", "")}
       ${textarea("notifyPartyAddress", "Notify Party Address", "", false, 3)}
       ${input("notifyContactPerson", "Contact Person", "")}
@@ -3190,52 +3205,43 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("notifyEmail", "Email Address", "", false, "email")}
     `)}
     ${formSection("Billing Party 1", `
+      ${checkbox("copyCustomerToBilling1", "Same as customer information")}
       ${input("billTo1", "Billing Party Name", defaultCustomer)}
       ${textarea("billingParty1Address", "Billing Address", "", false, 3)}
       ${input("billingParty1ContactPerson", "Contact Person", "")}
       ${input("billingParty1Mobile", "Mobile Number", "")}
       ${input("billingParty1Email", "Email Address", "", false, "email")}
       ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"])}
-    `)}
+    `, true)}
     ${formSection("Billing Party 2", `
+      ${checkbox("copyDeliveryToBilling2", "Same as delivery information")}
       ${input("billTo2", "Secondary Billing Party Name", "")}
       ${textarea("billingParty2Address", "Secondary Billing Address", "", false, 3)}
       ${input("billingParty2ContactPerson", "Contact Person", "")}
       ${input("billingParty2Mobile", "Mobile Number", "")}
       ${input("billingParty2Email", "Email Address", "", false, "email")}
       ${input("billingParty2Percentage", "Billing Percentage", "", false, "number")}
-    `)}
+    `, true)}
     ${cargoItemsBuilder()}
-    ${formSection("Routing Information", `
-      ${input("origin", "Origin", "Kuwait City")}
-      ${input("destination", "Destination", "Riyadh")}
-      ${input("transitPoint", "Transit Point", "")}
-      ${input("route", "Route", "")}
-    `)}
     ${formSection("Transport Information", `
-      ${input("transporter", "Transporter", "")}
+      ${selectFrom("transporter", "Transporter", state.suppliers.map((row) => ({ value: row.name, label: `${row.code} | ${row.name}` })), "")}
+      ${selectFrom("transporterCode", "Transporter Number", state.suppliers.map((row) => ({ value: row.code, label: `${row.code} | ${row.name}` })), "")}
       ${input("vehicleNo", "Vehicle Number", "")}
       ${input("driverName", "Driver Name", "")}
       ${input("driverMobile", "Driver Mobile", "")}
       ${input("tripNo", "Trip Number", "")}
       ${input("manifestNo", "Manifest Number", "")}
       ${selectEditable("vehicleType", "Vehicle Type", "vehicleType", ["FTL", "LTL"])}
-    `)}
+    `, true)}
     ${formSection("Financial Information", `
+      ${selectFrom("tariffNo", "Tariff Number", tariffOptionsForCustomer(defaultCustomer), "")}
       ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
       ${input("freightAmount", "Freight Amount", "0.000", false, "number")}
       ${input("otherChargesAmount", "Other Charges", "0.000", false, "number")}
       ${input("taxAmount", "Tax Amount", "0.000", false, "number")}
       ${input("totalAmount", "Total Amount", "0.000", false, "number")}
       ${selectEditable("paymentMode", "Payment Mode", "paymentMode", ["Cash", "Credit", "Bank Transfer", "Card"])}
-    `)}
-    ${formSection("Attachments", `
-      ${input("invoiceCopy", "Invoice Copy", "")}
-      ${input("packingListCopy", "Packing List", "")}
-      ${input("podCopy", "POD Copy", "")}
-      ${input("customsDocuments", "Customs Documents", "")}
-      ${input("otherDocuments", "Other Documents", "")}
-    `)}
+    `, true)}
     ${formSection("Remarks", `
       ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
       ${textarea("specialInstructions", "Special Instructions", "", false, 3)}
@@ -3248,8 +3254,10 @@ function shipmentDialogBody(mode = "shipment") {
   `;
 }
 
-function formSection(title, body) {
-  return `<section class="form-section"><h3>${escapeHtml(title)}</h3><div class="form-section-grid">${body}</div></section>`;
+function formSection(title, body, collapsible = false) {
+  const sectionBody = `<div class="form-section-grid">${body}</div>`;
+  if (!collapsible) return `<section class="form-section"><h3>${escapeHtml(title)}</h3>${sectionBody}</section>`;
+  return `<details class="form-section collapsible-section" open><summary>${escapeHtml(title)}</summary>${sectionBody}</details>`;
 }
 
 function palletDimensionBuilder(initialValue = "[]") {
@@ -3279,9 +3287,16 @@ function cargoItemsBuilder(initialValue = "[]") {
       ${input("palletHeight", "Height", "100", false, "number")}
       ${select("palletDimensionUnit", "Dimension Unit", ["CM", "M", "INCH"], "CM")}
       ${input("palletWeight", "Weight", "0", false, "number")}
+      ${input("palletTotalWeight", "Total Weight", "0", true, "number")}
       ${select("palletWeightUnit", "Weight Unit", ["KG", "LBS"], "KG")}
       ${input("palletRemarks", "Remarks", "")}
       <button type="button" class="secondary-button" data-dialog-action="add-pallet-line">Add</button>
+    </div>
+    <div class="cargo-live-summary" data-cargo-live-summary>
+      <span>Pieces: 1</span>
+      <span>Total Weight: 0 KG</span>
+      <span>CBM: 1.2</span>
+      <span>Chargeable: 300 KG</span>
     </div>
     <div class="form-section-grid cargo-totals">
       ${input("pieces", "Total Pieces", "0", true, "number")}
@@ -3461,10 +3476,13 @@ function bindShipmentDirectionDialog() {
   if (!directionSelect || !serviceSelect) return;
 
   const syncOptions = () => {
+    const currentValue = serviceSelect.value;
     const options = shipmentServiceOptions(directionSelect.value);
     serviceSelect.innerHTML = options.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("");
-    if (directionSelect.value === "WHC") {
-      serviceSelect.value = "WHC Remark";
+    if (options.includes(currentValue)) {
+      serviceSelect.value = currentValue;
+    } else if (directionSelect.value === "WHC") {
+      serviceSelect.value = "WHC";
       if (otherField) otherField.placeholder = "Manual warehouse remark";
     } else {
       serviceSelect.value = options[0];
@@ -3531,6 +3549,100 @@ function bindShipmentCustomerAutofill() {
   codeField?.addEventListener("change", () => fill(codeField));
 }
 
+function customerDialogSnapshot() {
+  return {
+    name: dialogValue("customer"),
+    code: dialogValue("customerCode"),
+    address: customerAddressFor(dialogValue("customer"), dialogValue("customerCode")),
+    contact: dialogValue("customerContactPerson") || dialogValue("customer"),
+    mobile: dialogValue("customerMobile"),
+    email: dialogValue("customerEmail"),
+    country: ""
+  };
+}
+
+function deliveryDialogSnapshot() {
+  return {
+    name: dialogValue("deliveryLocation"),
+    address: dialogValue("deliveryAddress"),
+    contact: dialogValue("deliveryContactPerson"),
+    mobile: dialogValue("deliveryMobile"),
+    email: ""
+  };
+}
+
+function customerAddressFor(name, code) {
+  const lookup = [name, code].map((item) => String(item || "").trim().toLowerCase()).filter(Boolean);
+  const customer = state.customers.find((row) => lookup.includes(String(row.name || "").trim().toLowerCase()) || lookup.includes(String(row.code || "").trim().toLowerCase()));
+  return customer?.fullAddress || customer?.locationOrLane || "";
+}
+
+function bindShipmentCopySections() {
+  const mappings = [
+    ["copyCustomerToShipper", customerDialogSnapshot, { shipperName: "name", shipperAddress: "address", shipperContactPerson: "contact", shipperMobile: "mobile", shipperEmail: "email", shipperCountry: "country" }],
+    ["copyCustomerToConsignee", customerDialogSnapshot, { consigneeName: "name", consigneeAddress: "address", consigneeContactPerson: "contact", consigneeMobile: "mobile", consigneeEmail: "email", consigneeCountry: "country" }],
+    ["copyCustomerToPickup", customerDialogSnapshot, { pickupLocation: "name", pickupAddress: "address", pickupContactPerson: "contact", pickupMobile: "mobile" }],
+    ["copyCustomerToBilling1", customerDialogSnapshot, { billTo1: "name", billingParty1Address: "address", billingParty1ContactPerson: "contact", billingParty1Mobile: "mobile", billingParty1Email: "email" }],
+    ["copyDeliveryToNotify", deliveryDialogSnapshot, { notifyPartyName: "name", notifyPartyAddress: "address", notifyContactPerson: "contact", notifyMobile: "mobile", notifyEmail: "email" }],
+    ["copyDeliveryToBilling2", deliveryDialogSnapshot, { billTo2: "name", billingParty2Address: "address", billingParty2ContactPerson: "contact", billingParty2Mobile: "mobile", billingParty2Email: "email" }]
+  ];
+
+  mappings.forEach(([checkboxName, sourceFactory, fieldMap]) => {
+    const checkboxField = dialogBody.querySelector(`input[name='${checkboxName}']`);
+    if (!checkboxField) return;
+    const copy = () => {
+      if (!checkboxField.checked) return;
+      const source = sourceFactory();
+      Object.entries(fieldMap).forEach(([target, sourceKey]) => setDialogValue(target, source[sourceKey]));
+    };
+    checkboxField.addEventListener("change", copy);
+    ["customer", "customerCode", "customerContactPerson", "customerMobile", "customerEmail", "deliveryLocation", "deliveryAddress", "deliveryContactPerson", "deliveryMobile"].forEach((name) => {
+      dialogBody.querySelector(`[name='${name}']`)?.addEventListener("input", copy);
+    });
+    copy();
+  });
+}
+
+function bindTransporterAutofill() {
+  const transporterField = dialogBody.querySelector("input[name='transporter']");
+  const codeField = dialogBody.querySelector("input[name='transporterCode']");
+  if (!transporterField && !codeField) return;
+  const fill = (field) => {
+    const value = String(field?.value || "").trim().toLowerCase();
+    if (!value) return;
+    const supplier = state.suppliers.find((row) => String(row.name || "").trim().toLowerCase() === value || String(row.code || "").trim().toLowerCase() === value);
+    if (!supplier) return;
+    setDialogValue("transporter", supplier.name);
+    setDialogValue("transporterCode", supplier.code);
+  };
+  transporterField?.addEventListener("input", () => fill(transporterField));
+  transporterField?.addEventListener("change", () => fill(transporterField));
+  codeField?.addEventListener("input", () => fill(codeField));
+  codeField?.addEventListener("change", () => fill(codeField));
+}
+
+function bindTariffFinancialAutofill() {
+  const tariffField = dialogBody.querySelector("input[name='tariffNo']");
+  if (!tariffField) return;
+  const fill = () => {
+    const tariff = state.tariffs.find((row) => String(row.tariffNo || "").trim().toLowerCase() === String(tariffField.value || "").trim().toLowerCase());
+    if (!tariff) return;
+    setDialogValue("currency", tariff.currency || dialogValue("currency"));
+    setDialogValue("freightAmount", tariff.rate || tariff.minimumCharge || 0);
+    setDialogValue("otherChargesAmount", tariff.additionalChargesTotal || 0);
+    const freight = Number(tariff.rate || tariff.minimumCharge || 0);
+    const other = Number(tariff.additionalChargesTotal || 0);
+    setDialogValue("totalAmount", Number((freight + other).toFixed(3)));
+  };
+  tariffField.addEventListener("input", fill);
+  tariffField.addEventListener("change", fill);
+  fill();
+}
+
+function dialogValue(name) {
+  return dialogBody.querySelector(`[name='${CSS.escape(name)}']`)?.value || "";
+}
+
 function setDialogValue(name, value) {
   const field = dialogBody.querySelector(`[name='${CSS.escape(name)}']`);
   if (field && value !== undefined && value !== null && value !== "") field.value = value;
@@ -3579,6 +3691,7 @@ function bindPalletDimensionBuilder() {
   const actualWeightField = dialogBody.querySelector("input[name='actualKg']");
   const manualChargeableField = dialogBody.querySelector("input[name='manualChargeableKg']");
   const tcnField = dialogBody.querySelector("input[name='tcnNumber']");
+  const airwayBillField = dialogBody.querySelector("input[name='airwayBillNo']");
   if (!builder || !hiddenField) return;
 
   const fields = {
@@ -3589,11 +3702,36 @@ function bindPalletDimensionBuilder() {
     height: dialogBody.querySelector("input[name='palletHeight']"),
     dimensionUnit: dialogBody.querySelector("[name='palletDimensionUnit']"),
     weight: dialogBody.querySelector("input[name='palletWeight']"),
+    totalWeight: dialogBody.querySelector("input[name='palletTotalWeight']"),
     weightUnit: dialogBody.querySelector("[name='palletWeightUnit']"),
     remarks: dialogBody.querySelector("input[name='palletRemarks']")
   };
   const list = builder.querySelector("[data-pallet-lines-list]");
+  const liveSummary = builder.querySelector("[data-cargo-live-summary]");
   const lines = parsePalletDimensions(hiddenField.value || "[]");
+
+  const liveCalculation = () => {
+    const count = Number(fields.count?.value || 0);
+    const length = Number(fields.length?.value || 0);
+    const width = Number(fields.width?.value || 0);
+    const height = Number(fields.height?.value || 0);
+    const weight = Number(fields.weight?.value || 0);
+    const weightUnit = fields.weightUnit?.value || "KG";
+    const totalWeight = weight * count;
+    const totalWeightKg = weightUnit === "LBS" ? totalWeight * 0.453592 : totalWeight;
+    const cbm = cargoVolumeCbm(count, length, width, height, fields.dimensionUnit?.value || "CM");
+    const divisor = volumeDivisorFor(dialogBody.querySelector("[name='volumeCategory']")?.value);
+    const chargeable = Number((roundUpToHalf(cbm) * divisor).toFixed(3));
+    if (fields.totalWeight) fields.totalWeight.value = String(Number(totalWeight.toFixed(3)));
+    if (liveSummary) {
+      liveSummary.innerHTML = `
+        <span>Pieces: ${escapeHtml(count || 0)}</span>
+        <span>Total Weight: ${money(totalWeightKg)} KG</span>
+        <span>CBM: ${money(cbm)}</span>
+        <span>Chargeable: ${money(chargeable)} KG</span>
+      `;
+    }
+  };
 
   const sync = () => {
     const totalPieces = lines.reduce((sum, line) => sum + Number(line.count || line.quantity || 0), 0);
@@ -3627,7 +3765,8 @@ function bindPalletDimensionBuilder() {
       const weight = Number(fields.weight?.value || 0);
       const weightUnit = fields.weightUnit?.value || "KG";
       const total = cargoVolumeCbm(count, length, width, height, dimensionUnit);
-      const weightKg = weightUnit === "LBS" ? weight * 0.453592 : weight;
+      const totalWeight = weight * count;
+      const weightKg = weightUnit === "LBS" ? totalWeight * 0.453592 : totalWeight;
       lines.push({
         packageType: fields.packageType?.value || "Pallet",
         count,
@@ -3638,6 +3777,7 @@ function bindPalletDimensionBuilder() {
         dimensionUnit,
         weight,
         weightUnit,
+        totalWeight,
         weightKg,
         volumeWeight: total,
         total,
@@ -3656,12 +3796,16 @@ function bindPalletDimensionBuilder() {
 
   dialogBody.querySelector("[data-dialog-action='generate-tcn']")?.addEventListener("click", () => {
     const data = collectFormValues(dialogBody.closest("form"));
-    const tcn = data.tcnNumber || nextTcnNumber();
+    const tcn = data.tcnNumber || data.airwayBillNo || nextTcnNumber();
     if (tcnField) tcnField.value = tcn;
-    openPrintableDocument(tcnDocumentHtml({ ...data, tcnNumber: tcn, palletDimensionsJson: hiddenField.value }));
+    if (airwayBillField) airwayBillField.value = tcn;
+    openPrintableDocument(tcnDocumentHtml({ ...data, airwayBillNo: tcn, tcnNumber: tcn, palletDimensionsJson: hiddenField.value }));
   });
 
   dialogBody.querySelector("[name='volumeCategory']")?.addEventListener("change", sync);
+  Object.values(fields).forEach((field) => field?.addEventListener("input", liveCalculation));
+  Object.values(fields).forEach((field) => field?.addEventListener("change", liveCalculation));
+  liveCalculation();
   sync();
 }
 
@@ -4314,59 +4458,66 @@ function podDocumentHtml(record) {
 function manifestDocumentHtml(record) {
   const jobNos = String(record.jobNumbers || "").split(",").map((item) => item.trim()).filter(Boolean);
   const shipments = jobNos.map((jobNo) => state.shipments.find((row) => row.jobNo === jobNo)).filter(Boolean);
+  const totals = shipments.reduce((sum, shipmentItem) => ({
+    qty: sum.qty + Number(shipmentItem.pieces || 0),
+    gross: sum.gross + Number(shipmentItem.actualKg || 0),
+    net: sum.net + Number(shipmentItem.manualChargeableKg || shipmentItem.chargeableKg || 0),
+    value: sum.value + Number(shipmentItem.totalAmount || shipmentItem.freightAmount || 0)
+  }), { qty: 0, gross: 0, net: 0, value: 0 });
   const rows = shipments.length
-    ? shipments.map((shipmentItem, index) => `<tr>
-        <td>${index + 1}</td>
-        <td>${escapeHtml(shipmentItem.jobNo)}</td>
-        <td>${escapeHtml(shipmentItem.airwayBillNo || "")}</td>
+    ? shipments.map((shipmentItem) => `<tr>
+        <td>${escapeHtml(shipmentItem.tripNo || shipmentItem.manifestNo || record.loadNo || "")}</td>
+        <td>${escapeHtml(shipmentItem.customerReference || shipmentItem.airwayBillNo || "")}</td>
+        <td>${escapeHtml(shipmentItem.jobNo || "")}</td>
+        <td>${escapeHtml(shipmentItem.shipperName || shipmentItem.customer || "")}</td>
         <td>${escapeHtml(shipmentItem.consigneeName || shipmentItem.customer || "")}</td>
-        <td>${escapeHtml(shipmentItem.origin || "")}</td>
-        <td>${escapeHtml(shipmentItem.destination || "")}</td>
-        <td>${escapeHtml(shipmentItem.pickupLocation || "")}</td>
-        <td>${escapeHtml(shipmentItem.deliveryLocation || "")}</td>
-        <td>${escapeHtml(shipmentItem.transportMode || "")}</td>
+        <td>${escapeHtml(shipmentItem.destination || shipmentItem.deliveryLocation || "")}</td>
         <td>${escapeHtml(shipmentItem.pieces || "")}</td>
         <td>${money(shipmentItem.actualKg || 0)}</td>
         <td>${money(shipmentItem.manualChargeableKg || shipmentItem.chargeableKg || 0)}</td>
+        <td>${escapeHtml(shipmentItem.currency || "")} ${money(shipmentItem.totalAmount || shipmentItem.freightAmount || 0)}</td>
         <td>${escapeHtml(shipmentItem.natureOfGoods || "")}</td>
-        <td>${escapeHtml([shipmentItem.vehicleNo, shipmentItem.driverName, shipmentItem.driverMobile].filter(Boolean).join(" / "))}</td>
+        <td>${escapeHtml(shipmentItem.hsCode || shipmentItem.customsDocuments || "AS PER BOE")}</td>
+        <td>${escapeHtml(shipmentItem.notifyPartyName || shipmentItem.deliveryContactPerson || "")}</td>
+        <td>${escapeHtml(shipmentItem.countryOfOrigin || shipmentItem.shipperCountry || "")}</td>
       </tr>`).join("")
     : `<tr><td colspan="14">No shipments linked to this manifest.</td></tr>`;
 
   return documentShell(
     `Manifest ${record.loadNo}`,
-    "CONSOLIDATION MANIFEST",
+    "MANIFEST",
     record.loadNo,
     record.tripDate || today(),
     `
-      <section class="document-summary">
-        <div><span>Route</span><strong>${escapeHtml(record.route || "")}</strong><small>${escapeHtml(record.status || "")}</small></div>
-        <div><span>Transport</span><strong>${escapeHtml(record.transporter || "")}</strong><small>${escapeHtml(record.vehicleNo || "")}</small></div>
+      <section class="manifest-sheet">
+        <div class="manifest-header-grid">
+          <p><strong>TRUCK NO</strong><span>${escapeHtml(record.vehicleNo || "")}</span></p>
+          <p><strong>FROM</strong><span>${escapeHtml(record.from || record.origin || record.route || "")}</span></p>
+          <p><strong>MANIFEST NO</strong><span>${escapeHtml(record.loadNo || "")}</span></p>
+          <p><strong>TO</strong><span>${escapeHtml(record.to || record.destination || "")}</span></p>
+          <p><strong>TIR / CARNET #</strong><span>${escapeHtml(record.tirCarnetNo || "")}</span></p>
+          <p><strong>DRIVER NAME</strong><span>${escapeHtml(record.driverName || "")}</span></p>
+          <p><strong>ETD</strong><span>${escapeHtml(record.tripDate || "")}</span></p>
+          <p><strong>MOB NO</strong><span>${escapeHtml(record.driverNumber || record.driverMobile || "")}</span></p>
+          <p><strong>SEAL NO</strong><span>${escapeHtml(record.sealNo || "")}</span></p>
+        </div>
       </section>
-      ${documentBlock("Manifest Information", [
-        ["Manifest Number", record.loadNo],
-        ["Trip Date", record.tripDate],
-        ["Route", record.route],
-        ["Transporter", record.transporter],
-        ["Truck Number", record.vehicleNo],
-        ["Driver Name", record.driverName],
-        ["Driver Number", record.driverNumber],
-        ["Status", record.status]
-      ])}
-      <h2>Shipment Manifest Details</h2>
-      <table>
-        <thead><tr><th>SL</th><th>Job No</th><th>MAWB</th><th>Consignee</th><th>Origin</th><th>Destination</th><th>Pickup</th><th>Delivery</th><th>Mode</th><th>Pkgs</th><th>G.WT</th><th>C.WT</th><th>Goods</th><th>Truck Details</th></tr></thead>
+      <table class="manifest-table">
+        <thead><tr><th>ALT NO</th><th>INV #</th><th>JOB #</th><th>Shipper</th><th>Consignee</th><th>Dest</th><th>QTY</th><th>Gross Weight</th><th>Net Weight</th><th>Value</th><th>Commodity</th><th>HS Code</th><th>NOTIFY PARTY</th><th>COO</th></tr></thead>
         <tbody>${rows}</tbody>
+        <tfoot><tr><th colspan="6">TOTAL</th><th>${escapeHtml(totals.qty)}</th><th>${money(totals.gross)}</th><th>${money(totals.net)}</th><th>${money(totals.value)}</th><th colspan="4"></th></tr></tfoot>
       </table>
-      ${documentBlock("Manifest Totals", [
-        ["Total Jobs", shipments.length],
-        ["Total Pieces", record.pieces],
-        ["Total Gross Weight", money(record.actualKg || 0)],
-        ["Total Chargeable Weight", money(record.chargeableKg || 0)],
-        ["Total CBM", money(record.cbm || 0)]
-      ])}
+      <section class="manifest-declaration">
+        <strong>DECLARATION</strong>
+        <p>We assume all responsibility for all the above information.</p>
+        <span>PAGE 1 OF 1</span>
+      </section>
+      <section class="manifest-stamps">
+        <div>ALT Express STAMP & SIGN</div>
+        <div>CUSTOMS STAMP</div>
+      </section>
     `,
-    { qrValue: record.loadNo }
+    { qrValue: record.loadNo, landscape: true, hideDefaultSignatures: true }
   );
 }
 
@@ -4560,6 +4711,9 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
   const generatedBy = currentUserName();
   const companyName = state.settings.companyName || "APOLLO FREIGHT SOLUTIONS";
   const logoUrl = String(state.settings.companyLogoUrl || "").trim() || defaultDocumentLogoUrl();
+  const pageSize = options.landscape ? "A4 landscape" : "A4 portrait";
+  const pageWidth = options.landscape ? "297mm" : "210mm";
+  const pageMinHeight = options.landscape ? "210mm" : "297mm";
   const logoMarkup = logoUrl
     ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(companyName)} logo" />`
     : `<span>AFS</span>`;
@@ -4570,7 +4724,7 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
       <style>
         * { box-sizing: border-box; }
         body { margin: 0; background: #edf2f7; color: #172033; font-family: Arial, sans-serif; }
-        .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; box-shadow: 0 20px 55px rgba(22, 32, 51, .16); }
+        .page { width: ${pageWidth}; min-height: ${pageMinHeight}; margin: 0 auto; background: #fff; box-shadow: 0 20px 55px rgba(22, 32, 51, .16); }
         .toolbar { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; background: #f8fafc; border-bottom: 1px solid #dbe5ef; }
         button { border: 0; border-radius: 6px; padding: 10px 14px; background: #165c7d; color: #fff; font-weight: 700; cursor: pointer; }
         .document-head { display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 28px 34px; color: #172033; background: #fff; border-top: 8px solid #1f7a8c; border-bottom: 1px solid #dbe5ef; }
@@ -4620,9 +4774,42 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
         .tcn-terms h2 { margin-top: 0; font-size: 14px; }
         .tcn-terms ol { margin: 6px 0 0 18px; padding: 0; }
         .tcn-terms p { font-weight: 700; margin-top: 8px; }
+        .manifest-header-grid { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #172033; margin-bottom: 10px; }
+        .manifest-header-grid p { min-height: 42px; margin: 0; padding: 7px; border-right: 1px solid #172033; border-bottom: 1px solid #172033; }
+        .manifest-header-grid p:nth-child(4n) { border-right: 0; }
+        .manifest-header-grid strong { display: block; font-size: 10px; color: #172033; text-transform: uppercase; }
+        .manifest-header-grid span { display: block; margin-top: 4px; font-size: 12px; color: #172033; overflow-wrap: anywhere; }
+        .manifest-table { table-layout: fixed; font-size: 9px; }
+        .manifest-table th, .manifest-table td { padding: 5px; border-color: #172033; vertical-align: top; overflow-wrap: anywhere; }
+        .manifest-table th { background: #f2f6f8; color: #172033; text-align: center; }
+        .manifest-table tfoot th { font-size: 10px; }
+        .manifest-declaration { display: grid; grid-template-columns: 140px 1fr 120px; align-items: center; gap: 10px; margin-top: 12px; font-size: 11px; }
+        .manifest-declaration p { margin: 0; }
+        .manifest-declaration span { text-align: right; font-weight: 700; }
+        .manifest-stamps { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 20px; }
+        .manifest-stamps div { min-height: 72px; border-top: 1px solid #172033; padding-top: 8px; font-size: 11px; font-weight: 700; text-align: center; }
         .footer-note { margin-top: 26px; padding-top: 14px; border-top: 1px solid #dbe5ef; color: #607080; font-size: 12px; text-align: center; }
-        @page { size: A4 portrait; margin: 8mm; }
-        @media print { body { background: #fff; } .toolbar { display: none; } .page { width: auto; min-height: auto; box-shadow: none; } main { padding-bottom: 8mm; } .document-head { padding-top: 12px; } h2 { break-after: avoid; } }
+        @page { size: ${pageSize}; margin: 8mm; }
+        @media print {
+          body { background: #fff; font-size: 10px; }
+          .toolbar { display: none; }
+          .page { width: auto; min-height: auto; box-shadow: none; }
+          .document-head { padding: 10px 16px; border-top-width: 5px; }
+          .logo { width: 58px; height: 58px; border-radius: 8px; }
+          h1 { font-size: 20px; }
+          .doc-meta strong { font-size: 15px; }
+          main { padding: 10px 16px 8mm; }
+          h2 { margin: 12px 0 6px; font-size: 14px; break-after: avoid; }
+          .document-summary { gap: 8px; margin-bottom: 10px; }
+          .document-summary div { padding: 10px; }
+          .document-summary strong { font-size: 16px; }
+          .meta { gap: 6px; margin-bottom: 8px; }
+          .meta p { padding: 7px; }
+          th, td { padding: 5px; }
+          .signature-grid { margin-top: 24px; gap: 12px; }
+          .signature { min-height: 54px; }
+          .footer-note { margin-top: 10px; padding-top: 8px; font-size: 10px; }
+        }
       </style>
     </head>
     <body>

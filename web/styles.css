@@ -755,6 +755,18 @@ label {
   letter-spacing: 0;
 }
 
+.collapsible-section summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.collapsible-section:not([open]) {
+  gap: 0;
+}
+
 .form-section-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -768,6 +780,22 @@ label {
 .cargo-entry {
   grid-template-columns: repeat(3, minmax(110px, 1fr));
   align-items: end;
+}
+
+.cargo-live-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cargo-live-summary span {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .pallet-builder {
