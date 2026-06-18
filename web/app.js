@@ -2020,7 +2020,7 @@ function reportTypeOptions() {
 }
 
 function shipmentDirectionOptions() {
-  return dropdownOptions("shipmentDirection", ["Export", "Import", "Consoladation"]);
+  return dropdownOptions("shipmentDirection", ["Export", "Import", "Consolidation"]);
 }
 
 function shipmentServiceOptions(direction) {
@@ -2028,8 +2028,8 @@ function shipmentServiceOptions(direction) {
     return dropdownOptions("shipmentService", ["SI", "AI", "LI", "FI", "WHC"]);
   }
 
-  if (direction === "Consoladation" || direction === "Consolidation") {
-    return dropdownOptions("shipmentService", ["Consoladation", "WHC"]);
+  if (direction === "Consolidation" || direction === "Consoladation") {
+    return dropdownOptions("shipmentService", ["Consolidation", "WHC"]);
   }
 
   return dropdownOptions("shipmentService", ["SE", "AE", "LE", "FE", "WHC"]);
@@ -2037,7 +2037,7 @@ function shipmentServiceOptions(direction) {
 
 function isConsolidationShipment(row) {
   const values = [row?.shipmentDirection, row?.shipmentService].map((item) => String(item || "").trim().toLowerCase());
-  return values.includes("consoladation") || values.includes("consolidation");
+  return values.includes("consolidation") || values.includes("consoladation");
 }
 
 function assignedConsolidationJobs(exceptLoadNo = "") {
@@ -3497,8 +3497,8 @@ function bindShipmentDirectionDialog() {
     if (serviceList) serviceList.innerHTML = options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("");
     if (options.includes(currentValue)) {
       serviceSelect.value = currentValue;
-    } else if (directionSelect.value === "Consoladation" || directionSelect.value === "Consolidation") {
-      serviceSelect.value = "Consoladation";
+    } else if (directionSelect.value === "Consolidation" || directionSelect.value === "Consoladation") {
+      serviceSelect.value = "Consolidation";
       if (otherField) otherField.placeholder = "Manual consolidation remark";
     } else {
       serviceSelect.value = options[0];
