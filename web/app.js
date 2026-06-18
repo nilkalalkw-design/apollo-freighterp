@@ -1655,7 +1655,7 @@ function renderSettings() {
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${input("branches", "Branches", state.settings.branches)}
           ${columnLayoutSettings()}
-          ${textarea("columnLayoutJson", "Column Layout JSON", state.settings.columnLayoutJson || "{}", false, 5)}
+          <input type="hidden" name="columnLayoutJson" value="${escapeHtml(state.settings.columnLayoutJson || "{}")}" />
           <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
@@ -2303,7 +2303,7 @@ function configurableColumns(type, defaults) {
   try {
     const config = JSON.parse(state.settings.columnLayoutJson || "{}");
     const columns = config?.[type];
-    if (Array.isArray(columns) && columns.length) {
+    if (Array.isArray(columns)) {
       return columns
         .map((column) => Array.isArray(column) ? column : [column.key, column.label || labelize(column.key)])
         .filter(([key]) => key);
@@ -2373,7 +2373,8 @@ function columnLayoutSettings() {
   return `<fieldset class="column-layout-settings">
     <legend>Register Column Layout</legend>
     ${Object.entries(defaults).map(([type, columns]) => {
-      const activeKeys = new Set((saved[type] || columns).map((column) => Array.isArray(column) ? column[0] : column.key));
+      const savedColumns = Object.prototype.hasOwnProperty.call(saved, type) ? saved[type] : columns;
+      const activeKeys = new Set((Array.isArray(savedColumns) ? savedColumns : columns).map((column) => Array.isArray(column) ? column[0] : column.key));
       return `<details class="column-layout-group" ${type === "shipment" || type === "load" ? "open" : ""}>
         <summary>${escapeHtml(labels[type] || labelize(type))}</summary>
         <div class="column-layout-grid">
