@@ -3354,7 +3354,7 @@ function cargoItemsBuilder(initialValue = "[]") {
       ${input("pieces", "Total Pieces", "0", true, "number")}
       ${input("actualKg", "Total Gross Weight", "0", true, "number")}
       ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
-      ${input("ChargeableWeight", "Chargeable Weight", "0", true, "number")}
+      ${textarea("ChargeableWeight", "Chargeable Weight", "0", true, "number")}
       ${select(   "chargeableFactor",   "Chargeable Factor (kg/CBM)",   ["167", "200", "250", "333"],   "250" )}
       <input type="hidden" name="cbm" value="0" />
       <input type="hidden" name="chargeableKg" value="0" />
