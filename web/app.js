@@ -1678,7 +1678,6 @@ function renderSettings() {
           ${input("branches", "Branches", state.settings.branches)}
           ${columnLayoutSettings()}
           <input type="hidden" name="columnLayoutTouched" value="1" />
-          <input type="hidden" name="columnLayoutJson" value="${escapeHtml(state.settings.columnLayoutJson || "{}")}" />
           <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
@@ -4126,7 +4125,7 @@ function collectFormValues(form) {
     data.sectionAccess = normalizeSectionAccess(formData.getAll("sectionAccessList").join(", ") || "Dashboard");
   }
   if (form.querySelector("input[name='columnLayoutTouched']")) {
-    data.columnLayoutSelection = formData.getAll("columnLayoutSelection");
+    data.columnLayoutSelection = Array.from(form.querySelectorAll("input[name='columnLayoutSelection']:checked")).map((input) => input.value);
   }
   form.querySelectorAll("input[type='checkbox'][name]").forEach((input) => {
     if (["sectionAccessList", "columnLayoutSelection"].includes(input.name)) return;
@@ -5592,10 +5591,10 @@ async function updateSettings(data) {
 function columnLayoutFromSelection(selection) {
   const defaults = defaultColumnLayouts();
   const selected = new Set(selection);
-  return Object.fromEntries(Object.entries(defaults).map(([type, columns]) => [
-    type,
-    columns.filter(([key]) => selected.has(`${type}:${key}`))
-  ]));
+  return Object.fromEntries(Object.entries(defaults).map(([type, columns]) => {
+    const picked = columns.filter(([key]) => selected.has(`${type}:${key}`));
+    return [type, picked.length ? picked : columns];
+  }));
 }
 
 function endpointFor(type) {
