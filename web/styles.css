@@ -778,7 +778,7 @@ label {
 }
 
 .cargo-entry {
-  grid-template-columns: minmax(86px, 1fr) 52px repeat(3, 58px) 66px 82px 98px auto;
+  grid-template-columns: 70px 52px repeat(3, 58px) 66px 82px 98px auto;
   align-items: end;
   min-width: 660px;
   gap: 6px;
@@ -832,8 +832,12 @@ label {
 }
 
 .pallet-builder .cargo-entry {
-  grid-template-columns: minmax(86px, 1fr) 52px repeat(3, 58px) 66px 82px 98px auto;
+  grid-template-columns: 70px 52px repeat(3, 58px) 66px 82px 98px auto;
   justify-content: stretch;
+}
+
+.cargo-description-row {
+  grid-template-columns: 1fr;
 }
 
 .pallet-builder .tariff-charges-table {

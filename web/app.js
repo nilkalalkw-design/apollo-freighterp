@@ -2313,10 +2313,10 @@ function currencyOptions() {
 
 function volumeDivisorFor(category) {
   const label = String(category || "");
-  if (/167/.test(label)) return 47904;
-  if (/200/.test(label)) return 40000;
-  if (/250/.test(label)) return 32000;
-  if (/333/.test(label)) return 24024;
+  if (/167/.test(label)) return 167;
+  if (/200/.test(label)) return 200;
+  if (/250/.test(label)) return 250;
+  if (/333/.test(label)) return 333;
   const match = String(category || "").match(/=\s*(\d+(?:\.\d+)?)\s*KG/i);
   if (match) return Number(match[1]);
   return { Sea: 333, Land: 250, Air: 167 }[category] || 0;
@@ -3300,7 +3300,7 @@ function shipmentDialogBody(mode = "shipment") {
     <input type="hidden" name="tcnNumber" value="" />
     <input type="hidden" name="transitDays" value="3" />
     <input type="hidden" name="shipmentServiceOther" value="" />
-    <div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>
+    <div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN</button></div>
   `;
 }
 
@@ -3329,9 +3329,6 @@ function cargoItemsBuilder(initialValue = "[]") {
     <h3>Cargo Details</h3>
     <input type="hidden" name="cargoItemsJson" value="${escapeHtml(initialValue || "[]")}" />
     <input type="hidden" name="palletDimensionsJson" value="${escapeHtml(initialValue || "[]")}" />
-    <div class="cargo-category-row">
-      ${select("volumeCategory", "Volume CBM Category", volumeCategoryOptions(), "1 CBM = 250 KG")}
-    </div>
     <div class="tariff-charge-entry cargo-entry">
       ${select("palletPackageType", "Package Type", ["Pallet", "Carton", "Crate", "Box", "Package", "Drum"], "Pallet")}
       ${input("palletCount", "Quantity", "1", false, "number")}
@@ -3345,22 +3342,22 @@ function cargoItemsBuilder(initialValue = "[]") {
     </div>
     <div class="cargo-live-summary" data-cargo-live-summary>
       <span>Pieces: 1</span>
-      <span>Total Gross Weight: 0 KG</span>
       <span>CBM: 1.2</span>
-      <span>Chargeable: 300 KG</span>
+      <span>Total Gross Weight: 0 KG</span>
     </div>
     <div class="tariff-charge-table" data-pallet-lines-list></div>
     <div class="form-section-grid cargo-totals">
-      ${input("pieces", "Total Pieces", "0", true, "number")}
-      ${input("actualKg", "Total Gross Weight", "0", true, "number")}
-      ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
-      ${textarea("ChargeableWeight", "Chargeable Weight", "0", true, "number")}
-      ${select(   "chargeableFactor",   "Chargeable Factor (kg/CBM)",   ["167", "200", "250", "333"],   "250" )}
-      <input type="hidden" name="cbm" value="0" />
-      <input type="hidden" name="chargeableKg" value="0" />
+      ${select("volumeCategory", "Volume CBM Category", volumeCategoryOptions(), "1 CBM = 250 KG")}
+      ${input("cbm", "Grand Total CBM", "0", true, "number")}
+      ${input("actualKg", "Total Actual Weight", "0", true, "number")}
+      ${input("chargeableKg", "Chargeable Weight", "0", false, "number")}
+      <input type="hidden" name="pieces" value="0" />
+      <input type="hidden" name="chargeableDivisor" value="250" />
       <input type="hidden" name="manualChargeableKg" value="0" />
     </div>
-    <p class="empty-state">Totals update shipment pieces, actual weight, volume weight, and chargeable weight.</p>
+    <div class="form-section-grid cargo-description-row">
+      ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
+    </div>
   </section>`;
 }
 
@@ -3774,6 +3771,7 @@ function bindPalletDimensionBuilder() {
   const liveSummary = builder.querySelector("[data-cargo-live-summary]");
   const lines = parsePalletDimensions(hiddenField.value || "[]");
   let manualGrossTouched = false;
+  let editingLineIndex = -1;
 
   const liveCalculation = () => {
     const count = Number(fields.count?.value || 0);
@@ -3793,9 +3791,8 @@ function bindPalletDimensionBuilder() {
     if (liveSummary) {
       liveSummary.innerHTML = `
         <span>Pieces: ${escapeHtml(count || 0)}</span>
-        <span>Total Gross Weight: ${money(totalWeightKg)} KG</span>
         <span>CBM: ${money(cbm)}</span>
-        <span>Chargeable: ${money(chargeable)} KG</span>
+        <span>Total Gross Weight: ${money(totalWeightKg)}</span>
       `;
     }
   };
@@ -3817,7 +3814,7 @@ function bindPalletDimensionBuilder() {
     }
     const volumeWeight = isSameAsGrossWeightCategory(volumeCategory) ? actualWeight : totalVolumetricWeight;
     const chargeableWeight = Math.max(actualWeight, volumeWeight);
-    if (chargeableField) chargeableField.value = String(Number(chargeableWeight.toFixed(3)));
+    if (chargeableField && !chargeableField.dataset.manualChargeable) chargeableField.value = String(Number(chargeableWeight.toFixed(3)));
     if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(Number(chargeableWeight.toFixed(3)));
     list.innerHTML = palletDimensionTable(lines, total, roundedTotal, volumeCategory);
   };
@@ -3839,7 +3836,7 @@ function bindPalletDimensionBuilder() {
       const totalWeight = manualGrossTouched ? Number(fields.totalWeight?.value || 0) : weight * count;
       const weightKg = totalWeight;
       const volumetricWeight = cargoVolumetricWeight(count, length, width, height, dimensionUnit, dialogBody.querySelector("[name='volumeCategory']")?.value);
-      lines.push({
+      const line = {
         packageType: fields.packageType?.value || "Pallet",
         count,
         quantity: count,
@@ -3855,7 +3852,13 @@ function bindPalletDimensionBuilder() {
         volumeWeight: total,
         total,
         remarks: ""
-      });
+      };
+      if (editingLineIndex >= 0) {
+        lines.splice(editingLineIndex, 1, line);
+        editingLineIndex = -1;
+      } else {
+        lines.push(line);
+      }
       manualGrossTouched = false;
       sync();
       return;
@@ -3865,6 +3868,24 @@ function bindPalletDimensionBuilder() {
     if (removeButton) {
       lines.splice(Number(removeButton.dataset.removePalletLine), 1);
       sync();
+      return;
+    }
+
+    const editButton = event.target.closest("[data-edit-pallet-line]");
+    if (editButton) {
+      editingLineIndex = Number(editButton.dataset.editPalletLine);
+      const line = lines[editingLineIndex];
+      if (!line) return;
+      if (fields.packageType) fields.packageType.value = line.packageType || "Pallet";
+      if (fields.count) fields.count.value = line.count || line.quantity || 1;
+      if (fields.length) fields.length.value = line.length || 0;
+      if (fields.width) fields.width.value = line.width || 0;
+      if (fields.height) fields.height.value = line.height || 0;
+      if (fields.dimensionUnit) fields.dimensionUnit.value = line.dimensionUnit || "CM";
+      if (fields.weight) fields.weight.value = line.weight || 0;
+      if (fields.totalWeight) fields.totalWeight.value = line.weightKg || line.totalWeight || 0;
+      manualGrossTouched = true;
+      liveCalculation();
     }
   });
 
@@ -3877,6 +3898,10 @@ function bindPalletDimensionBuilder() {
   });
 
   dialogBody.querySelector("[name='volumeCategory']")?.addEventListener("change", sync);
+  chargeableField?.addEventListener("input", () => {
+    chargeableField.dataset.manualChargeable = "1";
+    if (manualChargeableField) manualChargeableField.value = chargeableField.value;
+  });
   fields.totalWeight?.addEventListener("input", () => {
     manualGrossTouched = true;
     liveCalculation();
@@ -3899,20 +3924,16 @@ function cargoVolumeCbm(count, length, width, height, unit = "CM") {
 }
 
 function cargoVolumetricWeight(count, length, width, height, unit = "CM", category = "") {
-  const divisor = volumeDivisorFor(category);
-  if (!divisor) return 0;
-  const factor = unit === "M" ? 100 : unit === "INCH" ? 2.54 : 1;
-  const lengthCm = Number(length || 0) * factor;
-  const widthCm = Number(width || 0) * factor;
-  const heightCm = Number(height || 0) * factor;
-  return Number((Number(count || 0) * lengthCm * widthCm * heightCm / divisor).toFixed(3));
+  const factor = volumeDivisorFor(category);
+  if (!factor) return 0;
+  return Number((cargoVolumeCbm(count, length, width, height, unit) * factor).toFixed(3));
 }
 
 function palletDimensionTable(lines, total, roundedTotal, volumeCategory = "") {
   const rows = lines.length
     ? lines.map((line, index) => `<tr>
       <td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${line.count || line.quantity}</td><td>${line.length}</td><td>${line.width}</td><td>${line.height}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.weightKg || line.totalWeight || 0)}</td><td>${money(cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", volumeCategory))}</td>
-      <td><button type="button" class="ghost-button" data-remove-pallet-line="${index}">Remove</button></td>
+      <td><button type="button" class="ghost-button" data-remove-pallet-line="${index}">Remove</button><button type="button" class="ghost-button" data-edit-pallet-line="${index}">Edit</button></td>
     </tr>`).join("")
     : `<tr><td colspan="10" class="empty-state">No cargo items added.</td></tr>`;
   return `<div class="table-wrap"><table class="tariff-charges-table pallet-dimensions-table">
