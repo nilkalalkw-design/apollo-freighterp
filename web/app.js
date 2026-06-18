@@ -4699,12 +4699,13 @@ function tcnDocumentHtml(record) {
         <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${money(totalGrossWeight)}</td><td>${money(mergedRecord.chargeableKg || totalVolumeWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
       </table>
       ${tcnDimensionsTable(cargoLines)}
+      ${tcnTermsHtml()}
       <section class="tcn-signatures">
         <div><span>RECEIVER'S SIGN</span><strong>${escapeHtml(mergedRecord.receivedBy || "")}</strong></div>
         <div><span>SHIPPER'S SIGN</span><strong>${escapeHtml(mergedRecord.shipperName || mergedRecord.customer || "")}</strong></div>
       </section>
-      ${tcnTermsHtml()}
-    `
+    `,
+    { hideDefaultSignatures: true }
   );
 }
 
@@ -4814,8 +4815,8 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
         .tcn-two-col p { margin: 5px 0 0; font-size: 12px; line-height: 1.35; }
         .tcn-cargo-head { grid-template-columns: 1fr 2fr; }
         .tcn-cargo-table th, .tcn-cargo-table td { text-align: center; }
-        .tcn-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 26px; }
-        .tcn-signatures div { min-height: 78px; border-top: 1px solid #172033; padding-top: 8px; }
+        .tcn-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 42px; margin-top: 44px; }
+        .tcn-signatures div { min-height: 92px; border-top: 1px solid #172033; padding-top: 8px; }
         .tcn-terms { margin-top: 18px; font-size: 10px; line-height: 1.35; }
         .tcn-terms h2 { margin-top: 0; font-size: 14px; }
         .tcn-terms ol { margin: 6px 0 0 18px; padding: 0; }
