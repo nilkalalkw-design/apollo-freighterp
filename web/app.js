@@ -292,7 +292,11 @@ function shipmentMetaNotes(data) {
 function loadMetaNotes(data) {
   return JSON.stringify({
     driverName: String(data.driverName || "").trim(),
-    driverNumber: String(data.driverNumber || "").trim()
+    driverNumber: String(data.driverNumber || "").trim(),
+    driverMobile: String(data.driverMobile || "").trim(),
+    transporterCode: String(data.transporterCode || "").trim(),
+    sealNo: String(data.sealNo || "").trim(),
+    tirCarnetNo: String(data.tirCarnetNo || "").trim()
   });
 }
 
@@ -447,7 +451,7 @@ function shipment(
 
 function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, manifestStatus = "Not Generated", lastManifestRequestNo = "", createdBy = currentUserName(), notes = "") {
   const meta = parseJsonMeta(notes);
-  return { loadNo, tripDate, route, transporter, vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
+  return { loadNo, tripDate, route, transporter, transporterCode: meta.transporterCode || "", vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", driverMobile: meta.driverMobile || "", sealNo: meta.sealNo || "", tirCarnetNo: meta.tirCarnetNo || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
 }
 
 function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName(), fullAddress = "") {
@@ -827,12 +831,30 @@ function boot() {
   dialogSecondary.addEventListener("click", () => dialogState?.onSecondary?.());
   dialogSave.addEventListener("click", saveDialogRecord);
   recordDialog.addEventListener("close", resetDialogShell);
+  document.addEventListener("focus", handleDropdownFocus, true);
+  document.addEventListener("blur", handleDropdownBlur, true);
 
   if (currentSession()) {
     showApp();
   } else {
     showLogin();
   }
+}
+
+function handleDropdownFocus(event) {
+  const field = event.target.closest?.("[data-dropdown-input]");
+  if (!field || field.readOnly) return;
+  field.dataset.previousDropdownValue = field.value;
+  field.value = "";
+}
+
+function handleDropdownBlur(event) {
+  const field = event.target.closest?.("[data-dropdown-input]");
+  if (!field) return;
+  if (!field.value && field.dataset.previousDropdownValue) {
+    field.value = field.dataset.previousDropdownValue;
+  }
+  delete field.dataset.previousDropdownValue;
 }
 
 function isAdminSession() {
@@ -2187,7 +2209,7 @@ function select(name, label, options, selected = options[0]) {
 }
 
 function selectFrom(name, label, options, value = options[0] || "") {
-  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(optionValue(value))}" /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
+  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(optionValue(value))}" data-dropdown-input /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
 }
 
 function optionValue(option) {
@@ -2204,7 +2226,7 @@ function dropdownOptions(key, defaults = []) {
 }
 
 function selectEditable(name, label, optionKey, defaults = [], selected = defaults[0] || "") {
-  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(optionKey)}Options" value="${escapeHtml(optionValue(selected))}" data-dropdown-key="${escapeHtml(optionKey)}" /><datalist id="${escapeHtml(optionKey)}Options">${dropdownOptions(optionKey, defaults).map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
+  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(optionKey)}Options" value="${escapeHtml(optionValue(selected))}" data-dropdown-key="${escapeHtml(optionKey)}" data-dropdown-input /><datalist id="${escapeHtml(optionKey)}Options">${dropdownOptions(optionKey, defaults).map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
 }
 
 function rememberDropdownOptions(data) {
@@ -2290,6 +2312,11 @@ function currencyOptions() {
 }
 
 function volumeDivisorFor(category) {
+  const label = String(category || "");
+  if (/167/.test(label)) return 47904;
+  if (/200/.test(label)) return 40000;
+  if (/250/.test(label)) return 32000;
+  if (/333/.test(label)) return 24024;
   const match = String(category || "").match(/=\s*(\d+(?:\.\d+)?)\s*KG/i);
   if (match) return Number(match[1]);
   return { Sea: 333, Land: 250, Air: 167 }[category] || 0;
@@ -3065,10 +3092,16 @@ function dialogConfigFor(type, mode = "") {
         ${input("loadNo", "Manifest No", nextConsolidationNumber(), false)}
         ${input("tripDate", "Trip Date", today(), false, "date")}
         ${input("route", "Route", "Kuwait - Riyadh")}
-        ${input("transporter", "Transporter", "Al Dana Transport")}
-        ${input("vehicleNo", "Vehicle No", "KWT-00000")}
-        ${input("driverName", "Driver Name", "")}
-        ${input("driverNumber", "Driver Number", "")}
+        ${formSection("Transport Information", `
+          ${selectFrom("transporter", "Transporter", state.suppliers.map((row) => ({ value: row.name, label: `${row.code} | ${row.name}` })), "Al Dana Transport")}
+          ${selectFrom("transporterCode", "Transporter Number", state.suppliers.map((row) => ({ value: row.code, label: `${row.code} | ${row.name}` })), "")}
+          ${input("vehicleNo", "Vehicle No", "KWT-00000")}
+          ${input("driverName", "Driver Name", "")}
+          ${input("driverNumber", "Driver Number", "")}
+          ${input("driverMobile", "Driver Mobile", "")}
+          ${input("sealNo", "Seal No", "")}
+          ${input("tirCarnetNo", "TIR / Carnet #", "")}
+        `, true)}
         ${select("status", "Status", ["Planned", "Loading", "Dispatched", "Delivered", "Closed"])}
         ${select("manifestStatus", "Manifest Status", ["Not Generated", "Pending Approval", "Approved", "Rejected"])}
         ${input("lastManifestRequestNo", "Last Manifest Request No", "")}
@@ -3296,6 +3329,9 @@ function cargoItemsBuilder(initialValue = "[]") {
     <h3>Cargo Details</h3>
     <input type="hidden" name="cargoItemsJson" value="${escapeHtml(initialValue || "[]")}" />
     <input type="hidden" name="palletDimensionsJson" value="${escapeHtml(initialValue || "[]")}" />
+    <div class="cargo-category-row">
+      ${select("volumeCategory", "Volume CBM Category", volumeCategoryOptions(), "1 CBM = 250 KG")}
+    </div>
     <div class="tariff-charge-entry cargo-entry">
       ${select("palletPackageType", "Package Type", ["Pallet", "Carton", "Crate", "Box", "Package", "Drum"], "Pallet")}
       ${input("palletCount", "Quantity", "1", false, "number")}
@@ -3317,7 +3353,6 @@ function cargoItemsBuilder(initialValue = "[]") {
     <div class="form-section-grid cargo-totals">
       ${input("pieces", "Total Pieces", "0", true, "number")}
       ${input("actualKg", "Total Gross Weight", "0", true, "number")}
-      ${select("volumeCategory", "Volume CBM Category", volumeCategoryOptions(), "1 CBM = 250 KG")}
       ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
       <input type="hidden" name="chargeableDivisor" value="250" />
       <input type="hidden" name="cbm" value="0" />
@@ -3697,9 +3732,10 @@ function bindVolumeCalculator() {
       return;
     }
     const divisor = Number(divisorField.value || 0);
-    const cbm = Number(cbmField.value || 0);
-    if (divisor > 0 && cbm >= 0) {
-      chargeableField.value = String(Number((cbm * divisor).toFixed(3)));
+    const gross = Number(actualWeightField?.value || 0);
+    const volumeWeight = Number(cbmField.dataset.volumeWeight || 0);
+    if (divisor > 0 && volumeWeight >= 0) {
+      chargeableField.value = String(Number(Math.max(gross, volumeWeight).toFixed(3)));
     }
   };
 
@@ -3750,8 +3786,8 @@ function bindPalletDimensionBuilder() {
     const totalWeightKg = totalWeight;
     const cbm = cargoVolumeCbm(count, length, width, height, fields.dimensionUnit?.value || "CM");
     const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
-    const divisor = volumeDivisorFor(volumeCategory);
-    const chargeable = isSameAsGrossWeightCategory(volumeCategory) ? totalWeightKg : Number((roundUpToHalf(cbm) * divisor).toFixed(3));
+    const volumeWeight = cargoVolumetricWeight(count, length, width, height, fields.dimensionUnit?.value || "CM", volumeCategory);
+    const chargeable = isSameAsGrossWeightCategory(volumeCategory) ? totalWeightKg : Math.max(totalWeightKg, volumeWeight);
     if (fields.totalWeight && !manualGrossTouched) fields.totalWeight.value = String(Number(computedTotalWeight.toFixed(3)));
     if (liveSummary) {
       liveSummary.innerHTML = `
@@ -3767,18 +3803,22 @@ function bindPalletDimensionBuilder() {
     const totalPieces = lines.reduce((sum, line) => sum + Number(line.count || line.quantity || 0), 0);
     const actualWeight = lines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0);
     const total = lines.reduce((sum, line) => sum + Number(line.total || line.volumeWeight || 0), 0);
+    const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
+    const totalVolumetricWeight = lines.reduce((sum, line) => sum + cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", volumeCategory), 0);
     const roundedTotal = roundUpToHalf(total);
     hiddenField.value = JSON.stringify(lines);
     if (legacyPalletField) legacyPalletField.value = hiddenField.value;
     if (piecesField) piecesField.value = String(totalPieces || Number(piecesField.value || 0));
     if (actualWeightField) actualWeightField.value = String(Number(actualWeight.toFixed(3)));
-    if (cbmField) cbmField.value = String(roundedTotal);
-    const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
-    const divisor = volumeDivisorFor(volumeCategory);
-    const volumeWeight = isSameAsGrossWeightCategory(volumeCategory) ? actualWeight : Number((roundedTotal * divisor).toFixed(3));
-    if (chargeableField) chargeableField.value = String(volumeWeight);
-    if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(Math.max(actualWeight, volumeWeight));
-    list.innerHTML = palletDimensionTable(lines, total, roundedTotal);
+    if (cbmField) {
+      cbmField.value = String(roundedTotal);
+      cbmField.dataset.volumeWeight = String(totalVolumetricWeight);
+    }
+    const volumeWeight = isSameAsGrossWeightCategory(volumeCategory) ? actualWeight : totalVolumetricWeight;
+    const chargeableWeight = Math.max(actualWeight, volumeWeight);
+    if (chargeableField) chargeableField.value = String(Number(chargeableWeight.toFixed(3)));
+    if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(Number(chargeableWeight.toFixed(3)));
+    list.innerHTML = palletDimensionTable(lines, total, roundedTotal, volumeCategory);
   };
 
   builder.addEventListener("click", (event) => {
@@ -3797,6 +3837,7 @@ function bindPalletDimensionBuilder() {
       const total = cargoVolumeCbm(count, length, width, height, dimensionUnit);
       const totalWeight = manualGrossTouched ? Number(fields.totalWeight?.value || 0) : weight * count;
       const weightKg = totalWeight;
+      const volumetricWeight = cargoVolumetricWeight(count, length, width, height, dimensionUnit, dialogBody.querySelector("[name='volumeCategory']")?.value);
       lines.push({
         packageType: fields.packageType?.value || "Pallet",
         count,
@@ -3809,6 +3850,7 @@ function bindPalletDimensionBuilder() {
         weightUnit: "KG",
         totalWeight,
         weightKg,
+        volumetricWeight,
         volumeWeight: total,
         total,
         remarks: ""
@@ -3855,10 +3897,20 @@ function cargoVolumeCbm(count, length, width, height, unit = "CM") {
   return Number((count * length * width * height / divisor).toFixed(3));
 }
 
-function palletDimensionTable(lines, total, roundedTotal) {
+function cargoVolumetricWeight(count, length, width, height, unit = "CM", category = "") {
+  const divisor = volumeDivisorFor(category);
+  if (!divisor) return 0;
+  const factor = unit === "M" ? 100 : unit === "INCH" ? 2.54 : 1;
+  const lengthCm = Number(length || 0) * factor;
+  const widthCm = Number(width || 0) * factor;
+  const heightCm = Number(height || 0) * factor;
+  return Number((Number(count || 0) * lengthCm * widthCm * heightCm / divisor).toFixed(3));
+}
+
+function palletDimensionTable(lines, total, roundedTotal, volumeCategory = "") {
   const rows = lines.length
     ? lines.map((line, index) => `<tr>
-      <td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${line.count || line.quantity}</td><td>${line.length}</td><td>${line.width}</td><td>${line.height}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.weightKg || line.totalWeight || 0)}</td><td>${money(line.total || line.volumeWeight || 0)}</td>
+      <td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${line.count || line.quantity}</td><td>${line.length}</td><td>${line.width}</td><td>${line.height}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.weightKg || line.totalWeight || 0)}</td><td>${money(cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", volumeCategory))}</td>
       <td><button type="button" class="ghost-button" data-remove-pallet-line="${index}">Remove</button></td>
     </tr>`).join("")
     : `<tr><td colspan="10" class="empty-state">No cargo items added.</td></tr>`;
@@ -4656,17 +4708,14 @@ function tariffDocumentHtml(record) {
 }
 
 function tcnDocumentHtml(record) {
-  const shipmentRecord = state.shipments.find((row) =>
-    [record.jobNo, record.airwayBillNo, record.tcnNumber].filter(Boolean).some((value) =>
-      [row.jobNo, row.airwayBillNo, row.tcnNumber].filter(Boolean).includes(value)
-    )
-  ) || {};
-  const mergedRecord = { ...shipmentRecord, ...record };
+  const shipmentRecord = shipmentForTcn(record);
+  const mergedRecord = mergeFilled(shipmentRecord, record);
   const cargoLines = parsePalletDimensions(mergedRecord.cargoItemsJson || mergedRecord.palletDimensionsJson || "[]");
-  const totalVolumeWeight = cargoLines.reduce((sum, line) => sum + Number(line.volumeWeight || line.total || 0), 0);
+  const totalVolumetricWeight = cargoLines.reduce((sum, line) => sum + cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", mergedRecord.volumeCategory), 0);
   const cargoPieces = cargoLines.reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0);
   const totalPieces = Number(mergedRecord.pieces || 0) || cargoPieces || "";
   const totalGrossWeight = cargoLines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0) || Number(mergedRecord.actualKg || 0);
+  const chargeableWeight = Math.max(totalGrossWeight, totalVolumetricWeight, Number(mergedRecord.chargeableKg || 0));
   return documentShell(
     `TCN ${mergedRecord.tcnNumber || mergedRecord.jobNo}`,
     "Truck Consignment Note - TCN / WAYBILL",
@@ -4696,9 +4745,9 @@ function tcnDocumentHtml(record) {
       <h2>CARGO DETAILS</h2>
       <table class="tcn-cargo-table">
         <thead><tr><th>No Of Pieces / Pallets</th><th>Gross Weight (Kgs)</th><th>Volume Weight (Kgs)</th><th>Nature of Goods</th></tr></thead>
-        <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${money(totalGrossWeight)}</td><td>${money(mergedRecord.chargeableKg || totalVolumeWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
+        <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${money(totalGrossWeight)}</td><td>${money(chargeableWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
       </table>
-      ${tcnDimensionsTable(cargoLines)}
+      ${tcnDimensionsTable(cargoLines, mergedRecord.volumeCategory)}
       ${tcnTermsHtml()}
       <section class="tcn-signatures">
         <div><span>RECEIVER'S SIGN</span><strong>${escapeHtml(mergedRecord.receivedBy || "")}</strong></div>
@@ -4709,9 +4758,25 @@ function tcnDocumentHtml(record) {
   );
 }
 
-function tcnDimensionsTable(lines) {
+function shipmentForTcn(record) {
+  const byJob = state.shipments.find((row) => record.jobNo && row.jobNo === record.jobNo);
+  if (byJob) return byJob;
+  const byTcn = state.shipments.find((row) => record.tcnNumber && row.tcnNumber === record.tcnNumber);
+  if (byTcn) return byTcn;
+  return state.shipments.find((row) => record.airwayBillNo && row.airwayBillNo === record.airwayBillNo) || {};
+}
+
+function mergeFilled(base, override) {
+  const merged = { ...(base || {}) };
+  Object.entries(override || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") merged[key] = value;
+  });
+  return merged;
+}
+
+function tcnDimensionsTable(lines, volumeCategory = "") {
   const rows = lines.length
-    ? lines.map((line, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${escapeHtml(line.quantity || line.count || "")}</td><td>${escapeHtml(line.length || "")}</td><td>${escapeHtml(line.width || "")}</td><td>${escapeHtml(line.height || "")}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.volumeWeight || line.total || 0)}</td></tr>`).join("")
+    ? lines.map((line, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${escapeHtml(line.quantity || line.count || "")}</td><td>${escapeHtml(line.length || "")}</td><td>${escapeHtml(line.width || "")}</td><td>${escapeHtml(line.height || "")}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", volumeCategory))}</td></tr>`).join("")
     : `<tr><td colspan="8">No dimensions recorded.</td></tr>`;
   return `<h2>DIMENSIONS</h2><table><thead><tr><th>Sr</th><th>Package</th><th>Qty</th><th>Length</th><th>Width</th><th>Height</th><th>Unit</th><th>Volume Weight</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -4726,7 +4791,7 @@ function tcnTermsHtml() {
     "The consignor agrees to provide all necessary documentation for transportation of the goods.",
     "The consignor is considered to have accepted these terms and conditions upon receipt of this consignment note."
   ];
-  return `<section class="tcn-terms"><h2>Terms and Conditions:</h2><ol>${terms.map((term) => `<li>${escapeHtml(term)}</li>`).join("")}</ol><p>System generated document. No need for signature.</p></section>`;
+  return `<section class="tcn-terms"><h2>Terms and Conditions:</h2><ol>${terms.map((term) => `<li>${escapeHtml(term)}</li>`).join("")}</ol></section>`;
 }
 
 function parsePalletDimensions(value) {
