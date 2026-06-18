@@ -1468,7 +1468,7 @@ function renderParties(key, label) {
   const rows = filteredRows(state[key]);
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader(`${label} Register`, "Master data")} ${table(key, rows, partyColumns())}</article>
+      <article class="panel">${panelHeader(`${label} Register`, "Master data")} ${table(key, rows, partyColumns(key))}</article>
       ${moduleActionPanel(`${label} Actions`, key, `Open separate New and Load windows for ${label.toLowerCase()} records.`, actionChecklist([
         "New creates a fresh master-data entry window.",
         "Load opens an existing record to review or update."
@@ -1654,6 +1654,7 @@ function renderSettings() {
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${input("branches", "Branches", state.settings.branches)}
+          ${columnLayoutSettings()}
           ${textarea("columnLayoutJson", "Column Layout JSON", state.settings.columnLayoutJson || "{}", false, 5)}
           <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
@@ -2307,58 +2308,108 @@ function configurableColumns(type, defaults) {
   return defaults;
 }
 
+function defaultColumnLayouts() {
+  return {
+    shipment: [
+      ["slNo", "SL."],
+      ["bookingDate", "DATE"],
+      ["jobNo", "JOB NO."],
+      ["airwayBillNo", "AWB Number"],
+      ["billTo1", "BILL TO"],
+      ["billingParty1Address", "ADDRESS"],
+      ["shipperName", "SHIPPER"],
+      ["shipperAddress", "SHIPPER ADDRESS"],
+      ["consigneeName", "CONSIGNEE"],
+      ["consigneeAddress", "CONSIGNEE ADDRESS"],
+      ["pickupLocation", "PICK UP LOCATIONS"],
+      ["deliveryLocation", "DELIVERY LOCATION"],
+      ["transportMode", "MODE"],
+      ["shipmentService", "MODE FULL"],
+      ["pieces", "PKGS / CARTONS"],
+      ["palletCount", "No# of Pallets"],
+      ["actualKg", "G.WT"],
+      ["manualChargeableKg", "C.WT"],
+      ["customerReference", "SHIPMENT REFERENCE"],
+      ["specialInstructions", "COMMENTS"],
+      ["truckDetails", "TRUCK DETAILS"]
+    ],
+    load: [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]],
+    customers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["fullAddress", "Full Address"], ["email", "Email"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
+    suppliers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["fullAddress", "Full Address"], ["email", "Email"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
+    tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["weightSection", "Weight Section"], ["minUpTo", "Minimum Up To"], ["rate", "Rate"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"]],
+    document: [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]],
+    invoice: [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"]],
+    charge: [["refNo", "Ref No"], ["shipmentNo", "Shipment No"], ["chargeType", "Charge Type"], ["supplier", "Supplier"], ["amount", "Amount"], ["taxAmount", "Tax"], ["totalAmount", "Total"], ["status", "Status"]],
+    user: [["userName", "User"], ["email", "Email"], ["role", "Role"], ["accountStatus", "Status"], ["branchAccess", "Branch"]]
+  };
+}
+
+function savedColumnLayout() {
+  try {
+    return JSON.parse(state.settings.columnLayoutJson || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function columnLayoutSettings() {
+  const defaults = defaultColumnLayouts();
+  const saved = savedColumnLayout();
+  const labels = {
+    shipment: "Shipment Register",
+    load: "Manifest / Consolidation Register",
+    customers: "Customer Register",
+    suppliers: "Supplier / Transport Register",
+    tariff: "Tariff Register",
+    invoice: "Invoice / Billing Register",
+    charge: "Additional Charges Register",
+    document: "Document Register",
+    user: "User Register"
+  };
+  return `<fieldset class="column-layout-settings">
+    <legend>Register Column Layout</legend>
+    ${Object.entries(defaults).map(([type, columns]) => {
+      const activeKeys = new Set((saved[type] || columns).map((column) => Array.isArray(column) ? column[0] : column.key));
+      return `<details class="column-layout-group" ${type === "shipment" || type === "load" ? "open" : ""}>
+        <summary>${escapeHtml(labels[type] || labelize(type))}</summary>
+        <div class="column-layout-grid">
+          ${columns.map(([key, label]) => checkbox("columnLayoutSelection", label, activeKeys.has(key), `${type}:${key}`)).join("")}
+        </div>
+      </details>`;
+    }).join("")}
+  </fieldset>`;
+}
+
 function shipmentColumns() {
-  return configurableColumns("shipment", [
-    ["slNo", "SL."],
-    ["bookingDate", "DATE"],
-    ["jobNo", "JOB NO."],
-    ["billTo1", "BILL TO"],
-    ["billingParty1Address", "ADDRESS"],
-    ["shipperName", "SHIPPER"],
-    ["shipperAddress", "SHIPPER ADDRESS"],
-    ["consigneeName", "CONSIGNEE"],
-    ["consigneeAddress", "CONSIGNEE ADDRESS"],
-    ["pickupLocation", "PICK UP LOCATIONS"],
-    ["deliveryLocation", "DELIVERY LOCATION"],
-    ["transportMode", "MODE"],
-    ["shipmentService", "MODE FULL"],
-    ["airwayBillNo", "MAWB"],
-    ["pieces", "PKGS / CARTONS"],
-    ["palletCount", "No# of Pallets"],
-    ["actualKg", "G.WT"],
-    ["manualChargeableKg", "C.WT"],
-    ["customerReference", "SHIPMENT REFERENCE"],
-    ["specialInstructions", "COMMENTS"],
-    ["truckDetails", "TRUCK DETAILS"]
-  ]);
+  return configurableColumns("shipment", defaultColumnLayouts().shipment);
 }
 
 function loadColumns() {
-  return configurableColumns("load", [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]]);
+  return configurableColumns("load", defaultColumnLayouts().load);
 }
 
-function partyColumns() {
-  return [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["fullAddress", "Full Address"], ["email", "Email"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]];
+function partyColumns(type = "customers") {
+  return configurableColumns(type, defaultColumnLayouts()[type] || defaultColumnLayouts().customers);
 }
 
 function tariffColumns() {
-  return [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["weightSection", "Weight Section"], ["minUpTo", "Minimum Up To"], ["rate", "Rate"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"]];
+  return configurableColumns("tariff", defaultColumnLayouts().tariff);
 }
 
 function documentColumns() {
-  return [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]];
+  return configurableColumns("document", defaultColumnLayouts().document);
 }
 
 function invoiceColumns() {
-  return configurableColumns("invoice", [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"]]);
+  return configurableColumns("invoice", defaultColumnLayouts().invoice);
 }
 
 function additionalChargeColumns() {
-  return [["refNo", "Ref No"], ["shipmentNo", "Shipment No"], ["chargeType", "Charge Type"], ["supplier", "Supplier"], ["amount", "Amount"], ["taxAmount", "Tax"], ["totalAmount", "Total"], ["status", "Status"]];
+  return configurableColumns("charge", defaultColumnLayouts().charge);
 }
 
 function userColumns() {
-  return [["userName", "User"], ["email", "Email"], ["role", "Role"], ["accountStatus", "Status"], ["branchAccess", "Branch"]];
+  return configurableColumns("user", defaultColumnLayouts().user);
 }
 
 function unblockColumns() {
@@ -4009,8 +4060,11 @@ function collectFormValues(form) {
   if (form.querySelectorAll("input[name='sectionAccessList']").length) {
     data.sectionAccess = normalizeSectionAccess(formData.getAll("sectionAccessList").join(", ") || "Dashboard");
   }
+  if (form.querySelectorAll("input[name='columnLayoutSelection']").length) {
+    data.columnLayoutSelection = formData.getAll("columnLayoutSelection");
+  }
   form.querySelectorAll("input[type='checkbox'][name]").forEach((input) => {
-    if (input.name === "sectionAccessList") return;
+    if (["sectionAccessList", "columnLayoutSelection"].includes(input.name)) return;
     data[input.name] = input.checked;
   });
   return data;
@@ -4224,8 +4278,8 @@ function columnsForType(type) {
     pod: shipmentColumns,
     status: shipmentColumns,
     load: loadColumns,
-    customers: partyColumns,
-    suppliers: partyColumns,
+    customers: () => partyColumns("customers"),
+    suppliers: () => partyColumns("suppliers"),
     tariff: tariffColumns,
     document: documentColumns,
     charge: additionalChargeColumns,
@@ -4618,44 +4672,52 @@ function tariffDocumentHtml(record) {
 }
 
 function tcnDocumentHtml(record) {
-  const cargoLines = parsePalletDimensions(record.cargoItemsJson || record.palletDimensionsJson || "[]");
+  const shipmentRecord = state.shipments.find((row) =>
+    [record.jobNo, record.airwayBillNo, record.tcnNumber].filter(Boolean).some((value) =>
+      [row.jobNo, row.airwayBillNo, row.tcnNumber].filter(Boolean).includes(value)
+    )
+  ) || {};
+  const mergedRecord = { ...shipmentRecord, ...record };
+  const cargoLines = parsePalletDimensions(mergedRecord.cargoItemsJson || mergedRecord.palletDimensionsJson || "[]");
   const totalVolumeWeight = cargoLines.reduce((sum, line) => sum + Number(line.volumeWeight || line.total || 0), 0);
-  const totalGrossWeight = cargoLines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0) || Number(record.actualKg || 0);
+  const cargoPieces = cargoLines.reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0);
+  const totalPieces = Number(mergedRecord.pieces || 0) || cargoPieces || "";
+  const totalGrossWeight = cargoLines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0) || Number(mergedRecord.actualKg || 0);
   return documentShell(
-    `TCN ${record.tcnNumber || record.jobNo}`,
+    `TCN ${mergedRecord.tcnNumber || mergedRecord.jobNo}`,
     "Truck Consignment Note - TCN / WAYBILL",
-    record.tcnNumber || record.jobNo,
-    record.bookingDate || today(),
+    mergedRecord.tcnNumber || mergedRecord.jobNo,
+    mergedRecord.bookingDate || today(),
     `
       <section class="tcn-grid">
-        <div><span>WAYBILL NUMBER</span><strong>${escapeHtml(record.tcnNumber || record.airwayBillNo || record.jobNo)}</strong></div>
-        <div><span>DATE</span><strong>${escapeHtml(record.bookingDate || today())}</strong></div>
-        <div><span>PLACE</span><strong>${escapeHtml(record.origin || record.pickupLocation || "")}</strong></div>
-        <div><span>ORIGIN</span><strong>${escapeHtml(record.origin || "")}</strong></div>
-        <div><span>DESTINATION</span><strong>${escapeHtml(record.destination || "")}</strong></div>
-        <div><span>CARRIER No & DATE</span><strong>${escapeHtml(record.vehicleNo || record.tripNo || "")} ${escapeHtml(record.shipmentDate || "")}</strong></div>
+        <div><span>WAYBILL NUMBER</span><strong>${escapeHtml(mergedRecord.tcnNumber || mergedRecord.airwayBillNo || mergedRecord.jobNo)}</strong></div>
+        <div><span>DATE</span><strong>${escapeHtml(mergedRecord.bookingDate || today())}</strong></div>
+        <div><span>PLACE</span><strong>${escapeHtml(mergedRecord.origin || mergedRecord.pickupLocation || "")}</strong></div>
+        <div><span>ORIGIN</span><strong>${escapeHtml(mergedRecord.origin || "")}</strong></div>
+        <div><span>DESTINATION</span><strong>${escapeHtml(mergedRecord.destination || "")}</strong></div>
+        <div><span>CARRIER No & DATE</span><strong>${escapeHtml(mergedRecord.vehicleNo || mergedRecord.tripNo || "")} ${escapeHtml(mergedRecord.shipmentDate || "")}</strong></div>
       </section>
       <section class="tcn-two-col">
-        <div><span>SHIPPER</span><strong>${escapeHtml(record.shipperName || record.customer || "")}</strong><p>${escapeHtml(record.shipperAddress || "")}</p><p>${escapeHtml(record.shipperCountry || "")}</p></div>
-        <div><span>PICKUP LOCATION</span><strong>${escapeHtml(record.pickupLocation || "")}</strong><p>${escapeHtml(record.pickupAddress || "")}</p><p>${escapeHtml(record.pickupContactPerson || "")} ${escapeHtml(record.pickupMobile || "")}</p></div>
+        <div><span>SHIPPER</span><strong>${escapeHtml(mergedRecord.shipperName || mergedRecord.customer || "")}</strong><p>${escapeHtml(mergedRecord.shipperAddress || "")}</p><p>${escapeHtml(mergedRecord.shipperCountry || "")}</p></div>
+        <div><span>PICKUP LOCATION</span><strong>${escapeHtml(mergedRecord.pickupLocation || "")}</strong><p>${escapeHtml(mergedRecord.pickupAddress || "")}</p><p>${escapeHtml(mergedRecord.pickupContactPerson || "")} ${escapeHtml(mergedRecord.pickupMobile || "")}</p></div>
       </section>
       <section class="tcn-two-col">
-        <div><span>CONSIGNEE</span><strong>${escapeHtml(record.consigneeName || record.customer || "")}</strong><p>${escapeHtml(record.consigneeAddress || "")}</p><p>${escapeHtml(record.consigneeCountry || "")}</p></div>
-        <div><span>NOTIFY & DELIVERY ADDRESS</span><strong>${escapeHtml(record.notifyPartyName || record.deliveryContactPerson || "")}</strong><p>${escapeHtml(record.deliveryAddress || record.notifyPartyAddress || "")}</p><p>${escapeHtml(record.deliveryMobile || record.notifyMobile || "")}</p></div>
+        <div><span>CONSIGNEE</span><strong>${escapeHtml(mergedRecord.consigneeName || mergedRecord.customer || "")}</strong><p>${escapeHtml(mergedRecord.consigneeAddress || "")}</p><p>${escapeHtml(mergedRecord.consigneeCountry || "")}</p></div>
+        <div><span>NOTIFY & DELIVERY ADDRESS</span><strong>${escapeHtml(mergedRecord.notifyPartyName || mergedRecord.deliveryContactPerson || "")}</strong><p>${escapeHtml(mergedRecord.deliveryAddress || mergedRecord.notifyPartyAddress || "")}</p><p>${escapeHtml(mergedRecord.deliveryMobile || mergedRecord.notifyMobile || "")}</p></div>
       </section>
       <section class="tcn-grid tcn-cargo-head">
-        <div><span>CARGO TYPE</span><strong>${escapeHtml(record.vehicleType || record.transportMode || "GENERAL CARGO")}</strong></div>
-        <div><span>CUSTOMER REF / INVOICE NO</span><strong>${escapeHtml(record.customerReference || record.shipmentServiceOther || "")}</strong></div>
+        <div><span>CARGO TYPE</span><strong>${escapeHtml(mergedRecord.vehicleType || mergedRecord.transportMode || "GENERAL CARGO")}</strong></div>
+        <div><span>CUSTOMER REF / INVOICE NO</span><strong>${escapeHtml(mergedRecord.customerReference || mergedRecord.shipmentServiceOther || "")}</strong></div>
       </section>
       <h2>CARGO DETAILS</h2>
       <table class="tcn-cargo-table">
         <thead><tr><th>No Of Pieces / Pallets</th><th>Gross Weight (Kgs)</th><th>Volume Weight (Kgs)</th><th>Nature of Goods</th></tr></thead>
-        <tbody><tr><td>${escapeHtml(record.pieces || cargoLines.reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0))}</td><td>${money(totalGrossWeight)}</td><td>${money(record.chargeableKg || totalVolumeWeight)}</td><td>${escapeHtml(record.natureOfGoods || "")}</td></tr></tbody>
+        <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${money(totalGrossWeight)}</td><td>${money(mergedRecord.chargeableKg || totalVolumeWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
       </table>
       ${tcnDimensionsTable(cargoLines)}
       <section class="tcn-signatures">
-        <div><span>RECEIVER'S SIGN</span><strong>${escapeHtml(record.receivedBy || "")}</strong></div>
-        <div><span>SHIPPER'S SIGN</span><strong>${escapeHtml(record.shipperName || record.customer || "")}</strong></div>
+        <div><span>RECEIVER'S SIGN</span><strong>${escapeHtml(mergedRecord.receivedBy || "")}</strong></div>
+        <div><span>SHIPPER'S SIGN</span><strong>${escapeHtml(mergedRecord.shipperName || mergedRecord.customer || "")}</strong></div>
       </section>
       ${tcnTermsHtml()}
     `
@@ -5442,12 +5504,25 @@ async function updateStatus(data) {
 }
 
 async function updateSettings(data) {
+  if (Array.isArray(data.columnLayoutSelection)) {
+    data.columnLayoutJson = JSON.stringify(columnLayoutFromSelection(data.columnLayoutSelection));
+    delete data.columnLayoutSelection;
+  }
   state.settings = { ...state.settings, ...data, settingsKey: state.settings.settingsKey || "default" };
   const apiSaved = await persistRecord("settings", state.settings);
   addHistory("Saved company settings", data.companyName);
   notifySuccess("Settings saved", "Company settings were updated successfully.");
   if (apiSaved) setTimeout(() => syncFromApi(), 300);
   return true;
+}
+
+function columnLayoutFromSelection(selection) {
+  const defaults = defaultColumnLayouts();
+  const selected = new Set(selection);
+  return Object.fromEntries(Object.entries(defaults).map(([type, columns]) => [
+    type,
+    columns.filter(([key]) => selected.has(`${type}:${key}`))
+  ]));
 }
 
 function endpointFor(type) {
