@@ -2282,7 +2282,7 @@ function branchAccessOptions() {
 }
 
 function volumeCategoryOptions() {
-  return dropdownOptions("volumeCategory", ["1 CBM = 167 KG", "1 CBM = 200 KG", "1 CBM = 250 KG", "1 CBM = 333 KG"]);
+  return dropdownOptions("volumeCategory", ["1 CBM = 167 KG", "1 CBM = 200 KG", "1 CBM = 250 KG", "1 CBM = 333 KG", "Same as Gross Weight"]);
 }
 
 function currencyOptions() {
@@ -2293,6 +2293,10 @@ function volumeDivisorFor(category) {
   const match = String(category || "").match(/=\s*(\d+(?:\.\d+)?)\s*KG/i);
   if (match) return Number(match[1]);
   return { Sea: 333, Land: 250, Air: 167 }[category] || 0;
+}
+
+function isSameAsGrossWeightCategory(category) {
+  return String(category || "").trim().toLowerCase() === "same as gross weight";
 }
 
 function configurableColumns(type, defaults) {
@@ -3338,7 +3342,7 @@ function cargoItemsBuilder(initialValue = "[]") {
       ${input("palletHeight", "Height", "100", false, "number")}
       ${select("palletDimensionUnit", "Dimension Unit", ["CM", "M", "INCH"], "CM")}
       ${input("palletWeight", "Weight", "0", false, "number")}
-      ${input("palletTotalWeight", "Total Weight", "0", true, "number")}
+      ${input("palletTotalWeight", "Total Gross Weight", "0", false, "number")}
       ${select("palletWeightUnit", "Weight Unit", ["KG", "LBS"], "KG")}
       ${input("palletRemarks", "Remarks", "")}
       <button type="button" class="secondary-button" data-dialog-action="add-pallet-line">Add</button>
@@ -3704,9 +3708,16 @@ function bindVolumeCalculator() {
   const divisorField = dialogBody.querySelector("[name='chargeableDivisor']");
   const cbmField = dialogBody.querySelector("[name='cbm']");
   const chargeableField = dialogBody.querySelector("[name='chargeableKg']");
+  const actualWeightField = dialogBody.querySelector("[name='actualKg']");
   if (!categoryField || !divisorField || !cbmField || !chargeableField) return;
 
   const syncDivisor = () => {
+    if (isSameAsGrossWeightCategory(categoryField.value)) {
+      divisorField.value = "";
+      divisorField.readOnly = true;
+      syncChargeable();
+      return;
+    }
     const divisor = volumeDivisorFor(categoryField.value);
     if (divisor) {
       divisorField.value = String(divisor);
@@ -3719,6 +3730,10 @@ function bindVolumeCalculator() {
   };
 
   const syncChargeable = () => {
+    if (isSameAsGrossWeightCategory(categoryField.value)) {
+      chargeableField.value = String(Number(Number(actualWeightField?.value || 0).toFixed(3)));
+      return;
+    }
     const divisor = Number(divisorField.value || 0);
     const cbm = Number(cbmField.value || 0);
     if (divisor > 0 && cbm >= 0) {
@@ -3729,6 +3744,7 @@ function bindVolumeCalculator() {
   categoryField.addEventListener("change", syncDivisor);
   cbmField.addEventListener("input", syncChargeable);
   divisorField.addEventListener("input", syncChargeable);
+  actualWeightField?.addEventListener("input", syncChargeable);
   syncDivisor();
 }
 
@@ -3768,16 +3784,19 @@ function bindPalletDimensionBuilder() {
     const height = Number(fields.height?.value || 0);
     const weight = Number(fields.weight?.value || 0);
     const weightUnit = fields.weightUnit?.value || "KG";
-    const totalWeight = weight * count;
+    const computedTotalWeight = weight * count;
+    const manualTotalWeight = Number(fields.totalWeight?.value || 0);
+    const totalWeight = document.activeElement === fields.totalWeight && manualTotalWeight >= 0 ? manualTotalWeight : computedTotalWeight;
     const totalWeightKg = weightUnit === "LBS" ? totalWeight * 0.453592 : totalWeight;
     const cbm = cargoVolumeCbm(count, length, width, height, fields.dimensionUnit?.value || "CM");
-    const divisor = volumeDivisorFor(dialogBody.querySelector("[name='volumeCategory']")?.value);
-    const chargeable = Number((roundUpToHalf(cbm) * divisor).toFixed(3));
-    if (fields.totalWeight) fields.totalWeight.value = String(Number(totalWeight.toFixed(3)));
+    const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
+    const divisor = volumeDivisorFor(volumeCategory);
+    const chargeable = isSameAsGrossWeightCategory(volumeCategory) ? totalWeightKg : Number((roundUpToHalf(cbm) * divisor).toFixed(3));
+    if (fields.totalWeight && document.activeElement !== fields.totalWeight) fields.totalWeight.value = String(Number(computedTotalWeight.toFixed(3)));
     if (liveSummary) {
       liveSummary.innerHTML = `
         <span>Pieces: ${escapeHtml(count || 0)}</span>
-        <span>Total Weight: ${money(totalWeightKg)} KG</span>
+        <span>Total Gross Weight: ${money(totalWeightKg)} KG</span>
         <span>CBM: ${money(cbm)}</span>
         <span>Chargeable: ${money(chargeable)} KG</span>
       `;
@@ -3794,8 +3813,9 @@ function bindPalletDimensionBuilder() {
     if (piecesField) piecesField.value = String(totalPieces || Number(piecesField.value || 0));
     if (actualWeightField) actualWeightField.value = String(Number(actualWeight.toFixed(3)));
     if (cbmField) cbmField.value = String(roundedTotal);
-    const divisor = volumeDivisorFor(dialogBody.querySelector("[name='volumeCategory']")?.value);
-    const volumeWeight = Number((roundedTotal * divisor).toFixed(3));
+    const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
+    const divisor = volumeDivisorFor(volumeCategory);
+    const volumeWeight = isSameAsGrossWeightCategory(volumeCategory) ? actualWeight : Number((roundedTotal * divisor).toFixed(3));
     if (chargeableField) chargeableField.value = String(volumeWeight);
     if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(Math.max(actualWeight, volumeWeight));
     list.innerHTML = palletDimensionTable(lines, total, roundedTotal);
@@ -3816,7 +3836,7 @@ function bindPalletDimensionBuilder() {
       const weight = Number(fields.weight?.value || 0);
       const weightUnit = fields.weightUnit?.value || "KG";
       const total = cargoVolumeCbm(count, length, width, height, dimensionUnit);
-      const totalWeight = weight * count;
+      const totalWeight = Number(fields.totalWeight?.value || 0) || weight * count;
       const weightKg = weightUnit === "LBS" ? totalWeight * 0.453592 : totalWeight;
       lines.push({
         packageType: fields.packageType?.value || "Pallet",
