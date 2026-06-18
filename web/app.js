@@ -1655,7 +1655,8 @@ function renderSettings() {
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${input("branches", "Branches", state.settings.branches)}
           ${columnLayoutSettings()}
-          ${textarea("columnLayoutJson", "Column Layout JSON", state.settings.columnLayoutJson || "{}", false, 5)}
+          <input type="hidden" name="columnLayoutTouched" value="1" />
+          <input type="hidden" name="columnLayoutJson" value="${escapeHtml(state.settings.columnLayoutJson || "{}")}" />
           <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
@@ -2020,23 +2021,24 @@ function reportTypeOptions() {
 }
 
 function shipmentDirectionOptions() {
-  return ["Export", "Import", "WHC"];
+  return dropdownOptions("shipmentDirection", ["Export", "Import", "Consolidation"]);
 }
 
 function shipmentServiceOptions(direction) {
   if (direction === "Import") {
-    return ["SI", "AI", "LI", "FI"];
+    return dropdownOptions("shipmentService", ["SI", "AI", "LI", "FI", "WHC"]);
   }
 
-  if (direction === "WHC") {
-    return ["WHC", "Other"];
+  if (direction === "Consolidation" || direction === "Consoladation") {
+    return dropdownOptions("shipmentService", ["Consolidation", "WHC"]);
   }
 
-  return ["SE", "AE", "LE", "FE"];
+  return dropdownOptions("shipmentService", ["SE", "AE", "LE", "FE", "WHC"]);
 }
 
 function isConsolidationShipment(row) {
-  return String(row?.shipmentService || "").toLowerCase() === "consolidation";
+  const values = [row?.shipmentDirection, row?.shipmentService].map((item) => String(item || "").trim().toLowerCase());
+  return values.includes("consolidation") || values.includes("consoladation");
 }
 
 function assignedConsolidationJobs(exceptLoadNo = "") {
@@ -2180,10 +2182,8 @@ function checkbox(name, label, checked = false, value = "on") {
 
 function select(name, label, options, selected = options[0]) {
   const selectedValue = optionValue(selected);
-  return `<label>${escapeHtml(label)}<select name="${escapeHtml(name)}">${options.map((option) => {
-    const value = optionValue(option);
-    return `<option value="${escapeHtml(value)}" ${value === selectedValue ? "selected" : ""}>${escapeHtml(optionLabel(option))}</option>`;
-  }).join("")}</select></label>`;
+  const optionKey = dropdownKeyForField(name) || name;
+  return selectEditable(name, label, optionKey, options, selectedValue);
 }
 
 function selectFrom(name, label, options, value = options[0] || "") {
@@ -2262,7 +2262,7 @@ function dropdownKeyForField(name) {
     pickupLocation: "pickupLocation",
     deliveryLocation: "deliveryLocation",
     transporter: "transporter"
-  }[name];
+  }[name] || name;
 }
 
 function statusOptions() {
@@ -2282,7 +2282,7 @@ function branchAccessOptions() {
 }
 
 function volumeCategoryOptions() {
-  return dropdownOptions("volumeCategory", ["1 CBM = 167 KG", "1 CBM = 200 KG", "1 CBM = 250 KG", "1 CBM = 333 KG"]);
+  return dropdownOptions("volumeCategory", ["1 CBM = 167 KG", "1 CBM = 200 KG", "1 CBM = 250 KG", "1 CBM = 333 KG", "Same as Gross Weight"]);
 }
 
 function currencyOptions() {
@@ -2295,11 +2295,15 @@ function volumeDivisorFor(category) {
   return { Sea: 333, Land: 250, Air: 167 }[category] || 0;
 }
 
+function isSameAsGrossWeightCategory(category) {
+  return String(category || "").trim().toLowerCase() === "same as gross weight";
+}
+
 function configurableColumns(type, defaults) {
   try {
     const config = JSON.parse(state.settings.columnLayoutJson || "{}");
     const columns = config?.[type];
-    if (Array.isArray(columns) && columns.length) {
+    if (Array.isArray(columns)) {
       return columns
         .map((column) => Array.isArray(column) ? column : [column.key, column.label || labelize(column.key)])
         .filter(([key]) => key);
@@ -2369,7 +2373,8 @@ function columnLayoutSettings() {
   return `<fieldset class="column-layout-settings">
     <legend>Register Column Layout</legend>
     ${Object.entries(defaults).map(([type, columns]) => {
-      const activeKeys = new Set((saved[type] || columns).map((column) => Array.isArray(column) ? column[0] : column.key));
+      const savedColumns = Object.prototype.hasOwnProperty.call(saved, type) ? saved[type] : columns;
+      const activeKeys = new Set((Array.isArray(savedColumns) ? savedColumns : columns).map((column) => Array.isArray(column) ? column[0] : column.key));
       return `<details class="column-layout-group" ${type === "shipment" || type === "load" ? "open" : ""}>
         <summary>${escapeHtml(labels[type] || labelize(type))}</summary>
         <div class="column-layout-grid">
@@ -2700,6 +2705,9 @@ function detailFieldControl(type, key, value, record) {
   const options = detailFieldOptions(type, key, record);
   if (type === "shipment" && ["sell", "buyCost"].includes(key)) {
     return "";
+  }
+  if (type === "shipment" && key === "customerReference") {
+    return `<input type="hidden" name="customerReference" value="${escapeHtml(value ?? "")}" />`;
   }
   if (type === "shipment" && ["origin", "destination", "transitPoint", "route", "invoiceCopy", "packingListCopy", "podCopy", "customsDocuments", "otherDocuments"].includes(key)) {
     return `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value ?? "")}" />`;
@@ -3199,7 +3207,6 @@ function shipmentDialogBody(mode = "shipment") {
       ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), "Export")}
       ${select("shipmentService", "Service Type", shipmentServiceOptions("Export"), "SE")}
       ${selectEditable("transportMode", "Transport Mode", "transportMode", ["Air", "Sea", "Land", "Courier"])}
-      ${input("customerReference", "Customer Reference Number", "")}
       ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
       ${input("salesPerson", "Sales Person", currentUserName())}
       ${input("airwayBillNo", "Airway Bill / Bill of Lading", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo"), false)}
@@ -3247,14 +3254,6 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("deliveryDate", "Delivery Date", "", false, "date")}
       ${input("deliveryTime", "Delivery Time", "", false, "time")}
     `, true)}
-    ${formSection("Notify Party", `
-      ${checkbox("copyDeliveryToNotify", "Same as delivery information")}
-      ${input("notifyPartyName", "Notify Party Name", "")}
-      ${textarea("notifyPartyAddress", "Notify Party Address", "", false, 3)}
-      ${input("notifyContactPerson", "Contact Person", "")}
-      ${input("notifyMobile", "Mobile Number", "")}
-      ${input("notifyEmail", "Email Address", "", false, "email")}
-    `)}
     ${formSection("Billing Party 1", `
       ${checkbox("copyCustomerToBilling1", "Same as customer information")}
       ${input("billTo1", "Billing Party Name", defaultCustomer)}
@@ -3264,44 +3263,11 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("billingParty1Email", "Email Address", "", false, "email")}
       ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"])}
     `, true)}
-    ${formSection("Billing Party 2", `
-      ${checkbox("copyDeliveryToBilling2", "Same as delivery information")}
-      ${input("billTo2", "Secondary Billing Party Name", "")}
-      ${textarea("billingParty2Address", "Secondary Billing Address", "", false, 3)}
-      ${input("billingParty2ContactPerson", "Contact Person", "")}
-      ${input("billingParty2Mobile", "Mobile Number", "")}
-      ${input("billingParty2Email", "Email Address", "", false, "email")}
-      ${input("billingParty2Percentage", "Billing Percentage", "", false, "number")}
-    `, true)}
     ${cargoItemsBuilder()}
-    ${formSection("Transport Information", `
-      ${selectFrom("transporter", "Transporter", state.suppliers.map((row) => ({ value: row.name, label: `${row.code} | ${row.name}` })), "")}
-      ${selectFrom("transporterCode", "Transporter Number", state.suppliers.map((row) => ({ value: row.code, label: `${row.code} | ${row.name}` })), "")}
-      ${input("vehicleNo", "Vehicle Number", "")}
-      ${input("driverName", "Driver Name", "")}
-      ${input("driverMobile", "Driver Mobile", "")}
-      ${input("tripNo", "Trip Number", "")}
-      ${input("manifestNo", "Manifest Number", "")}
-      ${selectEditable("vehicleType", "Vehicle Type", "vehicleType", ["FTL", "LTL"])}
-    `, true)}
-    ${formSection("Financial Information", `
-      ${selectFrom("tariffNo", "Tariff Number", tariffOptionsForCustomer(defaultCustomer), "")}
-      ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
-      ${input("freightAmount", "Freight Amount", "0.000", false, "number")}
-      ${input("otherChargesAmount", "Other Charges", "0.000", false, "number")}
-      ${input("taxAmount", "Tax Amount", "0.000", false, "number")}
-      ${input("totalAmount", "Total Amount", "0.000", false, "number")}
-      ${selectEditable("paymentMode", "Payment Mode", "paymentMode", ["Cash", "Credit", "Bank Transfer", "Card"])}
-    `, true)}
-    ${formSection("Remarks", `
-      ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
-      ${textarea("specialInstructions", "Special Instructions", "", false, 3)}
-      ${textarea("handlingInstructions", "Handling Instructions", "", false, 3)}
-      ${textarea("internalNotes", "Internal Notes", "", false, 3)}
-      ${isAirway ? textarea("shipmentServiceOther", "Shipper Reference", "", false, 4) : select("transitDays", "Transit Time in Days", Array.from({ length: 30 }, (_, index) => String(index + 1)), "3")}
-      ${input("tcnNumber", "TCN Number", "", true)}
-      <div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>
-    `)}
+    <input type="hidden" name="tcnNumber" value="" />
+    <input type="hidden" name="transitDays" value="3" />
+    <input type="hidden" name="shipmentServiceOther" value="" />
+    <div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>
   `;
 }
 
@@ -3337,28 +3303,27 @@ function cargoItemsBuilder(initialValue = "[]") {
       ${input("palletWidth", "Width", "120", false, "number")}
       ${input("palletHeight", "Height", "100", false, "number")}
       ${select("palletDimensionUnit", "Dimension Unit", ["CM", "M", "INCH"], "CM")}
-      ${input("palletWeight", "Weight", "0", false, "number")}
-      ${input("palletTotalWeight", "Total Weight", "0", true, "number")}
-      ${select("palletWeightUnit", "Weight Unit", ["KG", "LBS"], "KG")}
-      ${input("palletRemarks", "Remarks", "")}
+      ${input("palletWeight", "Weight Per Unit", "0", false, "number")}
+      ${input("palletTotalWeight", "Total Gross Weight", "0", false, "number")}
       <button type="button" class="secondary-button" data-dialog-action="add-pallet-line">Add</button>
     </div>
     <div class="cargo-live-summary" data-cargo-live-summary>
       <span>Pieces: 1</span>
-      <span>Total Weight: 0 KG</span>
+      <span>Total Gross Weight: 0 KG</span>
       <span>CBM: 1.2</span>
       <span>Chargeable: 300 KG</span>
     </div>
+    <div class="tariff-charge-table" data-pallet-lines-list></div>
     <div class="form-section-grid cargo-totals">
       ${input("pieces", "Total Pieces", "0", true, "number")}
-      ${input("actualKg", "Actual Weight", "0", true, "number")}
+      ${input("actualKg", "Total Gross Weight", "0", true, "number")}
       ${select("volumeCategory", "Volume CBM Category", volumeCategoryOptions(), "1 CBM = 250 KG")}
+      ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
       <input type="hidden" name="chargeableDivisor" value="250" />
-      ${input("cbm", "Volume Weight / CBM", "0", true, "number")}
-      ${input("chargeableKg", "Chargeable Weight", "0", true, "number")}
-      ${input("manualChargeableKg", "Manual Chargeable Weight", "0", false, "number")}
+      <input type="hidden" name="cbm" value="0" />
+      <input type="hidden" name="chargeableKg" value="0" />
+      <input type="hidden" name="manualChargeableKg" value="0" />
     </div>
-    <div class="tariff-charge-table" data-pallet-lines-list></div>
     <p class="empty-state">Totals update shipment pieces, actual weight, volume weight, and chargeable weight.</p>
   </section>`;
 }
@@ -3521,20 +3486,21 @@ function consolidationShipmentPicker(initialJobs = "", currentLoadNo = "") {
 }
 
 function bindShipmentDirectionDialog() {
-  const directionSelect = dialogBody.querySelector("select[name='shipmentDirection']");
-  const serviceSelect = dialogBody.querySelector("select[name='shipmentService']");
+  const directionSelect = dialogBody.querySelector("[name='shipmentDirection']");
+  const serviceSelect = dialogBody.querySelector("[name='shipmentService']");
   const otherField = dialogBody.querySelector("[name='shipmentServiceOther']");
   if (!directionSelect || !serviceSelect) return;
+  const serviceList = dialogBody.querySelector("#shipmentServiceOptions");
 
   const syncOptions = () => {
     const currentValue = serviceSelect.value;
     const options = shipmentServiceOptions(directionSelect.value);
-    serviceSelect.innerHTML = options.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("");
+    if (serviceList) serviceList.innerHTML = options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("");
     if (options.includes(currentValue)) {
       serviceSelect.value = currentValue;
-    } else if (directionSelect.value === "WHC") {
-      serviceSelect.value = "WHC";
-      if (otherField) otherField.placeholder = "Manual warehouse remark";
+    } else if (directionSelect.value === "Consolidation" || directionSelect.value === "Consoladation") {
+      serviceSelect.value = "Consolidation";
+      if (otherField) otherField.placeholder = "Manual consolidation remark";
     } else {
       serviceSelect.value = options[0];
       if (otherField) otherField.placeholder = "Optional other service";
@@ -3704,9 +3670,16 @@ function bindVolumeCalculator() {
   const divisorField = dialogBody.querySelector("[name='chargeableDivisor']");
   const cbmField = dialogBody.querySelector("[name='cbm']");
   const chargeableField = dialogBody.querySelector("[name='chargeableKg']");
+  const actualWeightField = dialogBody.querySelector("[name='actualKg']");
   if (!categoryField || !divisorField || !cbmField || !chargeableField) return;
 
   const syncDivisor = () => {
+    if (isSameAsGrossWeightCategory(categoryField.value)) {
+      divisorField.value = "";
+      divisorField.readOnly = true;
+      syncChargeable();
+      return;
+    }
     const divisor = volumeDivisorFor(categoryField.value);
     if (divisor) {
       divisorField.value = String(divisor);
@@ -3719,6 +3692,10 @@ function bindVolumeCalculator() {
   };
 
   const syncChargeable = () => {
+    if (isSameAsGrossWeightCategory(categoryField.value)) {
+      chargeableField.value = String(Number(Number(actualWeightField?.value || 0).toFixed(3)));
+      return;
+    }
     const divisor = Number(divisorField.value || 0);
     const cbm = Number(cbmField.value || 0);
     if (divisor > 0 && cbm >= 0) {
@@ -3729,6 +3706,7 @@ function bindVolumeCalculator() {
   categoryField.addEventListener("change", syncDivisor);
   cbmField.addEventListener("input", syncChargeable);
   divisorField.addEventListener("input", syncChargeable);
+  actualWeightField?.addEventListener("input", syncChargeable);
   syncDivisor();
 }
 
@@ -3753,13 +3731,12 @@ function bindPalletDimensionBuilder() {
     height: dialogBody.querySelector("input[name='palletHeight']"),
     dimensionUnit: dialogBody.querySelector("[name='palletDimensionUnit']"),
     weight: dialogBody.querySelector("input[name='palletWeight']"),
-    totalWeight: dialogBody.querySelector("input[name='palletTotalWeight']"),
-    weightUnit: dialogBody.querySelector("[name='palletWeightUnit']"),
-    remarks: dialogBody.querySelector("input[name='palletRemarks']")
+    totalWeight: dialogBody.querySelector("input[name='palletTotalWeight']")
   };
   const list = builder.querySelector("[data-pallet-lines-list]");
   const liveSummary = builder.querySelector("[data-cargo-live-summary]");
   const lines = parsePalletDimensions(hiddenField.value || "[]");
+  let manualGrossTouched = false;
 
   const liveCalculation = () => {
     const count = Number(fields.count?.value || 0);
@@ -3767,17 +3744,19 @@ function bindPalletDimensionBuilder() {
     const width = Number(fields.width?.value || 0);
     const height = Number(fields.height?.value || 0);
     const weight = Number(fields.weight?.value || 0);
-    const weightUnit = fields.weightUnit?.value || "KG";
-    const totalWeight = weight * count;
-    const totalWeightKg = weightUnit === "LBS" ? totalWeight * 0.453592 : totalWeight;
+    const computedTotalWeight = weight * count;
+    const manualTotalWeight = Number(fields.totalWeight?.value || 0);
+    const totalWeight = manualGrossTouched ? manualTotalWeight : computedTotalWeight;
+    const totalWeightKg = totalWeight;
     const cbm = cargoVolumeCbm(count, length, width, height, fields.dimensionUnit?.value || "CM");
-    const divisor = volumeDivisorFor(dialogBody.querySelector("[name='volumeCategory']")?.value);
-    const chargeable = Number((roundUpToHalf(cbm) * divisor).toFixed(3));
-    if (fields.totalWeight) fields.totalWeight.value = String(Number(totalWeight.toFixed(3)));
+    const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
+    const divisor = volumeDivisorFor(volumeCategory);
+    const chargeable = isSameAsGrossWeightCategory(volumeCategory) ? totalWeightKg : Number((roundUpToHalf(cbm) * divisor).toFixed(3));
+    if (fields.totalWeight && !manualGrossTouched) fields.totalWeight.value = String(Number(computedTotalWeight.toFixed(3)));
     if (liveSummary) {
       liveSummary.innerHTML = `
         <span>Pieces: ${escapeHtml(count || 0)}</span>
-        <span>Total Weight: ${money(totalWeightKg)} KG</span>
+        <span>Total Gross Weight: ${money(totalWeightKg)} KG</span>
         <span>CBM: ${money(cbm)}</span>
         <span>Chargeable: ${money(chargeable)} KG</span>
       `;
@@ -3794,8 +3773,9 @@ function bindPalletDimensionBuilder() {
     if (piecesField) piecesField.value = String(totalPieces || Number(piecesField.value || 0));
     if (actualWeightField) actualWeightField.value = String(Number(actualWeight.toFixed(3)));
     if (cbmField) cbmField.value = String(roundedTotal);
-    const divisor = volumeDivisorFor(dialogBody.querySelector("[name='volumeCategory']")?.value);
-    const volumeWeight = Number((roundedTotal * divisor).toFixed(3));
+    const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
+    const divisor = volumeDivisorFor(volumeCategory);
+    const volumeWeight = isSameAsGrossWeightCategory(volumeCategory) ? actualWeight : Number((roundedTotal * divisor).toFixed(3));
     if (chargeableField) chargeableField.value = String(volumeWeight);
     if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(Math.max(actualWeight, volumeWeight));
     list.innerHTML = palletDimensionTable(lines, total, roundedTotal);
@@ -3814,10 +3794,9 @@ function bindPalletDimensionBuilder() {
       }
       const dimensionUnit = fields.dimensionUnit?.value || "CM";
       const weight = Number(fields.weight?.value || 0);
-      const weightUnit = fields.weightUnit?.value || "KG";
       const total = cargoVolumeCbm(count, length, width, height, dimensionUnit);
-      const totalWeight = weight * count;
-      const weightKg = weightUnit === "LBS" ? totalWeight * 0.453592 : totalWeight;
+      const totalWeight = manualGrossTouched ? Number(fields.totalWeight?.value || 0) : weight * count;
+      const weightKg = totalWeight;
       lines.push({
         packageType: fields.packageType?.value || "Pallet",
         count,
@@ -3827,13 +3806,14 @@ function bindPalletDimensionBuilder() {
         height,
         dimensionUnit,
         weight,
-        weightUnit,
+        weightUnit: "KG",
         totalWeight,
         weightKg,
         volumeWeight: total,
         total,
-        remarks: fields.remarks?.value || ""
+        remarks: ""
       });
+      manualGrossTouched = false;
       sync();
       return;
     }
@@ -3854,6 +3834,16 @@ function bindPalletDimensionBuilder() {
   });
 
   dialogBody.querySelector("[name='volumeCategory']")?.addEventListener("change", sync);
+  fields.totalWeight?.addEventListener("input", () => {
+    manualGrossTouched = true;
+    liveCalculation();
+  });
+  fields.weight?.addEventListener("input", () => {
+    manualGrossTouched = false;
+  });
+  fields.count?.addEventListener("input", () => {
+    if (Number(fields.weight?.value || 0) > 0) manualGrossTouched = false;
+  });
   Object.values(fields).forEach((field) => field?.addEventListener("input", liveCalculation));
   Object.values(fields).forEach((field) => field?.addEventListener("change", liveCalculation));
   liveCalculation();
@@ -3868,7 +3858,7 @@ function cargoVolumeCbm(count, length, width, height, unit = "CM") {
 function palletDimensionTable(lines, total, roundedTotal) {
   const rows = lines.length
     ? lines.map((line, index) => `<tr>
-      <td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${line.count || line.quantity}</td><td>${line.length}</td><td>${line.width}</td><td>${line.height}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.weightKg || line.weight || 0)}</td><td>${money(line.total || line.volumeWeight || 0)}</td>
+      <td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${line.count || line.quantity}</td><td>${line.length}</td><td>${line.width}</td><td>${line.height}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.weightKg || line.totalWeight || 0)}</td><td>${money(line.total || line.volumeWeight || 0)}</td>
       <td><button type="button" class="ghost-button" data-remove-pallet-line="${index}">Remove</button></td>
     </tr>`).join("")
     : `<tr><td colspan="10" class="empty-state">No cargo items added.</td></tr>`;
@@ -3887,7 +3877,7 @@ function palletDimensionTable(lines, total, roundedTotal) {
     </colgroup>
     <thead><tr><th>Sr no</th><th>Package Type</th><th>Qty</th><th>Length</th><th>Width</th><th>Height</th><th>Unit</th><th>Weight KG</th><th>Volume Weight</th><th>Button</th></tr></thead>
     <tbody>${rows}</tbody>
-    <tfoot><tr><th colspan="8">Grand total CBM</th><th>${money(total)} -> ${roundedTotal}</th><th></th></tr></tfoot>
+    <tfoot><tr><th colspan="8">Grand total CBM</th><th>${roundedTotal}</th><th></th></tr></tfoot>
   </table></div>`;
 }
 
@@ -3974,10 +3964,11 @@ function parseTariffChargeLines(value) {
   }
 }
 
-function tariffChargeTable(lines, total, grandTotal, showActions = true) {
+function tariffChargeTable(lines, total, grandTotal, showActions = true, options = {}) {
   const actionHeader = showActions ? "<th>Button</th>" : "";
   const footerAction = showActions ? "<th></th>" : "";
   const emptyColspan = showActions ? 6 : 5;
+  const showTotalRow = options.showTotalRow !== false;
   const rows = lines.length
     ? lines.map((line, index) => `<tr>
         <td>${index + 1}</td>
@@ -3987,12 +3978,12 @@ function tariffChargeTable(lines, total, grandTotal, showActions = true) {
         <td>${money(line.total)}</td>
         ${showActions ? `<td><button type="button" class="ghost-button" data-remove-tariff-charge="${index}">Remove</button></td>` : ""}
       </tr>`).join("")
-    : `<tr><td colspan="${emptyColspan}" class="empty-state">No additional charges added.</td></tr>`;
+    : `<tr><td colspan="${emptyColspan}" class="empty-state">No charges added.</td></tr>`;
   return `<div class="table-wrap"><table class="tariff-charges-table">
     <thead><tr><th>Sr no</th><th>Description</th><th>Quotation per unit</th><th>Units</th><th>Total</th>${actionHeader}</tr></thead>
     <tbody>${rows}</tbody>
     <tfoot>
-      <tr><th colspan="4">Total for additional charges</th><th>${money(total)}</th>${footerAction}</tr>
+      ${showTotalRow ? `<tr><th colspan="4">Total</th><th>${money(total)}</th>${footerAction}</tr>` : ""}
       <tr><th colspan="4">Grand total</th><th>${money(grandTotal)}</th>${footerAction}</tr>
     </tfoot>
   </table></div>`;
@@ -4060,7 +4051,7 @@ function collectFormValues(form) {
   if (form.querySelectorAll("input[name='sectionAccessList']").length) {
     data.sectionAccess = normalizeSectionAccess(formData.getAll("sectionAccessList").join(", ") || "Dashboard");
   }
-  if (form.querySelectorAll("input[name='columnLayoutSelection']").length) {
+  if (form.querySelector("input[name='columnLayoutTouched']")) {
     data.columnLayoutSelection = formData.getAll("columnLayoutSelection");
   }
   form.querySelectorAll("input[type='checkbox'][name]").forEach((input) => {
@@ -4611,7 +4602,7 @@ function invoiceDocumentHtml(record) {
         <div>
           <span>Amount</span>
           <strong>${money(record.revenue)}</strong>
-          <small>Status: ${escapeHtml(record.status)}</small>
+          <small>${escapeHtml(record.invoiceNo)}</small>
         </div>
       </section>
       <section class="meta">
@@ -4621,15 +4612,12 @@ function invoiceDocumentHtml(record) {
         <p><strong>Shipment No</strong><span>${escapeHtml(record.shipmentNo)}</span></p>
         <p><strong>Assigned Tariff</strong><span>${escapeHtml(shipmentItem?.tariffNo || "")}</span></p>
         <p><strong>Nature of Goods</strong><span>${escapeHtml(shipmentItem?.natureOfGoods || "")}</span></p>
-        <p><strong>Status</strong><span>${escapeHtml(record.status)}</span></p>
       </section>
       <table><tbody>
         <tr><th>Origin</th><td>${escapeHtml(shipmentItem?.origin || "")}</td><th>Destination</th><td>${escapeHtml(shipmentItem?.destination || "")}</td></tr>
-        <tr><th>Revenue</th><td>${money(record.revenue)}</td><th>Supplier Cost</th><td>${money(record.supplierCost)}</td></tr>
-        <tr><th>Gross Profit</th><td colspan="3">${money(record.grossProfit)}</td></tr>
       </tbody></table>
-      <h2>Tariff Additional Charges</h2>
-      ${tariffChargeTable(tariffCharges, Number(tariffItem?.additionalChargesTotal || 0), Number(tariffItem?.grandTotal || record.revenue || 0), false)}
+      <h2>Charges</h2>
+      ${tariffChargeTable(tariffCharges, Number(tariffItem?.additionalChargesTotal || 0), Number(tariffItem?.grandTotal || record.revenue || 0), false, { showTotalRow: false })}
     `
   );
 }
@@ -4651,7 +4639,7 @@ function tariffDocumentHtml(record) {
         <div>
           <span>Grand Total</span>
           <strong>${money(record.grandTotal)}</strong>
-          <small>Minimum charge ${money(record.minCharge)}</small>
+          <small>${escapeHtml(record.tariffNo)}</small>
         </div>
       </section>
       <section class="meta">
@@ -4660,13 +4648,9 @@ function tariffDocumentHtml(record) {
         <p><strong>Origin</strong><span>${escapeHtml(record.origin)}</span></p>
         <p><strong>Destination</strong><span>${escapeHtml(record.destination)}</span></p>
         <p><strong>Main Section</strong><span>${escapeHtml(record.mainSection)}</span></p>
-        <p><strong>Weight Section</strong><span>${escapeHtml(record.weightSection)}</span></p>
-        <p><strong>Minimum Up To</strong><span>${escapeHtml(record.minUpTo)}</span></p>
-        <p><strong>Rate</strong><span>${money(record.rate)}</span></p>
-        <p><strong>Minimum Charge</strong><span>${money(record.minCharge)}</span></p>
       </section>
-      <h2>Additional Charges</h2>
-      ${tariffChargeTable(charges, Number(record.additionalChargesTotal || 0), Number(record.grandTotal || 0), false)}
+      <h2>Charges</h2>
+      ${tariffChargeTable(charges, Number(record.additionalChargesTotal || 0), Number(record.grandTotal || 0), false, { showTotalRow: false })}
     `
   );
 }
@@ -4715,12 +4699,13 @@ function tcnDocumentHtml(record) {
         <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${money(totalGrossWeight)}</td><td>${money(mergedRecord.chargeableKg || totalVolumeWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
       </table>
       ${tcnDimensionsTable(cargoLines)}
+      ${tcnTermsHtml()}
       <section class="tcn-signatures">
         <div><span>RECEIVER'S SIGN</span><strong>${escapeHtml(mergedRecord.receivedBy || "")}</strong></div>
         <div><span>SHIPPER'S SIGN</span><strong>${escapeHtml(mergedRecord.shipperName || mergedRecord.customer || "")}</strong></div>
       </section>
-      ${tcnTermsHtml()}
-    `
+    `,
+    { hideDefaultSignatures: true }
   );
 }
 
@@ -4830,8 +4815,8 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
         .tcn-two-col p { margin: 5px 0 0; font-size: 12px; line-height: 1.35; }
         .tcn-cargo-head { grid-template-columns: 1fr 2fr; }
         .tcn-cargo-table th, .tcn-cargo-table td { text-align: center; }
-        .tcn-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 26px; }
-        .tcn-signatures div { min-height: 78px; border-top: 1px solid #172033; padding-top: 8px; }
+        .tcn-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 42px; margin-top: 44px; }
+        .tcn-signatures div { min-height: 92px; border-top: 1px solid #172033; padding-top: 8px; }
         .tcn-terms { margin-top: 18px; font-size: 10px; line-height: 1.35; }
         .tcn-terms h2 { margin-top: 0; font-size: 14px; }
         .tcn-terms ol { margin: 6px 0 0 18px; padding: 0; }
@@ -5504,9 +5489,10 @@ async function updateStatus(data) {
 }
 
 async function updateSettings(data) {
-  if (Array.isArray(data.columnLayoutSelection)) {
+  if (data.columnLayoutTouched || Array.isArray(data.columnLayoutSelection)) {
     data.columnLayoutJson = JSON.stringify(columnLayoutFromSelection(data.columnLayoutSelection));
     delete data.columnLayoutSelection;
+    delete data.columnLayoutTouched;
   }
   state.settings = { ...state.settings, ...data, settingsKey: state.settings.settingsKey || "default" };
   const apiSaved = await persistRecord("settings", state.settings);
