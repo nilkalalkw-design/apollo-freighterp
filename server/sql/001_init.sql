@@ -83,6 +83,7 @@ create table if not exists customers (
     location_or_lane text not null default '',
     full_address text not null default '',
     email text not null default '',
+    mobile text not null default '',
     terms text not null default '30 days',
     status text not null default 'Active',
     is_account_overdue boolean not null default false,
@@ -95,6 +96,7 @@ create table if not exists customers (
 
 alter table customers add column if not exists credit_limit numeric(12, 3) not null default 0;
 alter table customers add column if not exists full_address text not null default '';
+alter table customers add column if not exists mobile text not null default '';
 alter table customers add column if not exists notes text not null default '';
 alter table customers add column if not exists created_by text not null default 'system';
 alter table customers add column if not exists updated_at timestamptz not null default now();
@@ -106,6 +108,7 @@ create table if not exists suppliers (
     location_or_lane text not null default '',
     full_address text not null default '',
     email text not null default '',
+    mobile text not null default '',
     terms text not null default '30 days',
     status text not null default 'Active',
     is_account_overdue boolean not null default false,
@@ -119,6 +122,7 @@ create table if not exists suppliers (
 
 alter table suppliers add column if not exists credit_limit numeric(12, 3) not null default 0;
 alter table suppliers add column if not exists full_address text not null default '';
+alter table suppliers add column if not exists mobile text not null default '';
 alter table suppliers add column if not exists created_by text not null default 'system';
 
 create table if not exists tariffs (

@@ -482,6 +482,7 @@ function partyResource(table) {
       field("location_or_lane", ["locationOrLane", "location_or_lane"]),
       field("full_address", ["fullAddress", "full_address"]),
       field("email"),
+      field("mobile"),
       field("terms"),
       field("status"),
       field("is_account_overdue", ["isAccountOverdue", "is_account_overdue"]),

@@ -454,8 +454,8 @@ function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumber
   return { loadNo, tripDate, route, transporter, transporterCode: meta.transporterCode || "", vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", driverMobile: meta.driverMobile || "", sealNo: meta.sealNo || "", tirCarnetNo: meta.tirCarnetNo || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
 }
 
-function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName(), fullAddress = "") {
-  return { code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, fullAddress, createdBy, createdDate: new Date().toISOString().slice(0, 10) };
+function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName(), fullAddress = "", mobile = "") {
+  return { code, name, locationOrLane, email, mobile, terms, status, isAccountOverdue, branch, fullAddress, createdBy, createdDate: new Date().toISOString().slice(0, 10) };
 }
 
 function tariff(tariffNo, customer, origin, destination, mainSection, weightSection, minUpTo, rate, minCharge, additionalChargesJson = "[]", additionalChargesTotal = 0, grandTotal = 0, createdBy = currentUserName()) {
@@ -1170,11 +1170,11 @@ function apiLoad(row) {
 }
 
 function apiCustomer(row) {
-  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin", row.full_address || "");
+  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin", row.full_address || "", row.mobile || "");
 }
 
 function apiSupplier(row) {
-  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin", row.full_address || "");
+  return party(row.code, row.name, row.location_or_lane, row.email, row.terms, row.status, row.is_account_overdue, row.branch, row.created_by || "admin", row.full_address || "", row.mobile || "");
 }
 
 function apiTariff(row) {
@@ -2345,12 +2345,12 @@ function defaultColumnLayouts() {
       ["bookingDate", "DATE"],
       ["jobNo", "JOB NO."],
       ["airwayBillNo", "AWB Number"],
+      ["origin", "ORIGIN"],
+      ["destination", "DESTINATION"],
+      ["customerReference", "CUSTOMER REFERENCE"],
       ["billTo1", "BILL TO"],
-      ["billingParty1Address", "ADDRESS"],
       ["shipperName", "SHIPPER"],
-      ["shipperAddress", "SHIPPER ADDRESS"],
       ["consigneeName", "CONSIGNEE"],
-      ["consigneeAddress", "CONSIGNEE ADDRESS"],
       ["pickupLocation", "PICK UP LOCATIONS"],
       ["deliveryLocation", "DELIVERY LOCATION"],
       ["transportMode", "MODE"],
@@ -2359,13 +2359,12 @@ function defaultColumnLayouts() {
       ["palletCount", "No# of Pallets"],
       ["actualKg", "G.WT"],
       ["manualChargeableKg", "C.WT"],
-      ["customerReference", "SHIPMENT REFERENCE"],
       ["specialInstructions", "COMMENTS"],
       ["truckDetails", "TRUCK DETAILS"]
     ],
     load: [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]],
-    customers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["fullAddress", "Full Address"], ["email", "Email"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
-    suppliers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["fullAddress", "Full Address"], ["email", "Email"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
+    customers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
+    suppliers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
     tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["weightSection", "Weight Section"], ["minUpTo", "Minimum Up To"], ["rate", "Rate"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"]],
     document: [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]],
     invoice: [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"]],
@@ -2412,7 +2411,8 @@ function columnLayoutSettings() {
 }
 
 function shipmentColumns() {
-  return configurableColumns("shipment", defaultColumnLayouts().shipment);
+  const hiddenAddressKeys = new Set(["billingParty1Address", "shipperAddress", "consigneeAddress", "pickupAddress", "deliveryAddress"]);
+  return configurableColumns("shipment", defaultColumnLayouts().shipment).filter(([key]) => !hiddenAddressKeys.has(key));
 }
 
 function loadColumns() {
@@ -2732,10 +2732,7 @@ function detailFieldControl(type, key, value, record) {
   if (type === "shipment" && ["sell", "buyCost"].includes(key)) {
     return "";
   }
-  if (type === "shipment" && key === "customerReference") {
-    return `<input type="hidden" name="customerReference" value="${escapeHtml(value ?? "")}" />`;
-  }
-  if (type === "shipment" && ["origin", "destination", "transitPoint", "route", "invoiceCopy", "packingListCopy", "podCopy", "customsDocuments", "otherDocuments"].includes(key)) {
+  if (type === "shipment" && ["transitPoint", "route", "invoiceCopy", "packingListCopy", "podCopy", "customsDocuments", "otherDocuments"].includes(key)) {
     return `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value ?? "")}" />`;
   }
   if (type === "shipment" && key === "actualKg" && record?.entryMode === "airway") {
@@ -3218,6 +3215,7 @@ function partyDialogConfig(key, label) {
       ${input("locationOrLane", "Lane / Location", "")}
       ${key === "customers" ? textarea("fullAddress", "Full Address / Shipping Delivery Address", "", false, 3) : ""}
       ${input("email", "Contact Email", "", false, "email")}
+      ${input("mobile", "Mobile Number", "")}
       ${select("terms", "Credit Limit Days", ["15 days", "30 days", "45 days"])}
       ${select("status", "Status", ["Active", "Inactive", "Blocked"])}
       ${select("branch", "Branch", [...branchOptions(), "Both"], defaultUserBranch())}
@@ -3239,6 +3237,9 @@ function shipmentDialogBody(mode = "shipment") {
       ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), "Export")}
       ${select("shipmentService", "Service Type", shipmentServiceOptions("Export"), "SE")}
       ${selectEditable("transportMode", "Transport Mode", "transportMode", ["Air", "Sea", "Land", "Courier"])}
+      ${selectEditable("origin", "Origin", "origin", ["Kuwait City"])}
+      ${selectEditable("destination", "Destination", "destination", ["Riyadh"])}
+      ${input("customerReference", "Customer Reference", "")}
       ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
       ${input("salesPerson", "Sales Person", currentUserName())}
       ${input("airwayBillNo", "Airway Bill / Bill of Lading", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo"), false)}
@@ -3581,6 +3582,7 @@ function bindShipmentCustomerAutofill() {
     setDialogValue("customer", customer.name);
     setDialogValue("customerCode", customer.code);
     setDialogValue("customerEmail", customer.email);
+    setDialogValue("customerMobile", customer.mobile);
     setDialogValue("customerContactPerson", customer.name);
     setDialogValue("consigneeName", customer.name);
     setDialogValue("consigneeAddress", customer.fullAddress || customer.locationOrLane);
@@ -4761,7 +4763,7 @@ function tcnDocumentHtml(record) {
       </section>
       <section class="tcn-grid tcn-cargo-head">
         <div><span>CARGO TYPE</span><strong>${escapeHtml(mergedRecord.vehicleType || mergedRecord.transportMode || "GENERAL CARGO")}</strong></div>
-        <div><span>CUSTOMER REF / INVOICE NO</span><strong>${escapeHtml(mergedRecord.customerReference || mergedRecord.shipmentServiceOther || "")}</strong></div>
+        <div><span>CUSTOMER REFERENCE</span><strong>${escapeHtml(mergedRecord.customerReference || "")}</strong></div>
       </section>
       <h2>CARGO DETAILS</h2>
       <table class="tcn-cargo-table">
@@ -5326,7 +5328,7 @@ async function createParty(key, data) {
     notifyDuplicate(data.code);
     return false;
   }
-  const record = party(data.code, data.name, data.locationOrLane, data.email, data.terms, data.status, false, data.branch, currentUserName(), data.fullAddress || "");
+  const record = party(data.code, data.name, data.locationOrLane, data.email, data.terms, data.status, false, data.branch, currentUserName(), data.fullAddress || "", data.mobile || "");
   state[key].unshift(record);
   await postRecord(key, record);
   addHistory(`Created ${key}`, data.code);

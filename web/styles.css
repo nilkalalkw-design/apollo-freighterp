@@ -799,6 +799,13 @@ label {
   font-size: 12px;
 }
 
+.cargo-entry button {
+  width: max-content;
+  min-height: 34px;
+  padding: 7px 12px;
+  justify-self: start;
+}
+
 .cargo-live-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
