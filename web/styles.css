@@ -778,8 +778,9 @@ label {
 }
 
 .cargo-entry {
-  grid-template-columns: repeat(3, minmax(110px, 1fr));
+  grid-template-columns: minmax(120px, 1.1fr) minmax(70px, .6fr) repeat(3, minmax(80px, .7fr)) minmax(90px, .8fr) minmax(110px, .9fr) minmax(130px, 1fr) auto;
   align-items: end;
+  min-width: 980px;
 }
 
 .cargo-live-summary {
@@ -806,11 +807,17 @@ label {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8fbff;
+  overflow-x: auto;
 }
 
 .pallet-builder .tariff-charge-entry {
   grid-template-columns: repeat(4, minmax(90px, 120px)) auto;
   justify-content: center;
+}
+
+.pallet-builder .cargo-entry {
+  grid-template-columns: minmax(120px, 1.1fr) minmax(70px, .6fr) repeat(3, minmax(80px, .7fr)) minmax(90px, .8fr) minmax(110px, .9fr) minmax(130px, 1fr) auto;
+  justify-content: stretch;
 }
 
 .pallet-builder .tariff-charges-table {
