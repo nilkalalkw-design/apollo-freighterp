@@ -1655,6 +1655,7 @@ function renderSettings() {
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${input("branches", "Branches", state.settings.branches)}
           ${columnLayoutSettings()}
+          <input type="hidden" name="columnLayoutTouched" value="1" />
           <input type="hidden" name="columnLayoutJson" value="${escapeHtml(state.settings.columnLayoutJson || "{}")}" />
           <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
@@ -3306,13 +3307,13 @@ function cargoItemsBuilder(initialValue = "[]") {
       ${input("palletTotalWeight", "Total Gross Weight", "0", false, "number")}
       <button type="button" class="secondary-button" data-dialog-action="add-pallet-line">Add</button>
     </div>
-    <div class="tariff-charge-table" data-pallet-lines-list></div>
     <div class="cargo-live-summary" data-cargo-live-summary>
       <span>Pieces: 1</span>
       <span>Total Gross Weight: 0 KG</span>
       <span>CBM: 1.2</span>
       <span>Chargeable: 300 KG</span>
     </div>
+    <div class="tariff-charge-table" data-pallet-lines-list></div>
     <div class="form-section-grid cargo-totals">
       ${input("pieces", "Total Pieces", "0", true, "number")}
       ${input("actualKg", "Total Gross Weight", "0", true, "number")}
@@ -3735,6 +3736,7 @@ function bindPalletDimensionBuilder() {
   const list = builder.querySelector("[data-pallet-lines-list]");
   const liveSummary = builder.querySelector("[data-cargo-live-summary]");
   const lines = parsePalletDimensions(hiddenField.value || "[]");
+  let manualGrossTouched = false;
 
   const liveCalculation = () => {
     const count = Number(fields.count?.value || 0);
@@ -3744,13 +3746,13 @@ function bindPalletDimensionBuilder() {
     const weight = Number(fields.weight?.value || 0);
     const computedTotalWeight = weight * count;
     const manualTotalWeight = Number(fields.totalWeight?.value || 0);
-    const totalWeight = document.activeElement === fields.totalWeight && manualTotalWeight >= 0 ? manualTotalWeight : computedTotalWeight;
+    const totalWeight = manualGrossTouched ? manualTotalWeight : computedTotalWeight;
     const totalWeightKg = totalWeight;
     const cbm = cargoVolumeCbm(count, length, width, height, fields.dimensionUnit?.value || "CM");
     const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
     const divisor = volumeDivisorFor(volumeCategory);
     const chargeable = isSameAsGrossWeightCategory(volumeCategory) ? totalWeightKg : Number((roundUpToHalf(cbm) * divisor).toFixed(3));
-    if (fields.totalWeight && document.activeElement !== fields.totalWeight) fields.totalWeight.value = String(Number(computedTotalWeight.toFixed(3)));
+    if (fields.totalWeight && !manualGrossTouched) fields.totalWeight.value = String(Number(computedTotalWeight.toFixed(3)));
     if (liveSummary) {
       liveSummary.innerHTML = `
         <span>Pieces: ${escapeHtml(count || 0)}</span>
@@ -3793,7 +3795,7 @@ function bindPalletDimensionBuilder() {
       const dimensionUnit = fields.dimensionUnit?.value || "CM";
       const weight = Number(fields.weight?.value || 0);
       const total = cargoVolumeCbm(count, length, width, height, dimensionUnit);
-      const totalWeight = Number(fields.totalWeight?.value || 0) || weight * count;
+      const totalWeight = manualGrossTouched ? Number(fields.totalWeight?.value || 0) : weight * count;
       const weightKg = totalWeight;
       lines.push({
         packageType: fields.packageType?.value || "Pallet",
@@ -3811,6 +3813,7 @@ function bindPalletDimensionBuilder() {
         total,
         remarks: ""
       });
+      manualGrossTouched = false;
       sync();
       return;
     }
@@ -3831,6 +3834,16 @@ function bindPalletDimensionBuilder() {
   });
 
   dialogBody.querySelector("[name='volumeCategory']")?.addEventListener("change", sync);
+  fields.totalWeight?.addEventListener("input", () => {
+    manualGrossTouched = true;
+    liveCalculation();
+  });
+  fields.weight?.addEventListener("input", () => {
+    manualGrossTouched = false;
+  });
+  fields.count?.addEventListener("input", () => {
+    if (Number(fields.weight?.value || 0) > 0) manualGrossTouched = false;
+  });
   Object.values(fields).forEach((field) => field?.addEventListener("input", liveCalculation));
   Object.values(fields).forEach((field) => field?.addEventListener("change", liveCalculation));
   liveCalculation();
@@ -4038,7 +4051,7 @@ function collectFormValues(form) {
   if (form.querySelectorAll("input[name='sectionAccessList']").length) {
     data.sectionAccess = normalizeSectionAccess(formData.getAll("sectionAccessList").join(", ") || "Dashboard");
   }
-  if (form.querySelectorAll("input[name='columnLayoutSelection']").length) {
+  if (form.querySelector("input[name='columnLayoutTouched']")) {
     data.columnLayoutSelection = formData.getAll("columnLayoutSelection");
   }
   form.querySelectorAll("input[type='checkbox'][name]").forEach((input) => {
@@ -5475,9 +5488,10 @@ async function updateStatus(data) {
 }
 
 async function updateSettings(data) {
-  if (Array.isArray(data.columnLayoutSelection)) {
+  if (data.columnLayoutTouched || Array.isArray(data.columnLayoutSelection)) {
     data.columnLayoutJson = JSON.stringify(columnLayoutFromSelection(data.columnLayoutSelection));
     delete data.columnLayoutSelection;
+    delete data.columnLayoutTouched;
   }
   state.settings = { ...state.settings, ...data, settingsKey: state.settings.settingsKey || "default" };
   const apiSaved = await persistRecord("settings", state.settings);

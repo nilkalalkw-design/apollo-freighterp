@@ -778,9 +778,21 @@ label {
 }
 
 .cargo-entry {
-  grid-template-columns: minmax(120px, 1.1fr) minmax(70px, .6fr) repeat(3, minmax(80px, .7fr)) minmax(90px, .8fr) minmax(110px, .9fr) minmax(130px, 1fr) auto;
+  grid-template-columns: minmax(86px, 1fr) 52px repeat(3, 58px) 66px 82px 98px auto;
   align-items: end;
-  min-width: 980px;
+  min-width: 660px;
+  gap: 6px;
+}
+
+.cargo-entry label {
+  font-size: 11px;
+}
+
+.cargo-entry input,
+.cargo-entry select {
+  min-height: 34px;
+  padding: 7px 8px;
+  font-size: 12px;
 }
 
 .cargo-live-summary {
@@ -816,7 +828,7 @@ label {
 }
 
 .pallet-builder .cargo-entry {
-  grid-template-columns: minmax(120px, 1.1fr) minmax(70px, .6fr) repeat(3, minmax(80px, .7fr)) minmax(90px, .8fr) minmax(110px, .9fr) minmax(130px, 1fr) auto;
+  grid-template-columns: minmax(86px, 1fr) 52px repeat(3, 58px) 66px 82px 98px auto;
   justify-content: stretch;
 }
 
