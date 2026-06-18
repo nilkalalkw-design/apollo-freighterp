@@ -784,6 +784,10 @@ label {
   gap: 6px;
 }
 
+.cargo-category-row {
+  max-width: 260px;
+}
+
 .cargo-entry label {
   font-size: 11px;
 }
