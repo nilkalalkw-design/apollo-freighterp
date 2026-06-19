@@ -4622,40 +4622,89 @@ function qrMarkup(value) {
 function invoiceDocumentHtml(record) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === record.shipmentNo);
   const tariffItem = assignedTariffForShipment(shipmentItem);
-  const tariffCharges = parseTariffChargeLines(tariffItem?.additionalChargesJson || "[]");
+  const customerItem = state.customers.find((row) => row.name === record.customer || row.code === shipmentItem?.customerCode);
+  const invoiceLines = invoiceChargeLines(record, shipmentItem, tariffItem);
+  const invoiceTotal = invoiceLines.reduce((sum, line) => sum + Number(line.amount || 0), 0) || Number(record.revenue || 0);
+  const billToAddress = shipmentItem?.billingParty1Address || shipmentItem?.customerAddress || customerItem?.fullAddress || customerItem?.locationOrLane || "";
+  const shipToName = shipmentItem?.consigneeName || shipmentItem?.deliveryLocation || shipmentItem?.customer || record.customer;
+  const shipToAddress = shipmentItem?.consigneeAddress || shipmentItem?.deliveryAddress || "";
   return documentShell(
     `Bill ${record.invoiceNo}`,
-    "Tax Invoice / Bill",
+    "Invoice",
     record.invoiceNo,
     record.date,
     `
-      <section class="document-summary">
-        <div>
-          <span>Bill To</span>
-          <strong>${escapeHtml(shipmentItem?.billTo1 || record.customer)}</strong>
-          ${shipmentItem?.billTo2 ? `<small>${escapeHtml(shipmentItem.billTo2)}</small>` : `<small>Shipment ${escapeHtml(record.shipmentNo)}</small>`}
-        </div>
-        <div>
-          <span>Amount</span>
-          <strong>${money(record.revenue)}</strong>
-          <small>${escapeHtml(record.invoiceNo)}</small>
-        </div>
+      <section class="invoice-party-grid">
+        <div><h2>BILL TO</h2><strong>${escapeHtml(shipmentItem?.billTo1 || record.customer)}</strong><p>${escapeHtml(billToAddress)}</p><p>${escapeHtml(shipmentItem?.billingParty1Email || customerItem?.email || "")}</p></div>
+        <div><h2>SHIP TO</h2><strong>${escapeHtml(shipToName)}</strong><p>${escapeHtml(shipToAddress)}</p><p>${escapeHtml(shipmentItem?.deliveryMobile || shipmentItem?.consigneeMobile || "")}</p></div>
       </section>
-      <section class="meta">
-        <p><strong>Invoice No</strong><span>${escapeHtml(record.invoiceNo)}</span></p>
-        <p><strong>Date</strong><span>${escapeHtml(record.date)}</span></p>
-        <p><strong>Customer</strong><span>${escapeHtml(record.customer)}</span></p>
-        <p><strong>Shipment No</strong><span>${escapeHtml(record.shipmentNo)}</span></p>
-        <p><strong>Assigned Tariff</strong><span>${escapeHtml(shipmentItem?.tariffNo || "")}</span></p>
-        <p><strong>Nature of Goods</strong><span>${escapeHtml(shipmentItem?.natureOfGoods || "")}</span></p>
-      </section>
-      <table><tbody>
-        <tr><th>Origin</th><td>${escapeHtml(shipmentItem?.origin || "")}</td><th>Destination</th><td>${escapeHtml(shipmentItem?.destination || "")}</td></tr>
+      <table class="invoice-info-table"><tbody>
+        <tr><th>INVOICE NO.</th><th>DATE</th><th>TOTAL DUE</th><th>DUE DATE</th><th>TERMS</th><th>ENCLOSED</th></tr>
+        <tr><td>${escapeHtml(record.invoiceNo)}</td><td>${escapeHtml(record.date)}</td><td>${escapeHtml(invoiceCurrency(record, shipmentItem))} ${money(invoiceTotal)}</td><td>${escapeHtml(invoiceDueDate(record.date, shipmentItem?.billingParty1CreditTerms))}</td><td>${escapeHtml(shipmentItem?.billingParty1CreditTerms || customerItem?.terms || "Net 30")}</td><td></td></tr>
       </tbody></table>
-      <h2>Charges</h2>
-      ${tariffChargeTable(tariffCharges, Number(tariffItem?.additionalChargesTotal || 0), Number(tariffItem?.grandTotal || record.revenue || 0), false, { showTotalRow: false })}
+      <table class="invoice-info-table"><tbody>
+        <tr><th>SHIP VIA</th><th>TRACKING NO.</th><th>FROM / TO</th><th>GR / VOL WEIGHT</th><th>JOB NO.</th></tr>
+        <tr><td>${escapeHtml(shipmentItem?.transportMode || shipmentItem?.shipmentService || "")}</td><td>${escapeHtml(shipmentItem?.airwayBillNo || shipmentItem?.tcnNumber || "")}</td><td>${escapeHtml(invoiceFromTo(shipmentItem))}</td><td>${escapeHtml(invoiceWeightText(shipmentItem))}</td><td>${escapeHtml(record.shipmentNo)}</td></tr>
+      </tbody></table>
+      <table class="invoice-lines-table">
+        <thead><tr><th>ACTIVITY</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead>
+        <tbody>${invoiceLines.map((line) => `<tr><td>${escapeHtml(line.activity)}</td><td>${escapeHtml(line.qty)}</td><td>${money(line.rate)}</td><td>${money(line.amount)}</td></tr>`).join("")}</tbody>
+      </table>
+      <section class="invoice-footer-grid">
+        <div>
+          <strong>Banking Details:</strong>
+          <p>National Bank Of Kuwait (NBK)</p>
+          <p>Apollo Freight Solutions Co. W.L.L</p>
+          <p>Account No.2018077826</p>
+          <p>IBAN: KW52NBOK0000000000002018077826</p>
+          <p>Swift Code: NBOKKWKW</p>
+        </div>
+        <div class="invoice-balance"><span>BALANCE DUE</span><strong>${escapeHtml(invoiceCurrency(record, shipmentItem))} ${money(invoiceTotal)}</strong></div>
+      </section>
+      <section class="invoice-note">
+        <strong>Note:</strong>
+        <p>- Additional 1% of invoice value will be charged if credit limits exceeded.</p>
+        <p>- Any disputed amount or clarification must be raised within maximum 7 days from invoice receipt, otherwise the invoice is considered accepted in full and due for payment.</p>
+      </section>
     `
   );
+}
+
+function invoiceChargeLines(record, shipmentItem, tariffItem) {
+  const tariffLines = parseTariffChargeLines(tariffItem?.additionalChargesJson || "[]")
+    .map((line) => ({ activity: line.description, qty: line.units || 1, rate: line.quotation || line.total || 0, amount: line.total || 0 }));
+  const approvedCharges = state.additionalCharges
+    .filter((row) => row.shipmentNo === record.shipmentNo && row.status !== "Rejected")
+    .map((row) => ({ activity: row.chargeType || "Charges", qty: 1, rate: row.totalAmount || row.amount || 0, amount: row.totalAmount || row.amount || 0 }));
+  const lines = [...tariffLines, ...approvedCharges];
+  if (lines.length) return lines;
+  return [{ activity: shipmentItem?.natureOfGoods || "Freight Charges", qty: 1, rate: Number(record.revenue || 0), amount: Number(record.revenue || 0) }];
+}
+
+function invoiceCurrency(record, shipmentItem) {
+  return shipmentItem?.currency || state.additionalCharges.find((row) => row.shipmentNo === record.shipmentNo)?.currency || "KWD";
+}
+
+function invoiceDueDate(dateValue, terms = "") {
+  const days = Number(String(terms || "").match(/\d+/)?.[0] || 30);
+  const base = dateValue ? new Date(dateValue) : new Date();
+  if (Number.isNaN(base.getTime())) return "";
+  base.setDate(base.getDate() + days);
+  return base.toISOString().slice(0, 10);
+}
+
+function invoiceFromTo(shipmentItem) {
+  if (!shipmentItem) return "";
+  const from = shipmentItem.shipperName || shipmentItem.pickupLocation || shipmentItem.origin || "";
+  const to = shipmentItem.consigneeName || shipmentItem.deliveryLocation || shipmentItem.destination || "";
+  return [from, to].filter(Boolean).join(" / ");
+}
+
+function invoiceWeightText(shipmentItem) {
+  if (!shipmentItem) return "";
+  const gross = Number(shipmentItem.actualKg || 0);
+  const chargeable = Number(shipmentItem.manualChargeableKg || shipmentItem.chargeableKg || 0);
+  return `${money(gross || chargeable)} KGS`;
 }
 
 function tariffDocumentHtml(record) {
@@ -4884,6 +4933,22 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
         .manifest-declaration span { text-align: right; font-weight: 700; }
         .manifest-stamps { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 20px; }
         .manifest-stamps div { min-height: 72px; border-top: 1px solid #172033; padding-top: 8px; font-size: 11px; font-weight: 700; text-align: center; }
+        .invoice-party-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 16px; }
+        .invoice-party-grid div { min-height: 104px; border: 1px solid #dbe5ef; padding: 12px; background: #fbfdff; }
+        .invoice-party-grid h2 { margin: 0 0 8px; font-size: 13px; color: #114b67; }
+        .invoice-party-grid strong, .invoice-party-grid p { display: block; margin: 4px 0; overflow-wrap: anywhere; }
+        .invoice-info-table { table-layout: fixed; margin-top: 10px; font-size: 11px; }
+        .invoice-info-table th, .invoice-info-table td { text-align: center; padding: 8px 6px; overflow-wrap: anywhere; }
+        .invoice-lines-table { margin-top: 18px; }
+        .invoice-lines-table th:nth-child(2), .invoice-lines-table th:nth-child(3), .invoice-lines-table th:nth-child(4),
+        .invoice-lines-table td:nth-child(2), .invoice-lines-table td:nth-child(3), .invoice-lines-table td:nth-child(4) { text-align: right; width: 90px; }
+        .invoice-footer-grid { display: grid; grid-template-columns: 1fr 240px; gap: 20px; margin-top: 18px; align-items: start; }
+        .invoice-footer-grid p { margin: 3px 0; font-size: 11px; }
+        .invoice-balance { border-top: 2px solid #1f7a8c; padding-top: 10px; text-align: right; }
+        .invoice-balance span { display: block; color: #5d6c7b; font-size: 11px; font-weight: 800; }
+        .invoice-balance strong { display: block; margin-top: 6px; color: #114b67; font-size: 18px; }
+        .invoice-note { margin-top: 14px; font-size: 10px; line-height: 1.35; }
+        .invoice-note p { margin: 3px 0; }
         .footer-note { margin-top: 26px; padding-top: 14px; border-top: 1px solid #dbe5ef; color: #607080; font-size: 12px; text-align: center; }
         @page { size: ${pageSize}; margin: 8mm; }
         @media print {
