@@ -1672,8 +1672,6 @@ function renderSettings() {
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${input("branches", "Branches", state.settings.branches)}
-          ${columnLayoutSettings()}
-          <input type="hidden" name="columnLayoutTouched" value="1" />
           <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
@@ -2323,15 +2321,6 @@ function isSameAsGrossWeightCategory(category) {
 }
 
 function configurableColumns(type, defaults) {
-  try {
-    const config = JSON.parse(state.settings.columnLayoutJson || "{}");
-    const columns = config?.[type];
-    if (Array.isArray(columns)) {
-      return columns
-        .map((column) => Array.isArray(column) ? column : [column.key, column.label || labelize(column.key)])
-        .filter(([key]) => key && !isRegisterAddressColumn(key));
-    }
-  } catch {}
   return defaults.filter(([key]) => !isRegisterAddressColumn(key));
 }
 
@@ -2372,43 +2361,6 @@ function defaultColumnLayouts() {
     charge: [["refNo", "Ref No"], ["shipmentNo", "Shipment No"], ["chargeType", "Charge Type"], ["supplier", "Supplier"], ["amount", "Amount"], ["taxAmount", "Tax"], ["totalAmount", "Total"], ["status", "Status"]],
     user: [["userName", "User"], ["email", "Email"], ["role", "Role"], ["accountStatus", "Status"], ["branchAccess", "Branch"]]
   };
-}
-
-function savedColumnLayout() {
-  try {
-    return JSON.parse(state.settings.columnLayoutJson || "{}") || {};
-  } catch {
-    return {};
-  }
-}
-
-function columnLayoutSettings() {
-  const defaults = defaultColumnLayouts();
-  const saved = savedColumnLayout();
-  const labels = {
-    shipment: "Shipment Register",
-    load: "Manifest / Consolidation Register",
-    customers: "Customer Register",
-    suppliers: "Supplier / Transport Register",
-    tariff: "Tariff Register",
-    invoice: "Invoice / Billing Register",
-    charge: "Additional Charges Register",
-    document: "Document Register",
-    user: "User Register"
-  };
-  return `<fieldset class="column-layout-settings">
-    <legend>Register Column Layout</legend>
-    ${Object.entries(defaults).map(([type, columns]) => {
-      const savedColumns = Object.prototype.hasOwnProperty.call(saved, type) ? saved[type] : columns;
-      const activeKeys = new Set((Array.isArray(savedColumns) ? savedColumns : columns).map((column) => Array.isArray(column) ? column[0] : column.key));
-      return `<details class="column-layout-group" ${type === "shipment" || type === "load" ? "open" : ""}>
-        <summary>${escapeHtml(labels[type] || labelize(type))}</summary>
-        <div class="column-layout-grid">
-          ${columns.map(([key, label]) => checkbox("columnLayoutSelection", label, activeKeys.has(key), `${type}:${key}`)).join("")}
-        </div>
-      </details>`;
-    }).join("")}
-  </fieldset>`;
 }
 
 function shipmentColumns() {
@@ -4126,11 +4078,8 @@ function collectFormValues(form) {
   if (form.querySelectorAll("input[name='sectionAccessList']").length) {
     data.sectionAccess = normalizeSectionAccess(formData.getAll("sectionAccessList").join(", ") || "Dashboard");
   }
-  if (form.querySelector("input[name='columnLayoutTouched']")) {
-    data.columnLayoutSelection = Array.from(form.querySelectorAll("input[name='columnLayoutSelection']:checked")).map((input) => input.value);
-  }
   form.querySelectorAll("input[type='checkbox'][name]").forEach((input) => {
-    if (["sectionAccessList", "columnLayoutSelection"].includes(input.name)) return;
+    if (input.name === "sectionAccessList") return;
     data[input.name] = input.checked;
   });
   return data;
@@ -5603,26 +5552,12 @@ async function updateStatus(data) {
 }
 
 async function updateSettings(data) {
-  if (data.columnLayoutTouched || Array.isArray(data.columnLayoutSelection)) {
-    data.columnLayoutJson = JSON.stringify(columnLayoutFromSelection(data.columnLayoutSelection));
-    delete data.columnLayoutSelection;
-    delete data.columnLayoutTouched;
-  }
   state.settings = { ...state.settings, ...data, settingsKey: state.settings.settingsKey || "default" };
   const apiSaved = await persistRecord("settings", state.settings);
   addHistory("Saved company settings", data.companyName);
   notifySuccess("Settings saved", "Company settings were updated successfully.");
   if (apiSaved) setTimeout(() => syncFromApi(), 300);
   return true;
-}
-
-function columnLayoutFromSelection(selection) {
-  const defaults = defaultColumnLayouts();
-  const selected = new Set(selection);
-  return Object.fromEntries(Object.entries(defaults).map(([type, columns]) => {
-    const picked = columns.filter(([key]) => selected.has(`${type}:${key}`));
-    return [type, picked];
-  }));
 }
 
 function endpointFor(type) {
