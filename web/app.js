@@ -200,6 +200,7 @@ function shipmentMetaNotes(data) {
     customerContactPerson: String(data.customerContactPerson || "").trim(),
     customerMobile: String(data.customerMobile || "").trim(),
     customerEmail: String(data.customerEmail || "").trim(),
+    customerAddress: String(data.customerAddress || "").trim(),
     internalReferenceNo: String(data.internalReferenceNo || "").trim(),
     salesPerson: String(data.salesPerson || "").trim(),
     shipperName: String(data.shipperName || "").trim(),
@@ -294,9 +295,7 @@ function loadMetaNotes(data) {
     driverName: String(data.driverName || "").trim(),
     driverNumber: String(data.driverNumber || "").trim(),
     driverMobile: String(data.driverMobile || "").trim(),
-    transporterCode: String(data.transporterCode || "").trim(),
-    sealNo: String(data.sealNo || "").trim(),
-    tirCarnetNo: String(data.tirCarnetNo || "").trim()
+    transporterCode: String(data.transporterCode || "").trim()
   });
 }
 
@@ -358,6 +357,7 @@ function shipment(
     customerContactPerson: meta.customerContactPerson || "",
     customerMobile: meta.customerMobile || "",
     customerEmail: meta.customerEmail || "",
+    customerAddress: meta.customerAddress || "",
     internalReferenceNo: meta.internalReferenceNo || "",
     salesPerson: meta.salesPerson || "",
     shipperName: meta.shipperName || "",
@@ -451,7 +451,7 @@ function shipment(
 
 function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, manifestStatus = "Not Generated", lastManifestRequestNo = "", createdBy = currentUserName(), notes = "") {
   const meta = parseJsonMeta(notes);
-  return { loadNo, tripDate, route, transporter, transporterCode: meta.transporterCode || "", vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", driverMobile: meta.driverMobile || "", sealNo: meta.sealNo || "", tirCarnetNo: meta.tirCarnetNo || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
+  return { loadNo, tripDate, route, transporter, transporterCode: meta.transporterCode || "", vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", driverMobile: meta.driverMobile || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
 }
 
 function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName(), fullAddress = "", mobile = "") {
@@ -3095,8 +3095,6 @@ function dialogConfigFor(type, mode = "") {
           ${input("driverName", "Driver Name", "")}
           ${input("driverNumber", "Driver Number", "")}
           ${input("driverMobile", "Driver Mobile", "")}
-          ${input("sealNo", "Seal No", "")}
-          ${input("tirCarnetNo", "TIR / Carnet #", "")}
         `, true)}
         ${select("status", "Status", ["Planned", "Loading", "Dispatched", "Delivered", "Closed"])}
         ${select("manifestStatus", "Manifest Status", ["Not Generated", "Pending Approval", "Approved", "Rejected"])}
@@ -3250,6 +3248,7 @@ function shipmentDialogBody(mode = "shipment") {
       ${input("customerContactPerson", "Contact Person", "")}
       ${input("customerMobile", "Mobile Number", "")}
       ${input("customerEmail", "Email Address", "", false, "email")}
+      ${textarea("customerAddress", "Address", "", false, 3)}
     `)}
     ${formSection("Shipper Information", `
       ${checkbox("copyCustomerToShipper", "Same as customer information")}
@@ -3584,6 +3583,7 @@ function bindShipmentCustomerAutofill() {
     setDialogValue("customerEmail", customer.email);
     setDialogValue("customerMobile", customer.mobile);
     setDialogValue("customerContactPerson", customer.name);
+    setDialogValue("customerAddress", customer.fullAddress || customer.locationOrLane);
     setDialogValue("consigneeName", customer.name);
     setDialogValue("consigneeAddress", customer.fullAddress || customer.locationOrLane);
     setDialogValue("consigneeEmail", customer.email);
@@ -3604,7 +3604,7 @@ function customerDialogSnapshot() {
   return {
     name: dialogValue("customer"),
     code: dialogValue("customerCode"),
-    address: customerAddressFor(dialogValue("customer"), dialogValue("customerCode")),
+    address: dialogValue("customerAddress") || customerAddressFor(dialogValue("customer"), dialogValue("customerCode")),
     contact: dialogValue("customerContactPerson") || dialogValue("customer"),
     mobile: dialogValue("customerMobile"),
     email: dialogValue("customerEmail"),
@@ -3647,7 +3647,7 @@ function bindShipmentCopySections() {
       Object.entries(fieldMap).forEach(([target, sourceKey]) => setDialogValue(target, source[sourceKey]));
     };
     checkboxField.addEventListener("change", copy);
-    ["customer", "customerCode", "customerContactPerson", "customerMobile", "customerEmail", "deliveryLocation", "deliveryAddress", "deliveryContactPerson", "deliveryMobile"].forEach((name) => {
+    ["customer", "customerCode", "customerContactPerson", "customerMobile", "customerEmail", "customerAddress", "deliveryLocation", "deliveryAddress", "deliveryContactPerson", "deliveryMobile"].forEach((name) => {
       dialogBody.querySelector(`[name='${name}']`)?.addEventListener("input", copy);
     });
     copy();
@@ -4428,6 +4428,8 @@ function shipmentDocumentHtml(record) {
         ["Shipment Date", record.shipmentDate],
         ["Service Type", record.shipmentService],
         ["Transport Mode", record.transportMode],
+        ["Origin", record.origin],
+        ["Destination", record.destination],
         ["Customer Reference", record.customerReference],
         ["Internal Reference", record.internalReferenceNo],
         ["Branch", record.branch],
@@ -4438,7 +4440,8 @@ function shipmentDocumentHtml(record) {
         ["Customer Code", record.customerCode],
         ["Contact Person", record.customerContactPerson],
         ["Mobile Number", record.customerMobile],
-        ["Email Address", record.customerEmail]
+        ["Email Address", record.customerEmail],
+        ["Address", record.customerAddress || customerAddressFor(record.customer, record.customerCode)]
       ])}
       ${documentBlock("Shipper Information", [
         ["Shipper Name", record.shipperName],
@@ -4473,13 +4476,6 @@ function shipmentDocumentHtml(record) {
         ["Delivery Date", record.deliveryDate],
         ["Delivery Time", record.deliveryTime]
       ])}
-      ${documentBlock("Notify Party", [
-        ["Notify Party Name", record.notifyPartyName],
-        ["Address", record.notifyPartyAddress],
-        ["Contact Person", record.notifyContactPerson],
-        ["Mobile Number", record.notifyMobile],
-        ["Email Address", record.notifyEmail]
-      ])}
       ${documentBlock("Billing Party 1", [
         ["Billing Party Name", record.billTo1],
         ["Billing Address", record.billingParty1Address],
@@ -4488,42 +4484,9 @@ function shipmentDocumentHtml(record) {
         ["Email Address", record.billingParty1Email],
         ["Credit Terms", record.billingParty1CreditTerms]
       ])}
-      ${documentBlock("Billing Party 2", [
-        ["Secondary Billing Party", record.billTo2],
-        ["Secondary Address", record.billingParty2Address],
-        ["Contact Person", record.billingParty2ContactPerson],
-        ["Mobile Number", record.billingParty2Mobile],
-        ["Email Address", record.billingParty2Email],
-        ["Billing Percentage", record.billingParty2Percentage]
-      ])}
       ${cargoItemsPrintTable(record)}
-      ${documentBlock("Routing Information", [
-        ["Origin", record.origin],
-        ["Destination", record.destination],
-        ["Transit Point", record.transitPoint],
-        ["Route", record.route]
-      ])}
-      ${documentBlock("Transport Information", [
-        ["Transporter", record.transporter],
-        ["Vehicle Number", record.vehicleNo],
-        ["Driver Name", record.driverName],
-        ["Driver Mobile", record.driverMobile],
-        ["Trip Number", record.tripNo],
-        ["Manifest Number", record.manifestNo]
-      ])}
-      ${documentBlock("Financial Summary", [
-        ["Currency", record.currency],
-        ["Freight Amount", money(record.freightAmount)],
-        ["Other Charges", money(record.otherChargesAmount)],
-        ["Tax Amount", money(record.taxAmount)],
-        ["Total Amount", money(record.totalAmount)],
-        ["Payment Mode", record.paymentMode]
-      ])}
-      ${documentBlock("Remarks", [
-        ["Nature of Goods", record.natureOfGoods],
-        ["Special Instructions", record.specialInstructions],
-        ["Handling Instructions", record.handlingInstructions],
-        ["Internal Notes", record.internalNotes]
+      ${documentBlock("Cargo Summary", [
+        ["Nature of Goods", record.natureOfGoods]
       ])}
       <p class="footer-note">Terms and conditions apply as per Apollo Freight Solutions cargo acceptance and delivery policy.</p>
     `,
@@ -4615,11 +4578,9 @@ function manifestDocumentHtml(record) {
           <p><strong>FROM</strong><span>${escapeHtml(record.from || record.origin || record.route || "")}</span></p>
           <p><strong>MANIFEST NO</strong><span>${escapeHtml(record.loadNo || "")}</span></p>
           <p><strong>TO</strong><span>${escapeHtml(record.to || record.destination || "")}</span></p>
-          <p><strong>TIR / CARNET #</strong><span>${escapeHtml(record.tirCarnetNo || "")}</span></p>
           <p><strong>DRIVER NAME</strong><span>${escapeHtml(record.driverName || "")}</span></p>
           <p><strong>ETD</strong><span>${escapeHtml(record.tripDate || "")}</span></p>
           <p><strong>MOB NO</strong><span>${escapeHtml(record.driverNumber || record.driverMobile || "")}</span></p>
-          <p><strong>SEAL NO</strong><span>${escapeHtml(record.sealNo || "")}</span></p>
         </div>
       </section>
       <table class="manifest-table">
