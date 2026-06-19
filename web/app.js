@@ -844,17 +844,13 @@ function boot() {
 function handleDropdownFocus(event) {
   const field = event.target.closest?.("[data-dropdown-input]");
   if (!field || field.readOnly) return;
-  field.dataset.previousDropdownValue = field.value;
-  field.value = "";
+  field.select?.();
 }
 
 function handleDropdownBlur(event) {
   const field = event.target.closest?.("[data-dropdown-input]");
   if (!field) return;
-  if (!field.value && field.dataset.previousDropdownValue) {
-    field.value = field.dataset.previousDropdownValue;
-  }
-  delete field.dataset.previousDropdownValue;
+  rememberDropdownOptions({ [field.dataset.dropdownKey || field.name]: field.value });
 }
 
 function isAdminSession() {
@@ -2208,7 +2204,8 @@ function select(name, label, options, selected = options[0]) {
 }
 
 function selectFrom(name, label, options, value = options[0] || "") {
-  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(optionValue(value))}" data-dropdown-input /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
+  const optionKey = dropdownKeyForField(name) || name;
+  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(optionValue(value))}" data-dropdown-key="${escapeHtml(optionKey)}" data-dropdown-input /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
 }
 
 function optionValue(option) {
@@ -2332,10 +2329,14 @@ function configurableColumns(type, defaults) {
     if (Array.isArray(columns)) {
       return columns
         .map((column) => Array.isArray(column) ? column : [column.key, column.label || labelize(column.key)])
-        .filter(([key]) => key);
+        .filter(([key]) => key && !isRegisterAddressColumn(key));
     }
   } catch {}
-  return defaults;
+  return defaults.filter(([key]) => !isRegisterAddressColumn(key));
+}
+
+function isRegisterAddressColumn(key) {
+  return /address/i.test(String(key || ""));
 }
 
 function defaultColumnLayouts() {
@@ -2411,8 +2412,7 @@ function columnLayoutSettings() {
 }
 
 function shipmentColumns() {
-  const hiddenAddressKeys = new Set(["billingParty1Address", "shipperAddress", "consigneeAddress", "pickupAddress", "deliveryAddress"]);
-  return configurableColumns("shipment", defaultColumnLayouts().shipment).filter(([key]) => !hiddenAddressKeys.has(key));
+  return configurableColumns("shipment", defaultColumnLayouts().shipment);
 }
 
 function loadColumns() {
@@ -5621,7 +5621,7 @@ function columnLayoutFromSelection(selection) {
   const selected = new Set(selection);
   return Object.fromEntries(Object.entries(defaults).map(([type, columns]) => {
     const picked = columns.filter(([key]) => selected.has(`${type}:${key}`));
-    return [type, picked.length ? picked : columns];
+    return [type, picked];
   }));
 }
 
@@ -5920,3 +5920,4 @@ function sendShipmentStatusEmail(jobNo) {
 }
 
 boot();
+
