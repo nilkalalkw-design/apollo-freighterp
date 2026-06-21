@@ -513,7 +513,7 @@ label {
 .date-filter-panel {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: auto 180px 180px auto auto minmax(0, 1fr);
+  grid-template-columns: auto 180px 180px auto auto minmax(220px, auto) minmax(0, 1fr);
   gap: 10px;
   align-items: end;
   margin-top: 6px;
@@ -532,6 +532,31 @@ label {
 
 .filter-status {
   align-self: center;
+  font-size: 12px;
+}
+
+.branch-filter-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  align-self: center;
+}
+
+.branch-filter-panel.is-hidden {
+  display: none;
+}
+
+.branch-filter-panel .filter-label {
+  margin-right: 2px;
+}
+
+.branch-filter-panel .checkbox-field {
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
   font-size: 12px;
 }
 
@@ -1049,6 +1074,67 @@ th {
   gap: 10px;
 }
 
+.tariff-detail-preview {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 12px;
+}
+
+.tariff-preview-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.tariff-preview-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.tariff-preview-heading h3 {
+  margin: 0;
+  color: var(--blue);
+  font-size: 18px;
+}
+
+.tariff-preview-heading strong {
+  white-space: nowrap;
+  color: var(--green-text);
+  font-size: 16px;
+}
+
+.tariff-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tariff-preview-grid p {
+  margin: 0;
+  min-width: 0;
+}
+
+.tariff-preview-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.tariff-preview-grid strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .dialog-picker,
 .selected-job-list {
   display: grid;
@@ -1377,6 +1463,10 @@ th {
   .job-list-detail-grid {
     grid-template-columns: repeat(3, minmax(120px, 1fr));
   }
+
+  .tariff-preview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 920px) {
@@ -1428,6 +1518,10 @@ th {
 
   .job-list-detail-grid {
     grid-template-columns: repeat(2, minmax(110px, 1fr));
+  }
+
+  .tariff-preview-grid {
+    grid-template-columns: 1fr;
   }
 
   .tariff-charge-entry,

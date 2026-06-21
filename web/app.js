@@ -41,6 +41,7 @@ const toDate = document.querySelector("#toDate");
 const applyFilters = document.querySelector("#applyFilters");
 const dateFilterStatusText = document.querySelector("#dateFilterStatusText");
 const resetFilters = document.querySelector("#resetFilters");
+const branchFilterPanel = document.querySelector("#branchFilterPanel");
 const newShipmentButton = document.querySelector("#newShipmentButton");
 const logoutButton = document.querySelector("#logoutButton");
 const resetEmail = document.querySelector("#resetEmail");
@@ -617,7 +618,10 @@ function normalizeState(stored) {
         fromDate: "",
         toDate: "",
         ...((stored.ui || {}).auditFilters || {})
-      }
+      },
+      adminBranchFilter: Object.prototype.hasOwnProperty.call(stored.ui || {}, "adminBranchFilter") && Array.isArray((stored.ui || {}).adminBranchFilter)
+        ? (stored.ui || {}).adminBranchFilter
+        : null
     }
   };
   return normalized;
@@ -753,7 +757,7 @@ function filteredRows(rows) {
     const textMatch = !query || Object.values(row).join(" ").toLowerCase().includes(query);
     const fromMatch = !from || !date || date >= from;
     const toMatch = !to || !date || date <= to;
-    return textMatch && fromMatch && toMatch;
+    return textMatch && fromMatch && toMatch && adminBranchFilterMatch(row);
   });
 }
 
@@ -817,10 +821,13 @@ function boot() {
   });
   globalSearch.addEventListener("input", render);
   applyFilters.addEventListener("click", render);
+  branchFilterPanel?.addEventListener("change", handleAdminBranchFilterChange);
   resetFilters.addEventListener("click", () => {
     globalSearch.value = "";
     fromDate.value = "";
     toDate.value = "";
+    state.ui.adminBranchFilter = allBranchFilterOptions();
+    saveState();
     render();
   });
   newShipmentButton?.addEventListener("click", openShipmentWorkspace);
@@ -934,6 +941,103 @@ function branchAllowed(row) {
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
   return allowed.includes(branch.toLowerCase());
+}
+
+function allBranchFilterOptions() {
+  const values = [
+    ...branchOptions(),
+    "Branch 1",
+    "Branch 2",
+    ...state.shipments.map((row) => row.branch),
+    ...state.customers.map((row) => row.branch),
+    ...state.suppliers.map((row) => row.branch)
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  return uniqueOptions(values);
+}
+
+function selectedAdminBranches() {
+  const options = allBranchFilterOptions();
+  const selected = Array.isArray(state.ui.adminBranchFilter)
+    ? state.ui.adminBranchFilter
+    : options;
+  const valid = new Set(options.map((branch) => branch.toLowerCase()));
+  return selected.filter((branch) => valid.has(String(branch || "").toLowerCase()));
+}
+
+function renderAdminBranchFilter() {
+  if (!branchFilterPanel) return;
+  if (!isAdminSession()) {
+    branchFilterPanel.innerHTML = "";
+    branchFilterPanel.classList.add("is-hidden");
+    return;
+  }
+
+  const options = allBranchFilterOptions();
+  const selected = new Set(selectedAdminBranches().map((branch) => branch.toLowerCase()));
+  branchFilterPanel.classList.remove("is-hidden");
+  branchFilterPanel.innerHTML = `
+    <span class="filter-label">Branch</span>
+    ${options.map((branch) => checkbox("adminBranchFilter", branch, selected.has(branch.toLowerCase()), branch)).join("")}
+  `;
+}
+
+function handleAdminBranchFilterChange(event) {
+  if (!event.target.matches("input[name='adminBranchFilter']")) return;
+  state.ui.adminBranchFilter = Array.from(branchFilterPanel.querySelectorAll("input[name='adminBranchFilter']:checked")).map((input) => input.value);
+  saveState();
+  render();
+}
+
+function adminBranchFilterSummary() {
+  if (!isAdminSession()) return "";
+  const options = allBranchFilterOptions();
+  const selected = selectedAdminBranches();
+  if (!selected.length || selected.length === options.length) return "";
+  return ` | Branch: ${selected.join(", ")}`;
+}
+
+function adminBranchFilterMatch(row) {
+  if (!isAdminSession()) return true;
+  const selected = selectedAdminBranches().map((branch) => branch.toLowerCase());
+  if (!selected.length) return false;
+  const options = allBranchFilterOptions();
+  if (selected.length === options.length) return true;
+  const rowBranches = branchValuesForRecord(row).map((branch) => branch.toLowerCase());
+  return !rowBranches.length || rowBranches.some((branch) => selected.includes(branch));
+}
+
+function branchValuesForRecord(row) {
+  const branches = new Set();
+  const add = (value) => {
+    String(value || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .forEach((item) => {
+        if (!["both", "all"].includes(item.toLowerCase())) branches.add(item);
+      });
+  };
+
+  add(row?.branch);
+  add(row?.branchAccess);
+
+  const shipmentKeys = [row?.shipmentNo, row?.jobNo, row?.linkedNo, row?.referenceNo]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  shipmentKeys.forEach((jobNo) => add(state.shipments.find((shipmentItem) => shipmentItem.jobNo === jobNo)?.branch));
+
+  String(row?.jobNumbers || "")
+    .split(",")
+    .map((jobNo) => jobNo.trim())
+    .filter(Boolean)
+    .forEach((jobNo) => add(state.shipments.find((shipmentItem) => shipmentItem.jobNo === jobNo)?.branch));
+
+  const customerName = row?.customer || row?.customerName || row?.customer_name;
+  if (customerName) add(state.customers.find((customer) => customer.name === customerName || customer.code === customerName)?.branch);
+
+  return [...branches];
 }
 
 function notify(status, title, detail = "") {
@@ -1322,6 +1426,7 @@ function render() {
   pageTitle.textContent = module[0];
   pageSubtitle.textContent = module[1];
   updateUserContext();
+  renderAdminBranchFilter();
   updateDateFilterStatus();
   moduleNav.querySelectorAll("button").forEach((button) => button.classList.toggle("active", button.dataset.module === activeModule));
   if (apiBanner) {
@@ -1355,14 +1460,15 @@ function updateUserContext() {
 }
 
 function updateDateFilterStatus() {
+  const branchText = adminBranchFilterSummary();
   if (!fromDate.value && !toDate.value) {
-    dateFilterStatusText.textContent = "Showing all records";
+    dateFilterStatusText.textContent = `Showing all records${branchText}`;
     return;
   }
 
   const fromLabel = fromDate.value || "start";
   const toLabel = toDate.value || "today";
-  dateFilterStatusText.textContent = `Showing records from ${fromLabel} to ${toLabel}`;
+  dateFilterStatusText.textContent = `Showing records from ${fromLabel} to ${toLabel}${branchText}`;
 }
 
 function renderDashboard() {
@@ -2647,6 +2753,7 @@ function openRecord(type, id) {
   if (type === "shipment") bindPalletDimensionBuilder();
   if (type === "tariff") bindTariffAdditionalCharges(record.additionalChargesJson || "[]");
   if (type === "load") bindConsolidationJobPicker();
+  if (type === "invoice") bindInvoiceShipmentTariff();
   bindDialogPasswordToggles();
   recordDialog.showModal();
 }
@@ -2707,6 +2814,9 @@ function detailFieldControl(type, key, value, record) {
   }
   if (type === "shipment" && key === "tcnNumber") {
     return `${input(key, labelize(key), value ?? "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>`;
+  }
+  if (type === "invoice" && key === "tariffNo") {
+    return `${selectFrom(key, labelize(key), tariffSelectionOptions(), String(value ?? ""))}${tariffPreviewShell("invoice")}`;
   }
   if (type === "user" && key === "password") {
     return passwordField(key, labelize(key), value ?? "");
@@ -3109,7 +3219,8 @@ function dialogConfigFor(type, mode = "") {
         ${input("invoiceNo", "Invoice No", nextInvoiceNumber(), false)}
         ${selectFrom("customer", "Consignee", state.customers.map((row) => row.name))}
         ${selectFrom("shipmentNo", "Shipment", shipmentOptions())}
-        ${input("tariffNo", "Assigned Tariff", "", true)}
+        ${selectFrom("tariffNo", "Assigned Tariff", tariffSelectionOptions())}
+        ${tariffPreviewShell("invoice")}
         ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
         ${input("revenue", "Revenue", "100.000", false, "number")}
         ${input("supplierCost", "Supplier Cost", "70.000", false, "number")}
@@ -3465,6 +3576,7 @@ function consolidationShipmentPicker(initialJobs = "", currentLoadNo = "") {
       <button type="button" class="secondary-button" data-dialog-action="add-consolidation-job">Add Shipment</button>
     </div>
     <div class="selected-job-list" data-consolidation-jobs-list></div>
+    ${tariffPreviewShell("load")}
     <p class="empty-state">${shipmentOptionIds.length ? "Only shipments saved with service type Consolidation are available. Already assigned shipments are hidden." : "No unassigned Consolidation service shipments are available."}</p>
   </div>`;
 }
@@ -4016,6 +4128,74 @@ function tariffChargeTable(lines, total, grandTotal, showActions = true, options
   </table></div>`;
 }
 
+function tariffSelectionOptions() {
+  return visibleRows(state.tariffs).map((row) => ({
+    value: row.tariffNo,
+    label: `${row.tariffNo} | ${row.customer} | ${row.origin} to ${row.destination}`
+  }));
+}
+
+function tariffPreviewShell(scope) {
+  return `<section class="tariff-detail-preview" data-tariff-preview="${escapeHtml(scope)}"></section>`;
+}
+
+function summaryPair(label, value) {
+  return `<p><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? "")}</strong></p>`;
+}
+
+function tariffPreviewHtml(tariffs, emptyText = "Select a tariff to view full details.") {
+  const uniqueTariffs = [];
+  const seen = new Set();
+  tariffs.filter(Boolean).forEach((tariffItem) => {
+    const key = String(tariffItem.tariffNo || "").toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    uniqueTariffs.push(tariffItem);
+  });
+
+  if (!uniqueTariffs.length) {
+    return `<p class="empty-state">${escapeHtml(emptyText)}</p>`;
+  }
+
+  return uniqueTariffs.map((tariffItem) => {
+    const charges = parseTariffChargeLines(tariffItem.additionalChargesJson || "[]");
+    return `<article class="tariff-preview-card">
+      <div class="tariff-preview-heading">
+        <div>
+          <p class="eyebrow">Tariff Details</p>
+          <h3>${escapeHtml(tariffItem.tariffNo)}</h3>
+        </div>
+        <strong>${escapeHtml(tariffItem.currency || "KD")} ${money(tariffItem.grandTotal || tariffItem.minCharge || 0)}</strong>
+      </div>
+      <div class="tariff-preview-grid">
+        ${summaryPair("Consignee", tariffItem.customer)}
+        ${summaryPair("Origin", tariffItem.origin)}
+        ${summaryPair("Destination", tariffItem.destination)}
+        ${summaryPair("Main Section", tariffItem.mainSection)}
+        ${summaryPair("Weight Section", tariffItem.weightSection)}
+        ${summaryPair("Minimum Up To", tariffItem.minUpTo)}
+        ${summaryPair("Rate", money(tariffItem.rate || 0))}
+        ${summaryPair("Minimum Charge", money(tariffItem.minCharge || 0))}
+      </div>
+      ${tariffChargeTable(charges, Number(tariffItem.additionalChargesTotal || 0), Number(tariffItem.grandTotal || 0), false)}
+    </article>`;
+  }).join("");
+}
+
+function updateTariffPreview(scope, tariffs, emptyText) {
+  const container = dialogBody.querySelector(`[data-tariff-preview='${CSS.escape(scope)}']`);
+  if (!container) return;
+  container.innerHTML = tariffPreviewHtml(tariffs, emptyText);
+}
+
+function tariffsForJobNumbers(jobNumbers) {
+  return jobNumbers
+    .map((jobNo) => state.shipments.find((shipmentItem) => shipmentItem.jobNo === jobNo))
+    .filter(Boolean)
+    .map(assignedTariffForShipment)
+    .filter(Boolean);
+}
+
 function bindDialogPasswordToggles() {
   dialogBody.querySelectorAll("[data-dialog-action='toggle-password']").forEach((button) => {
     button.addEventListener("click", () => {
@@ -4043,13 +4223,15 @@ function bindConsolidationJobPicker() {
   );
 
   const syncSelectedJobs = () => {
-    hiddenField.value = [...selectedJobs].join(", ");
+    const jobNumbers = [...selectedJobs];
+    hiddenField.value = jobNumbers.join(", ");
     list.innerHTML = selectedJobs.size
       ? [...selectedJobs].map((jobNo) => {
           const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
           return `<span class="job-chip selected-job-chip"><strong>${escapeHtml(jobNo)}</strong><small>${escapeHtml(shipmentItem ? `${shipmentItem.customer} | ${shipmentItem.origin} to ${shipmentItem.destination}` : "Shipment details not found")}</small><button type="button" class="ghost-button" data-remove-consolidation-job="${escapeHtml(jobNo)}">Remove</button></span>`;
         }).join("")
       : `<p class="empty-state">No shipments added yet.</p>`;
+    updateTariffPreview("load", tariffsForJobNumbers(jobNumbers), "Add shipments to this manifest to view their tariff details.");
   };
 
   picker.addEventListener("click", (event) => {
@@ -4091,20 +4273,25 @@ function bindInvoiceShipmentTariff() {
   const tariffField = dialogBody.querySelector("input[name='tariffNo']");
   const revenueField = dialogBody.querySelector("input[name='revenue']");
   const supplierCostField = dialogBody.querySelector("input[name='supplierCost']");
-  if (!shipmentField) return;
+  if (!shipmentField && !tariffField) return;
 
   const sync = () => {
-    const shipmentItem = state.shipments.find((row) => row.jobNo === shipmentField.value);
-    if (!shipmentItem) return;
-    const tariffItem = assignedTariffForShipment(shipmentItem);
-    if (customerField) customerField.value = shipmentItem.customer || "";
-    if (tariffField) tariffField.value = shipmentItem.tariffNo || tariffItem?.tariffNo || "";
-    if (revenueField) revenueField.value = numericInputValue(tariffItem?.grandTotal || shipmentItem.sell || 0);
-    if (supplierCostField) supplierCostField.value = numericInputValue(shipmentItem.buyCost || 0);
+    const shipmentItem = state.shipments.find((row) => row.jobNo === shipmentField?.value);
+    const selectedTariff = state.tariffs.find((row) => String(row.tariffNo || "").trim().toLowerCase() === String(tariffField?.value || "").trim().toLowerCase());
+    const tariffItem = selectedTariff || assignedTariffForShipment(shipmentItem);
+    if (shipmentItem) {
+      if (customerField) customerField.value = shipmentItem.customer || "";
+      if (tariffField && !selectedTariff) tariffField.value = shipmentItem.tariffNo || tariffItem?.tariffNo || "";
+      if (supplierCostField) supplierCostField.value = numericInputValue(shipmentItem.buyCost || 0);
+    }
+    if (revenueField && tariffItem) revenueField.value = numericInputValue(tariffItem.grandTotal || shipmentItem?.sell || 0);
+    updateTariffPreview("invoice", [tariffItem], "Select a shipment or tariff number to view full tariff details.");
   };
 
-  shipmentField.addEventListener("input", sync);
-  shipmentField.addEventListener("change", sync);
+  shipmentField?.addEventListener("input", sync);
+  shipmentField?.addEventListener("change", sync);
+  tariffField?.addEventListener("input", sync);
+  tariffField?.addEventListener("change", sync);
   sync();
 }
 
