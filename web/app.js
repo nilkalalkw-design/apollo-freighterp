@@ -854,12 +854,16 @@ function handleDropdownFocus(event) {
   const field = event.target.closest?.("[data-dropdown-input]");
   if (!field || field.readOnly) return;
   selectDropdownText(field);
+  window.setTimeout(() => openDropdownPicker(field), 0);
 }
 
 function handleDropdownPointerDown(event) {
   const field = event.target.closest?.("[data-dropdown-input]");
   if (!field || field.readOnly) return;
-  window.setTimeout(() => selectDropdownText(field), 0);
+  window.setTimeout(() => {
+    selectDropdownText(field);
+    openDropdownPicker(field);
+  }, 0);
 }
 
 function handleDropdownKeydown(event) {
@@ -880,6 +884,12 @@ function handleDropdownKeydown(event) {
 function selectDropdownText(field) {
   field.dataset.dropdownSelected = "1";
   field.select?.();
+}
+
+function openDropdownPicker(field) {
+  try {
+    field.showPicker?.();
+  } catch {}
 }
 
 function handleDropdownBlur(event) {
@@ -2343,7 +2353,7 @@ function select(name, label, options, selected = options[0]) {
   return selectEditable(name, label, optionKey, options, selectedValue);
 }
 
-function selectFrom(name, label, options, value = options[0] || "") {
+function selectFrom(name, label, options, value = "") {
   const optionKey = dropdownKeyForField(name) || name;
   return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(optionValue(value))}" data-dropdown-key="${escapeHtml(optionKey)}" data-dropdown-input /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
 }
@@ -2361,7 +2371,7 @@ function dropdownOptions(key, defaults = []) {
   return [...new Set([...defaults, ...saved].map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
-function selectEditable(name, label, optionKey, defaults = [], selected = defaults[0] || "") {
+function selectEditable(name, label, optionKey, defaults = [], selected = "") {
   return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(optionKey)}Options" value="${escapeHtml(optionValue(selected))}" data-dropdown-key="${escapeHtml(optionKey)}" data-dropdown-input /><datalist id="${escapeHtml(optionKey)}Options">${dropdownOptions(optionKey, defaults).map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
 }
 
@@ -3327,7 +3337,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
   const actualMode = record?.entryMode || mode || "shipment";
   const isAirway = actualMode === "airway";
   const loaded = Boolean(record);
-  const defaultCustomer = record?.customer || state.customers[0]?.name || "";
+  const defaultCustomer = record?.customer || "";
   const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
   return `
     <input type="hidden" name="entryMode" value="${escapeHtml(actualMode)}" />
@@ -3338,9 +3348,8 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${select("status", "Status", statusOptions(), fieldValue("status", "Booked"))}
       ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", "Export"))}
       ${select("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "Export")), fieldValue("shipmentService", "SE"))}
-      ${selectEditable("transportMode", "Transport Mode", "transportMode", ["Air", "Sea", "Land", "Courier"], fieldValue("transportMode", "Air"))}
-      ${selectEditable("origin", "Origin", "origin", ["Kuwait City"], fieldValue("origin", "Kuwait City"))}
-      ${selectEditable("destination", "Destination", "destination", ["Riyadh"], fieldValue("destination", "Riyadh"))}
+      ${selectEditable("origin", "Origin", "origin", ["Kuwait City"], fieldValue("origin"))}
+      ${selectEditable("destination", "Destination", "destination", ["Riyadh"], fieldValue("destination"))}
       ${input("customerReference", "Customer Reference", fieldValue("customerReference"))}
       ${select("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
       ${input("salesPerson", "Sales Person", fieldValue("salesPerson", currentUserName()))}
@@ -3397,9 +3406,10 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("billingParty1ContactPerson", "Contact Person", fieldValue("billingParty1ContactPerson"))}
       ${input("billingParty1Mobile", "Mobile Number", fieldValue("billingParty1Mobile"))}
       ${input("billingParty1Email", "Email Address", fieldValue("billingParty1Email"), false, "email")}
-      ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"], fieldValue("billingParty1CreditTerms", "Cash"))}
+      ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"], fieldValue("billingParty1CreditTerms"))}
     `, true)}
     ${cargoItemsBuilder(fieldValue("cargoItemsJson", record?.palletDimensionsJson || "[]"))}
+    <input type="hidden" name="transportMode" value="" />
     <input type="hidden" name="tcnNumber" value="${escapeHtml(fieldValue("tcnNumber"))}" />
     <input type="hidden" name="transitDays" value="${escapeHtml(fieldValue("transitDays", "3"))}" />
     <input type="hidden" name="shipmentServiceOther" value="${escapeHtml(fieldValue("shipmentServiceOther"))}" />
