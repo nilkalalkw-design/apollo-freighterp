@@ -1,8 +1,8 @@
 insert into customers (code, name, location_or_lane, full_address, email, terms, status, is_account_overdue, branch, credit_limit)
 values
-    ('CUS-001', 'Gulf Retail Trading', 'Kuwait City', 'Kuwait City, Kuwait', 'ops@gulf-retail.example', '30 days', 'Active', false, 'Branch 1', 5000),
-    ('CUS-002', 'Desert Medical Supplies', 'Shuwaikh', 'Shuwaikh Industrial Area, Kuwait', 'logistics@desert-med.example', '15 days', 'Active', true, 'Branch 2', 2500),
-    ('CUS-003', 'Al Noor Projects', 'Ahmadi', 'Ahmadi, Kuwait', 'cargo@alnoor.example', '45 days', 'Active', false, 'Branch 1', 7500)
+    ('CUS-001', 'Gulf Retail Trading', 'Kuwait City', 'Kuwait City, Kuwait', 'ops@gulf-retail.example', '30 days', 'Active', false, 'Kuwait HO', 5000),
+    ('CUS-002', 'Desert Medical Supplies', 'Shuwaikh', 'Shuwaikh Industrial Area, Kuwait', 'logistics@desert-med.example', '15 days', 'Active', true, 'Dubai 2', 2500),
+    ('CUS-003', 'Al Noor Projects', 'Ahmadi', 'Ahmadi, Kuwait', 'cargo@alnoor.example', '45 days', 'Active', false, 'Kuwait HO', 7500)
 on conflict (code) do update set
     name = excluded.name,
     location_or_lane = excluded.location_or_lane,
@@ -16,8 +16,8 @@ on conflict (code) do update set
 
 insert into suppliers (code, name, location_or_lane, email, terms, status, is_account_overdue, branch, service_type)
 values
-    ('TRN-001', 'Al Dana Transport', 'Kuwait - Riyadh', 'dispatch@aldana.example', '20 days', 'Active', false, 'Branch 1', 'Transporter'),
-    ('TRN-002', 'Falcon Line Haul', 'Kuwait - Dammam', 'ops@falconline.example', '30 days', 'Active', false, 'Branch 2', 'Line Haul')
+    ('TRN-001', 'Al Dana Transport', 'Kuwait - Riyadh', 'dispatch@aldana.example', '20 days', 'Active', false, 'Kuwait HO', 'Transporter'),
+    ('TRN-002', 'Falcon Line Haul', 'Kuwait - Dammam', 'ops@falconline.example', '30 days', 'Active', false, 'Dubai 2', 'Line Haul')
 on conflict (code) do update set
     name = excluded.name,
     location_or_lane = excluded.location_or_lane,
@@ -95,10 +95,10 @@ insert into shipments (
     created_by
 )
 values
-    ('AFS-2605001', 'Branch 1', 'Gulf Retail Trading', 'Kuwait City', 'Riyadh', 'Booked', 14, 820.000, 5.200, 1040.000, 485.000, 330.000, 'Pending', 'Unbilled', '2026-05-05', 'AWB-2605001', 'TAR-1001', 3, 'Export', 'AE', '', 'Land', 250.000, 'admin'),
-    ('AFS-2605002', 'Branch 2', 'Desert Medical Supplies', 'Shuwaikh', 'Dammam', 'In-Transit', 8, 410.000, 2.100, 420.000, 215.000, 150.000, 'Pending', 'Unbilled', '2026-05-05', 'AWB-2605002', 'TAR-1002', 2, 'Import', 'AI', '', 'Land', 250.000, 'operations'),
-    ('AFS-2605003', 'Branch 1', 'Al Noor Projects', 'Ahmadi', 'Doha', 'Delivered', 22, 1250.000, 7.800, 1560.000, 780.000, 590.000, 'Missing', 'Unbilled', '2026-05-04', 'AWB-2605003', 'TAR-1001', 4, 'Export', 'LE', '', 'Sea', 333.000, 'operations'),
-    ('AFS-2605004', 'Branch 1', 'Gulf Retail Trading', 'Kuwait City', 'Riyadh', 'Invoiced', 4, 160.000, 0.900, 180.000, 95.000, 70.000, 'Uploaded', 'INV-260001', '2026-05-02', 'AWB-2605004', 'TAR-1001', 3, 'WHC', 'WHC Remark', 'Warehouse handling and cross-docking', 'Air', 167.000, 'billing')
+    ('AFS-2605001', 'Kuwait HO', 'Gulf Retail Trading', 'Kuwait City', 'Riyadh', 'Booked', 14, 820.000, 5.200, 1040.000, 485.000, 330.000, 'Pending', 'Unbilled', '2026-05-05', 'AWB-2605001', 'TAR-1001', 3, 'Export', 'AE', '', 'Land', 250.000, 'admin'),
+    ('AFS-2605002', 'Dubai 2', 'Desert Medical Supplies', 'Shuwaikh', 'Dammam', 'In-Transit', 8, 410.000, 2.100, 420.000, 215.000, 150.000, 'Pending', 'Unbilled', '2026-05-05', 'AWB-2605002', 'TAR-1002', 2, 'Import', 'AI', '', 'Land', 250.000, 'operations'),
+    ('AFS-2605003', 'Kuwait HO', 'Al Noor Projects', 'Ahmadi', 'Doha', 'Delivered', 22, 1250.000, 7.800, 1560.000, 780.000, 590.000, 'Missing', 'Unbilled', '2026-05-04', 'AWB-2605003', 'TAR-1001', 4, 'Export', 'LE', '', 'Sea', 333.000, 'operations'),
+    ('AFS-2605004', 'Kuwait HO', 'Gulf Retail Trading', 'Kuwait City', 'Riyadh', 'Invoiced', 4, 160.000, 0.900, 180.000, 95.000, 70.000, 'Uploaded', 'INV-260001', '2026-05-02', 'AWB-2605004', 'TAR-1001', 3, 'WHC', 'WHC Remark', 'Warehouse handling and cross-docking', 'Air', 167.000, 'billing')
 on conflict (job_no) do update set
     branch = excluded.branch,
     customer_name = excluded.customer_name,
@@ -197,8 +197,8 @@ insert into app_users (
 )
 values
     ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'All', 'admin123', true, true, true, true, 'System temporary admin'),
-    ('ops-branch1', 'operations.branch1@apollofreightsolution.com', 'Operations', 'Active', 'Branch 1', 'Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'ops123', false, true, false, false, 'Can create and track Branch 1 shipments'),
-    ('billing-branch2', 'billing.branch2@apollofreightsolution.com', 'Billing', 'Active', 'Branch 2', 'Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports', 'billing123', true, false, true, true, 'Invoice and finance access for Branch 2')
+    ('ops-kuwait', 'operations.kuwait@apollofreightsolution.com', 'Operations', 'Active', 'Kuwait HO', 'Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'ops123', false, true, false, false, 'Can create and track Kuwait HO shipments'),
+    ('billing-dubai', 'billing.dubai@apollofreightsolution.com', 'Billing', 'Active', 'Dubai 2', 'Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports', 'billing123', true, false, true, true, 'Invoice and finance access for Dubai 2')
 on conflict (user_name) do update set
     email = excluded.email,
     role = excluded.role,
@@ -263,5 +263,5 @@ insert into app_settings (
     dropdown_options
 )
 values
-    ('default', 'APOLLO FREIGHT SOLUTIONS', '', 'AFS-SI###', 'INV-YY###', '5000', 'Yes', 'Kuwait 1, Dubai 2', '{}')
+    ('default', 'APOLLO FREIGHT SOLUTIONS', '', 'AFS-SI###', 'INV-YY###', '5000', 'Yes', 'Kuwait HO, Dubai 2', '{}')
 on conflict (settings_key) do nothing;

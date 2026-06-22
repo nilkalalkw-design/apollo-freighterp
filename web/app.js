@@ -71,7 +71,7 @@ function currentSession() {
   return {
     userName: raw,
     role: raw === "admin" ? "Admin" : "Operations",
-    branchAccess: raw === "admin" ? "Both" : "Branch 1"
+    branchAccess: raw === "admin" ? "Both" : "Kuwait HO"
   };
 }
 
@@ -82,7 +82,7 @@ function rememberSession(sessionOrUserName) {
       : {
           userName: sessionOrUserName,
           role: sessionOrUserName === "admin" ? "Admin" : "Operations",
-          branchAccess: sessionOrUserName === "admin" ? "Both" : "Branch 1"
+          branchAccess: sessionOrUserName === "admin" ? "Both" : "Kuwait HO"
         };
 
   sessionStorage.setItem(
@@ -90,7 +90,7 @@ function rememberSession(sessionOrUserName) {
     JSON.stringify({
       userName: session.userName,
       role: session.role || "Operations",
-      branchAccess: session.branchAccess || "Branch 1",
+      branchAccess: session.branchAccess || "Kuwait HO",
       sectionAccess: normalizeSectionAccess(session.sectionAccess || "All"),
       canViewAllEntry: Boolean(session.canViewAllEntry || (session.role || "").toLowerCase() === "admin"),
       canViewOnlySelfEntry: Boolean(session.canViewOnlySelfEntry),
@@ -104,23 +104,23 @@ function seedState() {
   const today = new Date().toISOString().slice(0, 10);
   return {
     shipments: [
-      shipment("AFS-2605001", "Branch 1", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Booked", 14, 820, 5.2, 1040, 485, 330, "Pending", "Unbilled", "2026-05-05", "AWB-2605001", "TAR-1001", 3, "Export", "AE", ""),
-      shipment("AFS-2605002", "Branch 2", "Desert Medical Supplies", "Shuwaikh", "Dammam", "In-Transit", 8, 410, 2.1, 420, 215, 150, "Pending", "Unbilled", "2026-05-05", "AWB-2605002", "TAR-1002", 2, "Import", "AI", ""),
-      shipment("AFS-2605003", "Branch 1", "Al Noor Projects", "Ahmadi", "Doha", "Delivered", 22, 1250, 7.8, 1560, 780, 590, "Missing", "Unbilled", "2026-05-04", "AWB-2605003", "TAR-1001", 4, "Export", "LE", ""),
-      shipment("AFS-2605004", "Branch 1", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Invoiced", 4, 160, 0.9, 180, 95, 70, "Uploaded", "INV-260001", "2026-05-02", "AWB-2605004", "TAR-1001", 3, "WHC", "WHC Remark", "Warehouse handling and cross-docking")
+      shipment("AFS-2605001", "Kuwait HO", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Booked", 14, 820, 5.2, 1040, 485, 330, "Pending", "Unbilled", "2026-05-05", "AWB-2605001", "TAR-1001", 3, "Export", "AE", ""),
+      shipment("AFS-2605002", "Dubai 2", "Desert Medical Supplies", "Shuwaikh", "Dammam", "In-Transit", 8, 410, 2.1, 420, 215, 150, "Pending", "Unbilled", "2026-05-05", "AWB-2605002", "TAR-1002", 2, "Import", "AI", ""),
+      shipment("AFS-2605003", "Kuwait HO", "Al Noor Projects", "Ahmadi", "Doha", "Delivered", 22, 1250, 7.8, 1560, 780, 590, "Missing", "Unbilled", "2026-05-04", "AWB-2605003", "TAR-1001", 4, "Export", "LE", ""),
+      shipment("AFS-2605004", "Kuwait HO", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Invoiced", 4, 160, 0.9, 180, 95, 70, "Uploaded", "INV-260001", "2026-05-02", "AWB-2605004", "TAR-1001", 3, "WHC", "WHC Remark", "Warehouse handling and cross-docking")
     ],
     loads: [
       load("CON-260501", "2026-05-05", "Kuwait - Riyadh", "Al Dana Transport", "KWT-49217", "Dispatched", "AFS-2605001, AFS-2605004", "Not Generated", ""),
       load("CON-260502", "2026-05-06", "Kuwait - Dammam", "Falcon Line Haul", "KWT-77320", "Planned", "AFS-2605002", "Not Generated", "")
     ],
     customers: [
-      party("CUS-001", "Gulf Retail Trading", "Kuwait City", "ops@gulf-retail.example", "30 days", "Active", false, "Branch 1"),
-      party("CUS-002", "Desert Medical Supplies", "Shuwaikh", "logistics@desert-med.example", "15 days", "Active", true, "Branch 2"),
-      party("CUS-003", "Al Noor Projects", "Ahmadi", "cargo@alnoor.example", "45 days", "Active", false, "Branch 1")
+      party("CUS-001", "Gulf Retail Trading", "Kuwait City", "ops@gulf-retail.example", "30 days", "Active", false, "Kuwait HO"),
+      party("CUS-002", "Desert Medical Supplies", "Shuwaikh", "logistics@desert-med.example", "15 days", "Active", true, "Dubai 2"),
+      party("CUS-003", "Al Noor Projects", "Ahmadi", "cargo@alnoor.example", "45 days", "Active", false, "Kuwait HO")
     ],
     suppliers: [
-      party("TRN-001", "Al Dana Transport", "Kuwait - Riyadh", "dispatch@aldana.example", "20 days", "Active", false, "Branch 1"),
-      party("TRN-002", "Falcon Line Haul", "Kuwait - Dammam", "ops@falconline.example", "30 days", "Active", false, "Branch 2")
+      party("TRN-001", "Al Dana Transport", "Kuwait - Riyadh", "dispatch@aldana.example", "20 days", "Active", false, "Kuwait HO"),
+      party("TRN-002", "Falcon Line Haul", "Kuwait - Dammam", "ops@falconline.example", "30 days", "Active", false, "Dubai 2")
     ],
     tariffs: [
       tariff("TAR-1001", "Gulf Retail Trading", "Kuwait City", "Riyadh", "FTL", "Minimum", "100 KG", 0.42, 35),
@@ -141,8 +141,8 @@ function seedState() {
     ],
     users: [
       user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All", true, true, true, true, "admin123", "System temporary admin"),
-      user("ops-branch1", "operations.branch1@apollofreightsolution.com", "Operations", "Active", "Branch 1", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Branch 1 shipments"),
-      user("billing-branch2", "billing.branch2@apollofreightsolution.com", "Billing", "Active", "Branch 2", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Branch 2")
+      user("ops-kuwait", "operations.kuwait@apollofreightsolution.com", "Operations", "Active", "Kuwait HO", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Kuwait HO shipments"),
+      user("billing-dubai", "billing.dubai@apollofreightsolution.com", "Billing", "Active", "Dubai 2", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Dubai 2")
     ],
     unblockRequests: [],
     adminRequests: [],
@@ -164,7 +164,7 @@ function seedState() {
       columnLayoutJson: "{}",
       defaultVolumetricDivisor: "5000",
       requirePodBeforeInvoice: "Yes",
-      branches: "Kuwait 1, Dubai 2",
+      branches: "Kuwait HO, Dubai 2",
       dropdownOptionsJson: "{}"
     },
     api: {
@@ -733,7 +733,7 @@ function branchOptions() {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  return branches.length ? branches : ["Branch 1", "Branch 2"];
+  return branches.length ? branches : ["Kuwait HO", "Dubai 2"];
 }
 
 function defaultUserBranch() {
@@ -826,7 +826,7 @@ function boot() {
     globalSearch.value = "";
     fromDate.value = "";
     toDate.value = "";
-    state.ui.adminBranchFilter = allBranchFilterOptions();
+    state.ui.adminBranchFilter = ["Both"];
     saveState();
     render();
   });
@@ -932,36 +932,37 @@ function visibleRows(rows) {
 }
 
 function branchAllowed(row) {
-  const branch = String(row.branch || "").trim();
+  const branch = normalizeBranchName(row.branch);
   if (!branch) return true;
-  const access = String(currentSession()?.branchAccess || "Branch 1").trim();
+  const access = String(currentSession()?.branchAccess || "Kuwait HO").trim();
   if (!access || ["both", "all"].includes(access.toLowerCase())) return true;
   const allowed = access
     .split(",")
-    .map((item) => item.trim().toLowerCase())
+    .map((item) => normalizeBranchName(item).toLowerCase())
     .filter(Boolean);
   return allowed.includes(branch.toLowerCase());
 }
 
+function normalizeBranchName(value) {
+  const text = String(value || "").trim();
+  const normalized = text.toLowerCase();
+  if (["branch 1", "kuwait 1", "kuwait ho"].includes(normalized)) return "Kuwait HO";
+  if (["branch 2", "dubai 2"].includes(normalized)) return "Dubai 2";
+  return text;
+}
+
 function allBranchFilterOptions() {
-  const values = [
-    ...branchOptions(),
-    "Branch 1",
-    "Branch 2",
-    ...state.shipments.map((row) => row.branch),
-    ...state.customers.map((row) => row.branch),
-    ...state.suppliers.map((row) => row.branch)
-  ]
-    .map((value) => String(value || "").trim())
+  const values = ["Both", ...branchOptions()]
+    .map(normalizeBranchName)
     .filter(Boolean);
-  return uniqueOptions(values);
+  return [...new Set(values)];
 }
 
 function selectedAdminBranches() {
   const options = allBranchFilterOptions();
   const selected = Array.isArray(state.ui.adminBranchFilter)
     ? state.ui.adminBranchFilter
-    : options;
+    : ["Both"];
   const valid = new Set(options.map((branch) => branch.toLowerCase()));
   return selected.filter((branch) => valid.has(String(branch || "").toLowerCase()));
 }
@@ -985,6 +986,15 @@ function renderAdminBranchFilter() {
 
 function handleAdminBranchFilterChange(event) {
   if (!event.target.matches("input[name='adminBranchFilter']")) return;
+  const changedValue = String(event.target.value || "").toLowerCase();
+  if (changedValue === "both" && event.target.checked) {
+    branchFilterPanel.querySelectorAll("input[name='adminBranchFilter']").forEach((input) => {
+      input.checked = String(input.value || "").toLowerCase() === "both";
+    });
+  } else if (event.target.checked) {
+    const bothField = Array.from(branchFilterPanel.querySelectorAll("input[name='adminBranchFilter']")).find((input) => String(input.value || "").toLowerCase() === "both");
+    if (bothField) bothField.checked = false;
+  }
   state.ui.adminBranchFilter = Array.from(branchFilterPanel.querySelectorAll("input[name='adminBranchFilter']:checked")).map((input) => input.value);
   saveState();
   render();
@@ -992,9 +1002,8 @@ function handleAdminBranchFilterChange(event) {
 
 function adminBranchFilterSummary() {
   if (!isAdminSession()) return "";
-  const options = allBranchFilterOptions();
   const selected = selectedAdminBranches();
-  if (!selected.length || selected.length === options.length) return "";
+  if (!selected.length || selected.map((branch) => branch.toLowerCase()).includes("both")) return "";
   return ` | Branch: ${selected.join(", ")}`;
 }
 
@@ -1002,10 +1011,9 @@ function adminBranchFilterMatch(row) {
   if (!isAdminSession()) return true;
   const selected = selectedAdminBranches().map((branch) => branch.toLowerCase());
   if (!selected.length) return false;
-  const options = allBranchFilterOptions();
-  if (selected.length === options.length) return true;
+  if (selected.includes("both")) return true;
   const rowBranches = branchValuesForRecord(row).map((branch) => branch.toLowerCase());
-  return !rowBranches.length || rowBranches.some((branch) => selected.includes(branch));
+  return rowBranches.some((branch) => selected.includes(branch));
 }
 
 function branchValuesForRecord(row) {
@@ -1013,7 +1021,7 @@ function branchValuesForRecord(row) {
   const add = (value) => {
     String(value || "")
       .split(",")
-      .map((item) => item.trim())
+      .map(normalizeBranchName)
       .filter(Boolean)
       .forEach((item) => {
         if (!["both", "all"].includes(item.toLowerCase())) branches.add(item);

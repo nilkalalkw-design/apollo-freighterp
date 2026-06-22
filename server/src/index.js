@@ -27,7 +27,7 @@ const demoRows = {
     {
       id: 1,
       job_no: "AFS-2605001",
-      branch: "Branch 1",
+      branch: "Kuwait HO",
       customer_name: "Gulf Retail Trading",
       origin: "Kuwait City",
       destination: "Riyadh",
@@ -82,7 +82,7 @@ const demoRows = {
       terms: "30 days",
       status: "Active",
       is_account_overdue: false,
-      branch: "Branch 1",
+      branch: "Kuwait HO",
       created_at: new Date().toISOString()
     }
   ],
@@ -97,7 +97,7 @@ const demoRows = {
       terms: "20 days",
       status: "Active",
       is_account_overdue: false,
-      branch: "Branch 1",
+      branch: "Kuwait HO",
       service_type: "Transporter",
       created_at: new Date().toISOString()
     }
@@ -203,7 +203,7 @@ const demoRows = {
       invoice_number_format: "INV-YY###",
       default_volumetric_divisor: "5000",
       require_pod_before_invoice: "Yes",
-      branches: "Kuwait 1, Dubai 2",
+      branches: "Kuwait HO, Dubai 2",
       dropdown_options: "{}"
     }
   ]
