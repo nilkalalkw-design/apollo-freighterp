@@ -839,6 +839,8 @@ function boot() {
   dialogSave.addEventListener("click", saveDialogRecord);
   recordDialog.addEventListener("close", resetDialogShell);
   document.addEventListener("focus", handleDropdownFocus, true);
+  document.addEventListener("pointerdown", handleDropdownPointerDown, true);
+  document.addEventListener("keydown", handleDropdownKeydown, true);
   document.addEventListener("blur", handleDropdownBlur, true);
 
   if (currentSession()) {
@@ -851,6 +853,32 @@ function boot() {
 function handleDropdownFocus(event) {
   const field = event.target.closest?.("[data-dropdown-input]");
   if (!field || field.readOnly) return;
+  selectDropdownText(field);
+}
+
+function handleDropdownPointerDown(event) {
+  const field = event.target.closest?.("[data-dropdown-input]");
+  if (!field || field.readOnly) return;
+  window.setTimeout(() => selectDropdownText(field), 0);
+}
+
+function handleDropdownKeydown(event) {
+  const field = event.target.closest?.("[data-dropdown-input]");
+  if (!field || field.readOnly || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.key.length !== 1) return;
+  const start = field.selectionStart ?? 0;
+  const end = field.selectionEnd ?? 0;
+  if (start === 0 && end === field.value.length) {
+    field.dataset.dropdownSelected = "0";
+    return;
+  }
+  if (field.dataset.dropdownSelected !== "1") return;
+  field.dataset.dropdownSelected = "0";
+  field.value = "";
+}
+
+function selectDropdownText(field) {
+  field.dataset.dropdownSelected = "1";
   field.select?.();
 }
 
@@ -2748,9 +2776,11 @@ function openRecord(type, id) {
   dialogTitle.textContent = id;
   dialogSave.textContent = type === "charge" && !isAdminSession() ? "Send Change Request" : "Save Changes";
   dialogSecondary.classList.add("is-hidden");
-  dialogBody.innerHTML = Object.entries(record)
-    .map(([key, value]) => detailFieldControl(type, key, value, record))
-    .join("");
+  dialogBody.innerHTML = type === "shipment"
+    ? shipmentDialogBody(record.entryMode || "shipment", record)
+    : Object.entries(record)
+      .map(([key, value]) => detailFieldControl(type, key, value, record))
+      .join("");
   if (type === "shipment") bindShipmentDirectionDialog();
   if (type === "shipment") bindShipmentCustomerTariffs();
   if (type === "shipment") bindShipmentCustomerAutofill();
@@ -3293,83 +3323,86 @@ function partyDialogConfig(key, label) {
   };
 }
 
-function shipmentDialogBody(mode = "shipment") {
-  const isAirway = mode === "airway";
-  const defaultCustomer = state.customers[0]?.name || "";
+function shipmentDialogBody(mode = "shipment", record = null) {
+  const actualMode = record?.entryMode || mode || "shipment";
+  const isAirway = actualMode === "airway";
+  const loaded = Boolean(record);
+  const defaultCustomer = record?.customer || state.customers[0]?.name || "";
+  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
   return `
-    <input type="hidden" name="entryMode" value="${escapeHtml(mode || "shipment")}" />
+    <input type="hidden" name="entryMode" value="${escapeHtml(actualMode)}" />
     ${formSection("Shipment Information", `
-      ${input("jobNo", isAirway ? "Airway Bill Number" : "Shipment Number", isAirway ? nextNumber("AWB", state.shipments, "jobNo") : nextShipmentNumber(), false)}
-      ${input("bookingDate", "Booking Date", today(), false, "date")}
-      ${input("shipmentDate", "Shipment Date", today(), false, "date")}
-      ${select("status", "Status", statusOptions(), "Booked")}
-      ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), "Export")}
-      ${select("shipmentService", "Service Type", shipmentServiceOptions("Export"), "SE")}
-      ${selectEditable("transportMode", "Transport Mode", "transportMode", ["Air", "Sea", "Land", "Courier"])}
-      ${selectEditable("origin", "Origin", "origin", ["Kuwait City"])}
-      ${selectEditable("destination", "Destination", "destination", ["Riyadh"])}
-      ${input("customerReference", "Customer Reference", "")}
-      ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
-      ${input("salesPerson", "Sales Person", currentUserName())}
-      ${input("airwayBillNo", "Airway Bill / Bill of Lading", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo"), false)}
+      ${input("jobNo", isAirway ? "Airway Bill Number" : "Shipment Number", fieldValue("jobNo", isAirway ? nextNumber("AWB", state.shipments, "jobNo") : nextShipmentNumber()), loaded)}
+      ${input("bookingDate", "Booking Date", fieldValue("bookingDate", today()), false, "date")}
+      ${input("shipmentDate", "Shipment Date", fieldValue("shipmentDate", today()), false, "date")}
+      ${select("status", "Status", statusOptions(), fieldValue("status", "Booked"))}
+      ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", "Export"))}
+      ${select("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "Export")), fieldValue("shipmentService", "SE"))}
+      ${selectEditable("transportMode", "Transport Mode", "transportMode", ["Air", "Sea", "Land", "Courier"], fieldValue("transportMode", "Air"))}
+      ${selectEditable("origin", "Origin", "origin", ["Kuwait City"], fieldValue("origin", "Kuwait City"))}
+      ${selectEditable("destination", "Destination", "destination", ["Riyadh"], fieldValue("destination", "Riyadh"))}
+      ${input("customerReference", "Customer Reference", fieldValue("customerReference"))}
+      ${select("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
+      ${input("salesPerson", "Sales Person", fieldValue("salesPerson", currentUserName()))}
+      ${input("airwayBillNo", "Airway Bill / Bill of Lading", fieldValue("airwayBillNo", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo")), false)}
     `)}
     ${formSection("Customer Information", `
       ${selectFrom("customer", "Customer Name", state.customers.map((row) => row.name), defaultCustomer)}
-      ${selectFrom("customerCode", "Customer Code", state.customers.map((row) => ({ value: row.code, label: `${row.code} | ${row.name}` })), "")}
-      ${input("customerContactPerson", "Contact Person", "")}
-      ${input("customerMobile", "Mobile Number", "")}
-      ${input("customerEmail", "Email Address", "", false, "email")}
-      ${textarea("customerAddress", "Address", "", false, 3)}
+      ${selectFrom("customerCode", "Customer Code", state.customers.map((row) => ({ value: row.code, label: `${row.code} | ${row.name}` })), fieldValue("customerCode"))}
+      ${input("customerContactPerson", "Contact Person", fieldValue("customerContactPerson"))}
+      ${input("customerMobile", "Mobile Number", fieldValue("customerMobile"))}
+      ${input("customerEmail", "Email Address", fieldValue("customerEmail"), false, "email")}
+      ${textarea("customerAddress", "Address", fieldValue("customerAddress"), false, 3)}
     `)}
     ${formSection("Shipper Information", `
       ${checkbox("copyCustomerToShipper", "Same as customer information")}
-      ${input("shipperName", "Shipper Name", "")}
-      ${textarea("shipperAddress", "Shipper Address", "", false, 3)}
-      ${input("shipperContactPerson", "Contact Person", "")}
-      ${input("shipperMobile", "Mobile Number", "")}
-      ${input("shipperEmail", "Email Address", "", false, "email")}
-      ${input("shipperVatTrn", "VAT / TRN Number", "")}
-      ${input("shipperCountry", "Country", "Kuwait")}
+      ${input("shipperName", "Shipper Name", fieldValue("shipperName"))}
+      ${textarea("shipperAddress", "Shipper Address", fieldValue("shipperAddress"), false, 3)}
+      ${input("shipperContactPerson", "Contact Person", fieldValue("shipperContactPerson"))}
+      ${input("shipperMobile", "Mobile Number", fieldValue("shipperMobile"))}
+      ${input("shipperEmail", "Email Address", fieldValue("shipperEmail"), false, "email")}
+      ${input("shipperVatTrn", "VAT / TRN Number", fieldValue("shipperVatTrn"))}
+      ${input("shipperCountry", "Country", fieldValue("shipperCountry", "Kuwait"))}
     `, true)}
     ${formSection("Consignee Information", `
       ${checkbox("copyCustomerToConsignee", "Same as customer information")}
-      ${selectFrom("consigneeName", "Consignee Name", state.customers.map((row) => row.name), defaultCustomer)}
-      ${textarea("consigneeAddress", "Consignee Address", "", false, 3)}
-      ${input("consigneeContactPerson", "Contact Person", "")}
-      ${input("consigneeMobile", "Mobile Number", "")}
-      ${input("consigneeEmail", "Email Address", "", false, "email")}
-      ${input("consigneeCountry", "Country", "")}
+      ${selectFrom("consigneeName", "Consignee Name", state.customers.map((row) => row.name), fieldValue("consigneeName", defaultCustomer))}
+      ${textarea("consigneeAddress", "Consignee Address", fieldValue("consigneeAddress"), false, 3)}
+      ${input("consigneeContactPerson", "Contact Person", fieldValue("consigneeContactPerson"))}
+      ${input("consigneeMobile", "Mobile Number", fieldValue("consigneeMobile"))}
+      ${input("consigneeEmail", "Email Address", fieldValue("consigneeEmail"), false, "email")}
+      ${input("consigneeCountry", "Country", fieldValue("consigneeCountry"))}
     `, true)}
     ${formSection("Pickup Information", `
       ${checkbox("copyCustomerToPickup", "Same as customer information")}
-      ${input("pickupLocation", "Pickup Location", "")}
-      ${textarea("pickupAddress", "Pickup Address", "", false, 3)}
-      ${input("pickupContactPerson", "Pickup Contact Person", "")}
-      ${input("pickupMobile", "Pickup Mobile", "")}
-      ${input("pickupDate", "Pickup Date", today(), false, "date")}
-      ${input("pickupTime", "Pickup Time", "", false, "time")}
+      ${input("pickupLocation", "Pickup Location", fieldValue("pickupLocation"))}
+      ${textarea("pickupAddress", "Pickup Address", fieldValue("pickupAddress"), false, 3)}
+      ${input("pickupContactPerson", "Pickup Contact Person", fieldValue("pickupContactPerson"))}
+      ${input("pickupMobile", "Pickup Mobile", fieldValue("pickupMobile"))}
+      ${input("pickupDate", "Pickup Date", fieldValue("pickupDate", today()), false, "date")}
+      ${input("pickupTime", "Pickup Time", fieldValue("pickupTime"), false, "time")}
     `, true)}
     ${formSection("Delivery Information", `
-      ${input("deliveryLocation", "Delivery Location", "")}
-      ${textarea("deliveryAddress", "Delivery Address", "", false, 3)}
-      ${input("deliveryContactPerson", "Delivery Contact Person", "")}
-      ${input("deliveryMobile", "Delivery Mobile", "")}
-      ${input("deliveryDate", "Delivery Date", "", false, "date")}
-      ${input("deliveryTime", "Delivery Time", "", false, "time")}
+      ${input("deliveryLocation", "Delivery Location", fieldValue("deliveryLocation"))}
+      ${textarea("deliveryAddress", "Delivery Address", fieldValue("deliveryAddress"), false, 3)}
+      ${input("deliveryContactPerson", "Delivery Contact Person", fieldValue("deliveryContactPerson"))}
+      ${input("deliveryMobile", "Delivery Mobile", fieldValue("deliveryMobile"))}
+      ${input("deliveryDate", "Delivery Date", fieldValue("deliveryDate"), false, "date")}
+      ${input("deliveryTime", "Delivery Time", fieldValue("deliveryTime"), false, "time")}
     `, true)}
     ${formSection("Billing Party 1", `
       ${checkbox("copyCustomerToBilling1", "Same as customer information")}
-      ${input("billTo1", "Billing Party Name", defaultCustomer)}
-      ${textarea("billingParty1Address", "Billing Address", "", false, 3)}
-      ${input("billingParty1ContactPerson", "Contact Person", "")}
-      ${input("billingParty1Mobile", "Mobile Number", "")}
-      ${input("billingParty1Email", "Email Address", "", false, "email")}
-      ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"])}
+      ${input("billTo1", "Billing Party Name", fieldValue("billTo1", defaultCustomer))}
+      ${textarea("billingParty1Address", "Billing Address", fieldValue("billingParty1Address"), false, 3)}
+      ${input("billingParty1ContactPerson", "Contact Person", fieldValue("billingParty1ContactPerson"))}
+      ${input("billingParty1Mobile", "Mobile Number", fieldValue("billingParty1Mobile"))}
+      ${input("billingParty1Email", "Email Address", fieldValue("billingParty1Email"), false, "email")}
+      ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"], fieldValue("billingParty1CreditTerms", "Cash"))}
     `, true)}
-    ${cargoItemsBuilder()}
-    <input type="hidden" name="tcnNumber" value="" />
-    <input type="hidden" name="transitDays" value="3" />
-    <input type="hidden" name="shipmentServiceOther" value="" />
+    ${cargoItemsBuilder(fieldValue("cargoItemsJson", record?.palletDimensionsJson || "[]"))}
+    <input type="hidden" name="tcnNumber" value="${escapeHtml(fieldValue("tcnNumber"))}" />
+    <input type="hidden" name="transitDays" value="${escapeHtml(fieldValue("transitDays", "3"))}" />
+    <input type="hidden" name="shipmentServiceOther" value="${escapeHtml(fieldValue("shipmentServiceOther"))}" />
     <div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN</button></div>
   `;
 }
