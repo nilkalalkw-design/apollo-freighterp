@@ -23,6 +23,7 @@ let activeModule = "Dashboard";
 let editing = null;
 let dialogState = null;
 let lastPendingNotificationCount = 0;
+let activeDropdownMenu = null;
 
 const loginScreen = document.querySelector("#loginScreen");
 const appShell = document.querySelector("#appShell");
@@ -840,8 +841,10 @@ function boot() {
   recordDialog.addEventListener("close", resetDialogShell);
   document.addEventListener("focus", handleDropdownFocus, true);
   document.addEventListener("pointerdown", handleDropdownPointerDown, true);
+  document.addEventListener("input", handleDropdownInput, true);
   document.addEventListener("keydown", handleDropdownKeydown, true);
   document.addEventListener("blur", handleDropdownBlur, true);
+  document.addEventListener("pointerdown", handleDocumentPointerDown, false);
 
   if (currentSession()) {
     showApp();
@@ -854,7 +857,7 @@ function handleDropdownFocus(event) {
   const field = event.target.closest?.("[data-dropdown-input]");
   if (!field || field.readOnly) return;
   selectDropdownText(field);
-  window.setTimeout(() => openDropdownPicker(field), 0);
+  window.setTimeout(() => openDropdownMenu(field), 0);
 }
 
 function handleDropdownPointerDown(event) {
@@ -862,13 +865,24 @@ function handleDropdownPointerDown(event) {
   if (!field || field.readOnly) return;
   window.setTimeout(() => {
     selectDropdownText(field);
-    openDropdownPicker(field);
+    openDropdownMenu(field);
   }, 0);
+}
+
+function handleDropdownInput(event) {
+  const field = event.target.closest?.("[data-dropdown-input]");
+  if (!field || field.readOnly) return;
+  field.dataset.dropdownSelected = "0";
+  openDropdownMenu(field);
 }
 
 function handleDropdownKeydown(event) {
   const field = event.target.closest?.("[data-dropdown-input]");
   if (!field || field.readOnly || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.key === "Escape") {
+    closeDropdownMenu();
+    return;
+  }
   if (event.key.length !== 1) return;
   const start = field.selectionStart ?? 0;
   const end = field.selectionEnd ?? 0;
@@ -886,16 +900,81 @@ function selectDropdownText(field) {
   field.select?.();
 }
 
-function openDropdownPicker(field) {
-  try {
-    field.showPicker?.();
-  } catch {}
+function dropdownOptionsForField(field) {
+  const listId = field.getAttribute("list");
+  const datalist = listId ? document.getElementById(listId) : null;
+  return Array.from(datalist?.options || [])
+    .map((option) => ({
+      value: option.value || "",
+      label: option.label || option.value || ""
+    }))
+    .filter((option) => option.value);
+}
+
+function openDropdownMenu(field) {
+  const options = dropdownOptionsForField(field);
+  closeDropdownMenu();
+  if (!options.length) return;
+
+  const query = String(field.value || "").trim().toLowerCase();
+  const visibleOptions = options
+    .filter((option) => !query || `${option.value} ${option.label}`.toLowerCase().includes(query))
+    .slice(0, 80);
+
+  if (!visibleOptions.length) return;
+
+  const menu = document.createElement("div");
+  menu.className = "dropdown-menu";
+  menu.dataset.dropdownMenu = "1";
+  menu.innerHTML = visibleOptions.map((option) => `
+    <button type="button" data-dropdown-value="${escapeHtml(option.value)}">
+      <strong>${escapeHtml(option.value)}</strong>
+      ${option.label && option.label !== option.value ? `<span>${escapeHtml(option.label)}</span>` : ""}
+    </button>
+  `).join("");
+
+  menu.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    const button = event.target.closest("[data-dropdown-value]");
+    if (!button) return;
+    field.value = button.dataset.dropdownValue || "";
+    field.dataset.dropdownSelected = "0";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    closeDropdownMenu();
+    field.focus();
+  });
+
+  document.body.appendChild(menu);
+  activeDropdownMenu = menu;
+  positionDropdownMenu(field, menu);
+}
+
+function positionDropdownMenu(field, menu) {
+  const rect = field.getBoundingClientRect();
+  menu.style.left = `${rect.left + window.scrollX}px`;
+  menu.style.top = `${rect.bottom + window.scrollY + 4}px`;
+  menu.style.width = `${rect.width}px`;
+}
+
+function closeDropdownMenu() {
+  activeDropdownMenu?.remove();
+  activeDropdownMenu = null;
+}
+
+function handleDocumentPointerDown(event) {
+  if (!activeDropdownMenu) return;
+  if (event.target.closest?.("[data-dropdown-menu]") || event.target.closest?.("[data-dropdown-input]")) return;
+  closeDropdownMenu();
 }
 
 function handleDropdownBlur(event) {
   const field = event.target.closest?.("[data-dropdown-input]");
   if (!field) return;
   rememberDropdownOptions({ [field.dataset.dropdownKey || field.name]: field.value });
+  window.setTimeout(() => {
+    if (document.activeElement !== field) closeDropdownMenu();
+  }, 120);
 }
 
 function isAdminSession() {
