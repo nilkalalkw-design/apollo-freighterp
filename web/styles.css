@@ -115,14 +115,16 @@ label {
 }
 
 .company-name-ui {
-  display: inline-block;
-  padding: 2px 6px;
-  background: #050505;
   color: #fff;
 }
 
 .company-name-ui span {
   color: #d96f16;
+}
+
+.auth-footer .company-name-ui,
+.app-footer .company-name-ui {
+  color: var(--ink);
 }
 
 .brand-row,

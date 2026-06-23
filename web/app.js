@@ -5142,7 +5142,7 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
         .brand { display: flex; align-items: center; gap: 16px; }
         .logo { display: grid; place-items: center; width: 92px; height: 92px; border-radius: 12px; background: #fff; color: #d96f16; font-size: 22px; font-weight: 800; overflow: hidden; border: 1px solid #d96f16; }
         .logo img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
-        h1 { display: inline-block; margin: 0; padding: 7px 10px; background: #050505; color: #fff; font-size: 28px; letter-spacing: 0; }
+        h1 { margin: 0; color: #111; font-size: 28px; letter-spacing: 0; }
         h1 .afs-initial { color: #d96f16; }
         .brand p, .doc-meta p { margin: 4px 0 0; color: #607080; }
         .doc-meta { text-align: right; min-width: 210px; }
