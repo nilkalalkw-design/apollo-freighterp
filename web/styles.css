@@ -114,6 +114,19 @@ label {
   color: #afc3d8;
 }
 
+.company-name-ui {
+  color: #fff;
+}
+
+.company-name-ui span {
+  color: #d96f16;
+}
+
+.auth-footer .company-name-ui,
+.app-footer .company-name-ui {
+  color: var(--ink);
+}
+
 .brand-row,
 .sidebar-brand {
   display: flex;

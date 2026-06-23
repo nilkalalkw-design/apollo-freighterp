@@ -4552,8 +4552,8 @@ function exportReport() {
           h1 { margin: 0 0 6px; font-size: 26px; }
           p { margin: 0 0 18px; color: #50606f; }
           table { width: 100%; border-collapse: collapse; }
-          th, td { border: 1px solid #dbe3ea; padding: 8px; text-align: left; font-size: 12px; }
-          th { background: #f5f8fb; text-transform: uppercase; }
+          th, td { border: 1px solid #d96f16; padding: 8px; text-align: left; font-size: 12px; }
+          th { background: #fff3e8; text-transform: uppercase; }
         </style>
       </head>
       <body>
@@ -5136,72 +5136,72 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
         * { box-sizing: border-box; }
         body { margin: 0; background: #edf2f7; color: #172033; font-family: Arial, sans-serif; }
         .page { width: ${pageWidth}; min-height: ${pageMinHeight}; margin: 0 auto; background: #fff; box-shadow: 0 20px 55px rgba(22, 32, 51, .16); }
-        .toolbar { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; background: #f8fafc; border-bottom: 1px solid #dbe5ef; }
-        button { border: 0; border-radius: 6px; padding: 10px 14px; background: #165c7d; color: #fff; font-weight: 700; cursor: pointer; }
-        .document-head { display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 28px 34px; color: #172033; background: #fff; border-top: 8px solid #1f7a8c; border-bottom: 1px solid #dbe5ef; }
+        .toolbar { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; background: #fff8f2; border-bottom: 1px solid #d96f16; }
+        button { border: 0; border-radius: 6px; padding: 10px 14px; background: #d96f16; color: #fff; font-weight: 700; cursor: pointer; }
+        .document-head { display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 28px 34px; color: #172033; background: #fff; border-top: 8px solid #d96f16; border-bottom: 1px solid #d96f16; }
         .brand { display: flex; align-items: center; gap: 16px; }
-        .logo { display: grid; place-items: center; width: 92px; height: 92px; border-radius: 12px; background: #fff; color: #165c7d; font-size: 22px; font-weight: 800; overflow: hidden; border: 1px solid #dbe5ef; }
+        .logo { display: grid; place-items: center; width: 92px; height: 92px; border-radius: 12px; background: #fff; color: #d96f16; font-size: 22px; font-weight: 800; overflow: hidden; border: 1px solid #d96f16; }
         .logo img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
-        h1 { margin: 0; color: #1f7a8c; font-size: 28px; letter-spacing: 0; }
-        h1 .afs-initial { color: #f47b20; }
+        h1 { margin: 0; color: #111; font-size: 28px; letter-spacing: 0; }
+        h1 .afs-initial { color: #d96f16; }
         .brand p, .doc-meta p { margin: 4px 0 0; color: #607080; }
         .doc-meta { text-align: right; min-width: 210px; }
-        .doc-meta strong { display: block; color: #114b67; font-size: 20px; }
+        .doc-meta strong { display: block; color: #111; font-size: 20px; }
         main { padding: 28px 34px 34px; }
         .document-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 22px; }
-        .document-summary div { padding: 18px; border-left: 5px solid #1f7a8c; background: #f5f9fb; }
+        .document-summary div { padding: 18px; border-left: 5px solid #d96f16; background: #fff8f2; }
         .document-summary span, .meta strong, th, .signature span { color: #5d6c7b; text-transform: uppercase; font-size: 11px; font-weight: 800; letter-spacing: 0; }
         .document-summary strong { display: block; margin-top: 7px; color: #172033; font-size: 22px; }
         .document-summary small { display: block; margin-top: 5px; color: #607080; }
-        h2 { margin: 26px 0 8px; color: #114b67; }
+        h2 { margin: 26px 0 8px; color: #111; }
         .meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
-        .meta p { display: grid; gap: 5px; margin: 0; padding: 12px; border: 1px solid #dbe5ef; background: #fbfdff; }
+        .meta p { display: grid; gap: 5px; margin: 0; padding: 12px; border: 1px solid #d96f16; background: #fff; }
         table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-        th { background: #eaf3f7; text-align: left; }
-        th, td { border: 1px solid #dbe5ef; padding: 10px; }
-        tfoot th { background: #f4f8fb; color: #172033; font-size: 13px; }
+        th { background: #fff3e8; text-align: left; }
+        th, td { border: 1px solid #d96f16; padding: 10px; }
+        tfoot th { background: #fff3e8; color: #172033; font-size: 13px; }
         .qr-code { width: 76px; height: 76px; display: block; margin-top: 8px; }
-        .status-pill { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #eaf3f7; color: #114b67; font-size: 16px; }
+        .status-pill { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #fff3e8; color: #111; font-size: 16px; }
         .signature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 48px; }
-        .signature { min-height: 86px; border-top: 1px solid #718093; padding-top: 10px; }
+        .signature { min-height: 86px; border-top: 1px solid #d96f16; padding-top: 10px; }
         .signature strong { display: block; margin-top: 5px; }
         .delivery-signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 26px; }
-        .delivery-signatures div { min-height: 138px; border: 1px solid #dbe5ef; padding: 12px; background: #fbfdff; }
+        .delivery-signatures div { min-height: 138px; border: 1px solid #d96f16; padding: 12px; background: #fff; }
         .delivery-signatures span, .delivery-signatures small { display: block; color: #5d6c7b; text-transform: uppercase; font-size: 11px; font-weight: 800; margin-top: 8px; }
         .delivery-signatures strong, .delivery-signatures em, .delivery-signatures b { display: block; min-height: 22px; margin-top: 6px; color: #172033; font-style: normal; }
-        .acknowledgement { border: 1px solid #dbe5ef; padding: 10px 12px; margin: 12px 0 0; font-size: 12px; color: #172033; }
-        .tcn-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid #172033; margin-bottom: 10px; }
-        .tcn-grid div, .tcn-two-col div { min-height: 62px; padding: 9px; border-right: 1px solid #172033; overflow-wrap: anywhere; }
+        .acknowledgement { border: 1px solid #d96f16; padding: 10px 12px; margin: 12px 0 0; font-size: 12px; color: #172033; }
+        .tcn-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid #d96f16; margin-bottom: 10px; }
+        .tcn-grid div, .tcn-two-col div { min-height: 62px; padding: 9px; border-right: 1px solid #d96f16; overflow-wrap: anywhere; }
         .tcn-grid div:last-child, .tcn-two-col div:last-child { border-right: 0; }
         .tcn-grid span, .tcn-two-col span, .tcn-signatures span { display: block; color: #172033; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-bottom: 6px; }
         .tcn-grid strong, .tcn-two-col strong { display: block; font-size: 13px; color: #172033; }
-        .tcn-two-col { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #172033; margin-bottom: 10px; }
+        .tcn-two-col { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #d96f16; margin-bottom: 10px; }
         .tcn-two-col p { margin: 5px 0 0; font-size: 12px; line-height: 1.35; }
         .tcn-cargo-head { grid-template-columns: 1fr 2fr; }
         .tcn-cargo-table th, .tcn-cargo-table td { text-align: center; }
         .tcn-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 42px; margin-top: 44px; }
-        .tcn-signatures div { min-height: 92px; border-top: 1px solid #172033; padding-top: 8px; }
+        .tcn-signatures div { min-height: 92px; border-top: 1px solid #d96f16; padding-top: 8px; }
         .tcn-terms { margin-top: 18px; font-size: 10px; line-height: 1.35; }
         .tcn-terms h2 { margin-top: 0; font-size: 14px; }
         .tcn-terms ol { margin: 6px 0 0 18px; padding: 0; }
         .tcn-terms p { font-weight: 700; margin-top: 8px; }
-        .manifest-header-grid { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #172033; margin-bottom: 10px; }
-        .manifest-header-grid p { min-height: 42px; margin: 0; padding: 7px; border-right: 1px solid #172033; border-bottom: 1px solid #172033; }
+        .manifest-header-grid { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #d96f16; margin-bottom: 10px; }
+        .manifest-header-grid p { min-height: 42px; margin: 0; padding: 7px; border-right: 1px solid #d96f16; border-bottom: 1px solid #d96f16; }
         .manifest-header-grid p:nth-child(4n) { border-right: 0; }
         .manifest-header-grid strong { display: block; font-size: 10px; color: #172033; text-transform: uppercase; }
         .manifest-header-grid span { display: block; margin-top: 4px; font-size: 12px; color: #172033; overflow-wrap: anywhere; }
         .manifest-table { table-layout: fixed; font-size: 9px; }
-        .manifest-table th, .manifest-table td { padding: 5px; border-color: #172033; vertical-align: top; overflow-wrap: anywhere; }
-        .manifest-table th { background: #f2f6f8; color: #172033; text-align: center; }
+        .manifest-table th, .manifest-table td { padding: 5px; border-color: #d96f16; vertical-align: top; overflow-wrap: anywhere; }
+        .manifest-table th { background: #fff3e8; color: #172033; text-align: center; }
         .manifest-table tfoot th { font-size: 10px; }
         .manifest-declaration { display: grid; grid-template-columns: 140px 1fr 120px; align-items: center; gap: 10px; margin-top: 12px; font-size: 11px; }
         .manifest-declaration p { margin: 0; }
         .manifest-declaration span { text-align: right; font-weight: 700; }
         .manifest-stamps { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 20px; }
-        .manifest-stamps div { min-height: 72px; border-top: 1px solid #172033; padding-top: 8px; font-size: 11px; font-weight: 700; text-align: center; }
+        .manifest-stamps div { min-height: 72px; border-top: 1px solid #d96f16; padding-top: 8px; font-size: 11px; font-weight: 700; text-align: center; }
         .invoice-party-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 16px; }
-        .invoice-party-grid div { min-height: 104px; border: 1px solid #dbe5ef; padding: 12px; background: #fbfdff; }
-        .invoice-party-grid h2 { margin: 0 0 8px; font-size: 13px; color: #114b67; }
+        .invoice-party-grid div { min-height: 104px; border: 1px solid #d96f16; padding: 12px; background: #fff; }
+        .invoice-party-grid h2 { margin: 0 0 8px; font-size: 13px; color: #111; }
         .invoice-party-grid strong, .invoice-party-grid p { display: block; margin: 4px 0; overflow-wrap: anywhere; }
         .invoice-info-table { table-layout: fixed; margin-top: 10px; font-size: 11px; }
         .invoice-info-table th, .invoice-info-table td { text-align: center; padding: 8px 6px; overflow-wrap: anywhere; }
@@ -5210,12 +5210,12 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
         .invoice-lines-table td:nth-child(2), .invoice-lines-table td:nth-child(3), .invoice-lines-table td:nth-child(4) { text-align: right; width: 90px; }
         .invoice-footer-grid { display: grid; grid-template-columns: 1fr 240px; gap: 20px; margin-top: 18px; align-items: start; }
         .invoice-footer-grid p { margin: 3px 0; font-size: 11px; }
-        .invoice-balance { border-top: 2px solid #1f7a8c; padding-top: 10px; text-align: right; }
+        .invoice-balance { border-top: 2px solid #d96f16; padding-top: 10px; text-align: right; }
         .invoice-balance span { display: block; color: #5d6c7b; font-size: 11px; font-weight: 800; }
-        .invoice-balance strong { display: block; margin-top: 6px; color: #114b67; font-size: 18px; }
+        .invoice-balance strong { display: block; margin-top: 6px; color: #111; font-size: 18px; }
         .invoice-note { margin-top: 14px; font-size: 10px; line-height: 1.35; }
         .invoice-note p { margin: 3px 0; }
-        .footer-note { margin-top: 26px; padding-top: 14px; border-top: 1px solid #dbe5ef; color: #607080; font-size: 12px; text-align: center; }
+        .footer-note { margin-top: 26px; padding-top: 14px; border-top: 1px solid #d96f16; color: #607080; font-size: 12px; text-align: center; }
         @page { size: ${pageSize}; margin: 8mm; }
         @media print {
           body { background: #fff; font-size: 10px; }
