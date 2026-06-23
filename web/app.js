@@ -1586,7 +1586,7 @@ function render() {
     activeModule = "Dashboard";
   }
   const module = modules.find(([name]) => name === activeModule) || modules[0];
-  pageEyebrow.textContent = module[0];
+  pageEyebrow.textContent = "";
   pageTitle.textContent = module[0];
   pageSubtitle.textContent = module[1];
   updateUserContext();

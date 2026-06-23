@@ -476,6 +476,10 @@ label {
   line-height: 1.15;
 }
 
+#pageEyebrow {
+  display: none;
+}
+
 .page-heading p:last-child {
   margin-top: 5px;
 }
