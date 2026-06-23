@@ -1492,6 +1492,10 @@ th {
   padding-right: 4px;
 }
 
+.dialog-body.single-column {
+  grid-template-columns: 1fr;
+}
+
 .dashboard-popup-shell {
   grid-column: 1 / -1;
   min-width: 0;

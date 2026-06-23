@@ -65,6 +65,7 @@ function currentSession() {
   try {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object") {
+      parsed.branchViewScope = normalizeBranchViewScope(parsed.branchViewScope || parsed.viewScope || "Assigned Branch Only");
       return parsed;
     }
   } catch {}
@@ -72,7 +73,8 @@ function currentSession() {
   return {
     userName: raw,
     role: raw === "admin" ? "Admin" : "Operations",
-    branchAccess: raw === "admin" ? "Both" : "Kuwait HO"
+    branchAccess: raw === "admin" ? "Both" : "Kuwait HO",
+    branchViewScope: raw === "admin" ? "All Branches" : "Assigned Branch Only"
   };
 }
 
@@ -92,6 +94,7 @@ function rememberSession(sessionOrUserName) {
       userName: session.userName,
       role: session.role || "Operations",
       branchAccess: session.branchAccess || "Kuwait HO",
+      branchViewScope: normalizeBranchViewScope(session.branchViewScope || session.viewScope || (String(session.role || "").toLowerCase() === "admin" ? "All Branches" : "Assigned Branch Only")),
       sectionAccess: normalizeSectionAccess(session.sectionAccess || "All"),
       canViewAllEntry: Boolean(session.canViewAllEntry || (session.role || "").toLowerCase() === "admin"),
       canViewOnlySelfEntry: Boolean(session.canViewOnlySelfEntry),
@@ -141,9 +144,9 @@ function seedState() {
       invoice("DRAFT-260006", "Al Noor Projects", "AFS-2605003", 780, 590, "Draft", "2026-05-05")
     ],
     users: [
-      user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All", true, true, true, true, "admin123", "System temporary admin"),
-      user("ops-kuwait", "operations.kuwait@apollofreightsolution.com", "Operations", "Active", "Kuwait HO", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Kuwait HO shipments"),
-      user("billing-dubai", "billing.dubai@apollofreightsolution.com", "Billing", "Active", "Dubai 2", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Dubai 2")
+      user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All Branches", "All", true, true, true, true, "admin123", "System temporary admin"),
+      user("ops-kuwait", "operations.kuwait@apollofreightsolution.com", "Operations", "Active", "Kuwait HO", "Assigned Branch Only", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Kuwait HO shipments"),
+      user("billing-dubai", "billing.dubai@apollofreightsolution.com", "Billing", "Active", "Dubai 2", "Assigned Branch Only", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Dubai 2")
     ],
     unblockRequests: [],
     adminRequests: [],
@@ -524,6 +527,7 @@ function user(
   role,
   accountStatus,
   branchAccess,
+  branchViewScope,
   sectionAccess,
   canViewAllEntry,
   canViewOnlySelfEntry,
@@ -539,6 +543,7 @@ function user(
     role,
     accountStatus,
     branchAccess,
+    branchViewScope: normalizeBranchViewScope(branchViewScope),
     sectionAccess,
     canViewAllEntry: isChecked(canViewAllEntry),
     canViewOnlySelfEntry: isChecked(canViewOnlySelfEntry),
@@ -646,11 +651,18 @@ function normalizeUsers(users) {
   return (Array.isArray(users) ? users : []).map((record) => ({
     ...record,
     sectionAccess: normalizeSectionAccess(record.sectionAccess || "All"),
+    branchViewScope: normalizeBranchViewScope(record.branchViewScope || record.viewScope || "Assigned Branch Only"),
     canViewAllEntry: isChecked(record.canViewAllEntry),
     canViewOnlySelfEntry: isChecked(record.canViewOnlySelfEntry),
     canEditAllEntry: isChecked(record.canEditAllEntry),
     canViewUpdatedHistory: isChecked(record.canViewUpdatedHistory)
   }));
+}
+
+function normalizeBranchViewScope(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (["all branches", "all branch", "all", "both"].includes(text)) return "All Branches";
+  return "Assigned Branch Only";
 }
 
 function normalizeSectionAccess(value) {
@@ -1044,13 +1056,18 @@ function currentUserName() {
 }
 
 function canViewAllData() {
+  return canViewAllBranches();
+}
+
+function canViewAllBranches() {
   const session = currentSession();
-  return isAdminSession() || Boolean(session?.canViewAllEntry);
+  return isAdminSession() || (Boolean(session?.canViewAllEntry) && normalizeBranchViewScope(session?.branchViewScope || session?.viewScope) === "All Branches");
 }
 
 function ownedByCurrentUser(row) {
   if (!branchAllowed(row)) return false;
-  if (canViewAllData()) return true;
+  if (canViewAllBranches()) return true;
+  if (Boolean(currentSession()?.canViewAllEntry)) return true;
   const userName = currentUserName().toLowerCase();
   const owners = [
     row.createdBy,
@@ -1071,6 +1088,7 @@ function visibleRows(rows) {
 function branchAllowed(row) {
   const branch = normalizeBranchName(row.branch);
   if (!branch) return true;
+  if (canViewAllBranches()) return true;
   const access = String(currentSession()?.branchAccess || "Kuwait HO").trim();
   if (!access || ["both", "all"].includes(access.toLowerCase())) return true;
   const allowed = access
@@ -1486,6 +1504,7 @@ function apiUser(row) {
     row.role,
     row.account_status,
     row.branch_access,
+    row.branch_view_scope || row.view_scope || "Assigned Branch Only",
     normalizeSectionAccess(row.section_access || "All"),
     isChecked(row.can_view_all_entry),
     isChecked(row.can_view_only_self_entry),
@@ -1755,6 +1774,7 @@ function openDashboardMetricDialog(metric) {
       </div>
     `,
     saveLabel: "Close",
+    singleColumn: true,
     onSave() {
       recordDialog.close();
     }
@@ -3161,6 +3181,7 @@ function detailFieldOptions(type, key, record) {
   if (key === "customer") return state.customers.map((row) => row.name);
   if (key === "tariffNo" && type === "shipment" && record?.entryMode !== "airway") return tariffOptionsForCustomer(record.customer);
   if (key === "tariffNo") return visibleRows(state.tariffs).map((row) => row.tariffNo);
+  if (key === "branchViewScope") return branchViewScopeOptions();
   if (key === "mainSection") return dropdownOptions("mainSection", ["FTL", "LTL"]);
   if (key === "weightSection") return dropdownOptions("weightSection", ["Minimum", "Up to 100 KG", "300 KG", "500 KG", "1000 KG", "More"]);
   if (key === "minUpTo") return dropdownOptions("minUpTo", ["Minimum", "100 KG", "300 KG", "500 KG", "1000 KG", "More"]);
@@ -3174,6 +3195,10 @@ function labelize(key) {
   return String(key)
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function branchViewScopeOptions() {
+  return ["Assigned Branch Only", "All Branches"];
 }
 
 async function saveDialogRecord() {
@@ -3269,13 +3294,15 @@ function resetDialogShell() {
   dialogSecondary.classList.add("is-hidden");
   dialogSecondary.textContent = "Secondary";
   dialogSave.textContent = "Save Changes";
+  dialogBody.classList.remove("single-column");
 }
 
-function openDialog({ title, typeLabel, body, saveLabel, secondaryLabel = "", onSave = null, onSecondary = null, afterOpen = null }) {
+function openDialog({ title, typeLabel, body, saveLabel, secondaryLabel = "", onSave = null, onSecondary = null, afterOpen = null, singleColumn = false }) {
   resetDialogShell();
   dialogType.textContent = typeLabel;
   dialogTitle.textContent = title;
   dialogBody.innerHTML = body;
+  dialogBody.classList.toggle("single-column", Boolean(singleColumn));
   dialogSave.textContent = saveLabel || "Save Changes";
   dialogState = { onSave, onSecondary };
   if (secondaryLabel && onSecondary) {
@@ -3729,6 +3756,7 @@ function userDialogBody() {
     ${select("role", "User Role", roleOptions(), "Operations")}
     ${select("accountStatus", "User Account", accountStatusOptions(), "Active")}
     ${select("branchAccess", "Branch Access", branchAccessOptions(), branchOptions()[0])}
+    ${select("branchViewScope", "View Scope", branchViewScopeOptions(), "Assigned Branch Only")}
     ${sectionAccessCheckboxes(checkedSections)}
     ${checkbox("canViewAllEntry", "User can view all entry")}
     ${checkbox("canViewOnlySelfEntry", "User can view only self entry", true)}
@@ -5821,6 +5849,7 @@ async function createUser(data) {
     data.role,
     data.accountStatus,
     data.branchAccess,
+    data.branchViewScope || "Assigned Branch Only",
     normalizeSectionAccess(data.sectionAccess || "All"),
     isChecked(data.canViewAllEntry),
     isChecked(data.canViewOnlySelfEntry),
