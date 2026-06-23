@@ -835,6 +835,8 @@ function boot() {
   resetPasswordButton.addEventListener("click", handlePasswordReset);
   loginForm.querySelector("[data-toggle-password]")?.addEventListener("click", toggleLoginPassword);
   moduleContent.addEventListener("click", handleModuleClick);
+  moduleContent.addEventListener("dblclick", handleModuleDoubleClick);
+  moduleContent.addEventListener("keydown", handleModuleKeydown);
   moduleContent.addEventListener("submit", handleModuleSubmit);
   dialogSecondary.addEventListener("click", () => dialogState?.onSecondary?.());
   dialogSave.addEventListener("click", saveDialogRecord);
@@ -1607,8 +1609,8 @@ function renderDashboard() {
   if (!isAdminSession()) {
     return `
       <section class="kpi-grid">
-        ${kpi("Open Shipments", open, "Your draft and booked jobs")}
-        ${kpi("In Transit", transit, "Your shipments moving")}
+        ${kpi("Open Shipments", open, "Your draft and booked jobs", "open-shipments")}
+        ${kpi("In Transit", transit, "Your shipments moving", "in-transit")}
         ${kpi("Pending POD", pod, "Need delivery proof")}
         ${kpi("Unbilled", unbilled, "Your jobs ready for billing")}
         ${kpi("Pending Requests", pendingRequests, "Your pending approvals")}
@@ -1617,8 +1619,8 @@ function renderDashboard() {
   }
   return `
     <section class="kpi-grid">
-      ${kpi("Open Shipments", open, "Draft and booked jobs")}
-      ${kpi("In Transit", transit, "Currently moving")}
+      ${kpi("Open Shipments", open, "Draft and booked jobs", "open-shipments")}
+      ${kpi("In Transit", transit, "Currently moving", "in-transit")}
       ${kpi("Pending POD", pod, "Need delivery proof")}
       ${kpi("Unbilled", unbilled, "Ready for billing review")}
       ${kpi("Pending Requests", pendingRequests, "Need admin action")}
@@ -1637,6 +1639,56 @@ function renderDashboard() {
         </div>
       </article>
     </section>`;
+}
+
+function dashboardMetricConfig(metric) {
+  const rows = filteredRows(visibleRows(state.shipments));
+  if (metric === "open-shipments") {
+    const selected = rows.filter((row) => ["Draft", "Booked"].includes(row.status));
+    return {
+      title: "Open Shipments",
+      summary: "Draft and booked shipments",
+      rows: selected
+    };
+  }
+
+  if (metric === "in-transit") {
+    const selected = rows.filter((row) => row.status === "In-Transit");
+    return {
+      title: "In Transit",
+      summary: "Shipments currently moving",
+      rows: selected
+    };
+  }
+
+  return null;
+}
+
+function openDashboardMetricDialog(metric) {
+  const config = dashboardMetricConfig(metric);
+  if (!config) return;
+  openDialog({
+    title: `${config.title} Details`,
+    typeLabel: "Dashboard",
+    body: `
+      <div class="report-preview-shell">
+        <div class="report-preview-page">
+          <div class="report-preview-heading">
+            <div>
+              <h3>${escapeHtml(config.title)}</h3>
+              <p>${escapeHtml(config.summary)}</p>
+            </div>
+            <span class="status-badge neutral">${escapeHtml(String(config.rows.length))}</span>
+          </div>
+          ${config.rows.length ? table("shipment", config.rows, dashboardShipmentColumns()) : `<p class="empty-state">No matching shipments found.</p>`}
+        </div>
+      </div>
+    `,
+    saveLabel: "Close",
+    onSave() {
+      recordDialog.close();
+    }
+  });
 }
 
 function adminTopRequestsPanel() {
@@ -1684,7 +1736,7 @@ function renderShipments() {
       <article class="panel">${panelHeader("Shipment Register", "Editable records")} ${table("shipment", rows, shipmentColumns())}</article>
       ${moduleActionPanel("Shipment Actions", "shipment", "Use separate desktop-style windows for new shipment entry and load/edit shipment details.", actionChecklist([
         "New button opens the shipment popup window.",
-        "Load uses the selected saved shipment from the list.",
+        "Double-click a shipment number or AWB number to open the record.",
         "Shipment type controls service options: Import, Export, WHC, and Consolidation service."
       ]) + documentActionControls("shipment", "Shipment") + blockRequestControls("shipment", "Shipment"))}
     </section>
@@ -2175,8 +2227,9 @@ function reportPreviewPanel(preview) {
   </div>`;
 }
 
-function kpi(title, value, caption) {
-  return `<article class="kpi"><span>${escapeHtml(title)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(caption)}</small></article>`;
+function kpi(title, value, caption, metric = "") {
+  const metricAttr = metric ? ` data-dashboard-metric="${escapeHtml(metric)}" role="button" tabindex="0"` : "";
+  return `<article class="kpi"${metricAttr}><span>${escapeHtml(title)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(caption)}</small></article>`;
 }
 
 function alert(title, detail) {
@@ -2184,14 +2237,14 @@ function alert(title, detail) {
 }
 
 function panelHeader(title, label) {
-  return `<div class="panel-header"><div><p class="eyebrow">${escapeHtml(label)}</p><h2>${escapeHtml(title)}</h2></div></div>`;
+  return `<div class="panel-header"><div><h2>${escapeHtml(title)}</h2></div></div>`;
 }
 
 function empty(text) {
   return `<p class="empty-state">${escapeHtml(text)}</p>`;
 }
 
-function table(type, rows, columns, showLoad = true) {
+function table(type, rows, columns, showLoad = type !== "shipment") {
   const header = showLoad ? `<th>Load</th>` : "";
   const colSpan = columns.length + (showLoad ? 1 : 0);
   const body = rows.length
@@ -2373,6 +2426,10 @@ function cellHtml(type, key, row, index = 0) {
   if (key === "slNo") return escapeHtml(index + 1);
   if (key === "palletCount") return escapeHtml(cargoPalletCount(row));
   if (key === "truckDetails") return escapeHtml([row.vehicleNo, row.driverName, row.driverMobile].filter(Boolean).join(" / "));
+  if (type === "shipment" && (key === "jobNo" || key === "airwayBillNo")) {
+    const value = display(row[key]);
+    return `<button type="button" class="table-inline-link" data-shipment-open data-shipment-id="${escapeHtml(row.jobNo || "")}" data-shipment-field="${escapeHtml(key)}" aria-label="Open shipment ${escapeHtml(String(value))}">${escapeHtml(value)}</button>`;
+  }
 
   if (["status", "podStatus", "invoiceStatus", "accountStatus", "manifestStatus"].includes(key)) {
     return badge(display(row[key]));
@@ -2412,6 +2469,22 @@ function jobBadge(jobNo) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
   if (!shipmentItem) return `<button class="job-chip warning">${escapeHtml(jobNo)}</button>`;
   return `<button class="job-chip" data-action="open" data-type="shipment" data-id="${escapeHtml(jobNo)}"><strong>${escapeHtml(jobNo)}</strong><span>${escapeHtml(shipmentItem.customer)} | Pieces ${escapeHtml(shipmentItem.pieces)} | ${escapeHtml(shipmentItem.status)}</span></button>`;
+}
+
+function dashboardShipmentColumns() {
+  return [
+    ["slNo", "SL."],
+    ["bookingDate", "DATE"],
+    ["jobNo", "SHIPMENT NO."],
+    ["airwayBillNo", "AWB NO."],
+    ["customer", "CUSTOMER"],
+    ["origin", "ORIGIN"],
+    ["destination", "DESTINATION"],
+    ["status", "STATUS"],
+    ["podStatus", "POD"],
+    ["invoiceStatus", "INVOICE"],
+    ["createdBy", "USERNAME"]
+  ];
 }
 
 function input(name, label, value = "", readonly = false, type = "text") {
@@ -2580,8 +2653,8 @@ function defaultColumnLayouts() {
       ["palletCount", "No# of Pallets"],
       ["actualKg", "G.WT"],
       ["manualChargeableKg", "C.WT"],
-      ["specialInstructions", "COMMENTS"],
-      ["truckDetails", "TRUCK DETAILS"]
+      ["status", "STATUS"],
+      ["createdBy", "USERNAME"]
     ],
     load: [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]],
     customers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
@@ -2796,6 +2869,30 @@ async function handleModuleClick(event) {
     await deleteAuditLog();
     return;
   }
+}
+
+function handleModuleDoubleClick(event) {
+  const shipmentButton = event.target.closest("[data-shipment-open]");
+  if (shipmentButton) {
+    const shipmentId = shipmentButton.dataset.shipmentId || "";
+    if (shipmentId) {
+      openRecord("shipment", shipmentId);
+    }
+    return;
+  }
+
+  const metricCard = event.target.closest("[data-dashboard-metric]");
+  if (metricCard) {
+    openDashboardMetricDialog(metricCard.dataset.dashboardMetric);
+  }
+}
+
+function handleModuleKeydown(event) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const metricCard = event.target.closest("[data-dashboard-metric]");
+  if (!metricCard) return;
+  event.preventDefault();
+  openDashboardMetricDialog(metricCard.dataset.dashboardMetric);
 }
 
 function selectedRecordId(type) {
