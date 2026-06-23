@@ -533,7 +533,21 @@ function user(
   notes = "Web demo user",
   createdDate = today()
 ) {
-  return { userName, email, role, accountStatus, branchAccess, sectionAccess, canViewAllEntry, canViewOnlySelfEntry, canEditAllEntry, canViewUpdatedHistory, password, notes, createdDate };
+  return {
+    userName,
+    email,
+    role,
+    accountStatus,
+    branchAccess,
+    sectionAccess,
+    canViewAllEntry: isChecked(canViewAllEntry),
+    canViewOnlySelfEntry: isChecked(canViewOnlySelfEntry),
+    canEditAllEntry: isChecked(canEditAllEntry),
+    canViewUpdatedHistory: isChecked(canViewUpdatedHistory),
+    password,
+    notes,
+    createdDate
+  };
 }
 
 function audit(dateTime, userName, action, reference, id = "") {
@@ -631,7 +645,11 @@ function normalizeState(stored) {
 function normalizeUsers(users) {
   return (Array.isArray(users) ? users : []).map((record) => ({
     ...record,
-    sectionAccess: normalizeSectionAccess(record.sectionAccess || "All")
+    sectionAccess: normalizeSectionAccess(record.sectionAccess || "All"),
+    canViewAllEntry: isChecked(record.canViewAllEntry),
+    canViewOnlySelfEntry: isChecked(record.canViewOnlySelfEntry),
+    canEditAllEntry: isChecked(record.canEditAllEntry),
+    canViewUpdatedHistory: isChecked(record.canViewUpdatedHistory)
   }));
 }
 
@@ -1469,10 +1487,10 @@ function apiUser(row) {
     row.account_status,
     row.branch_access,
     normalizeSectionAccess(row.section_access || "All"),
-    row.can_view_all_entry,
-    row.can_view_only_self_entry,
-    row.can_edit_all_entry,
-    row.can_view_updated_history,
+    isChecked(row.can_view_all_entry),
+    isChecked(row.can_view_only_self_entry),
+    isChecked(row.can_edit_all_entry),
+    isChecked(row.can_view_updated_history),
     "",
     row.notes || "",
     String(row.created_at || today()).slice(0, 10)
@@ -1611,9 +1629,9 @@ function renderDashboard() {
       <section class="kpi-grid">
         ${kpi("Open Shipments", open, "Your draft and booked jobs", "open-shipments")}
         ${kpi("In Transit", transit, "Your shipments moving", "in-transit")}
-        ${kpi("Pending POD", pod, "Need delivery proof")}
-        ${kpi("Unbilled", unbilled, "Your jobs ready for billing")}
-        ${kpi("Pending Requests", pendingRequests, "Your pending approvals")}
+        ${kpi("Pending POD", pod, "Need delivery proof", "pending-pod")}
+        ${kpi("Unbilled", unbilled, "Your jobs ready for billing", "unbilled")}
+        ${kpi("Pending Requests", pendingRequests, "Your pending approvals", "pending-requests")}
       </section>
       <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${table("shipment", rows, shipmentColumns())}</section>`;
   }
@@ -1621,11 +1639,11 @@ function renderDashboard() {
     <section class="kpi-grid">
       ${kpi("Open Shipments", open, "Draft and booked jobs", "open-shipments")}
       ${kpi("In Transit", transit, "Currently moving", "in-transit")}
-      ${kpi("Pending POD", pod, "Need delivery proof")}
-      ${kpi("Unbilled", unbilled, "Ready for billing review")}
-      ${kpi("Pending Requests", pendingRequests, "Need admin action")}
-      ${kpi("Month Revenue", money(rows.reduce((sum, row) => sum + Number(row.sell || 0), 0)), "Sell total")}
-      ${kpi("Gross Profit", money(rows.reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0) - state.additionalCharges.reduce((sum, charge) => sum + Number(charge.totalAmount || 0), 0)), "Sell minus supplier and extra cost")}
+      ${kpi("Pending POD", pod, "Need delivery proof", "pending-pod")}
+      ${kpi("Unbilled", unbilled, "Ready for billing review", "unbilled")}
+      ${kpi("Pending Requests", pendingRequests, "Need admin action", "pending-requests")}
+      ${kpi("Month Revenue", money(rows.reduce((sum, row) => sum + Number(row.sell || 0), 0)), "Sell total", "month-revenue")}
+      ${kpi("Gross Profit", money(rows.reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0) - state.additionalCharges.reduce((sum, charge) => sum + Number(charge.totalAmount || 0), 0)), "Sell minus supplier and extra cost", "gross-profit")}
     </section>
     <section class="split-grid">
       <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, shipmentColumns())}</article>
@@ -1648,7 +1666,8 @@ function dashboardMetricConfig(metric) {
     return {
       title: "Open Shipments",
       summary: "Draft and booked shipments",
-      rows: selected
+      rows: selected,
+      columns: dashboardShipmentColumns()
     };
   }
 
@@ -1657,7 +1676,56 @@ function dashboardMetricConfig(metric) {
     return {
       title: "In Transit",
       summary: "Shipments currently moving",
-      rows: selected
+      rows: selected,
+      columns: dashboardShipmentColumns()
+    };
+  }
+
+  if (metric === "pending-pod") {
+    const selected = rows.filter((row) => row.podStatus !== "Uploaded");
+    return {
+      title: "Pending POD",
+      summary: "Shipments waiting for delivery proof",
+      rows: selected,
+      columns: dashboardShipmentColumns()
+    };
+  }
+
+  if (metric === "unbilled") {
+    const selected = rows.filter((row) => ["Unbilled", "Missing rate"].includes(row.invoiceStatus));
+    return {
+      title: "Unbilled",
+      summary: "Shipments waiting for invoice completion",
+      rows: selected,
+      columns: dashboardShipmentColumns()
+    };
+  }
+
+  if (metric === "pending-requests") {
+    const selected = allUserRequests().filter((row) => String(row.status || "").toLowerCase() === "pending");
+    return {
+      title: "Pending Requests",
+      summary: "User and admin requests waiting for review",
+      rows: selected,
+      columns: userRequestColumns()
+    };
+  }
+
+  if (metric === "month-revenue" || metric === "gross-profit") {
+    const selected = rows.map((row) => ({
+      ...row,
+      profit: Number(row.sell || 0) - Number(row.buyCost || 0)
+    }));
+    return {
+      title: metric === "month-revenue" ? "Month Revenue" : "Gross Profit",
+      summary: metric === "month-revenue" ? "Shipment revenue by record" : "Shipment profit by record",
+      rows: selected,
+      columns: [
+        ...dashboardShipmentColumns(),
+        ["sell", "SELL"],
+        ["buyCost", "COST"],
+        ["profit", "PROFIT"]
+      ]
     };
   }
 
@@ -1671,7 +1739,8 @@ function openDashboardMetricDialog(metric) {
     title: `${config.title} Details`,
     typeLabel: "Dashboard",
     body: `
-      <div class="report-preview-shell">
+      <div class="dashboard-popup-shell">
+        <div class="report-preview-shell">
         <div class="report-preview-page">
           <div class="report-preview-heading">
             <div>
@@ -1680,8 +1749,9 @@ function openDashboardMetricDialog(metric) {
             </div>
             <span class="status-badge neutral">${escapeHtml(String(config.rows.length))}</span>
           </div>
-          ${config.rows.length ? table("shipment", config.rows, dashboardShipmentColumns()) : `<p class="empty-state">No matching shipments found.</p>`}
+          ${config.rows.length ? table(metric === "pending-requests" ? "userRequest" : "shipment", config.rows, config.columns, false) : `<p class="empty-state">No matching records found.</p>`}
         </div>
+      </div>
       </div>
     `,
     saveLabel: "Close",
@@ -4568,7 +4638,7 @@ function summarizeChanges(previous, next) {
 
 function coerceValue(previous, next) {
   if (typeof previous === "number") return Number(next) || 0;
-  if (typeof previous === "boolean") return next === "true" || next === "Yes";
+  if (typeof previous === "boolean") return isChecked(next);
   return next;
 }
 

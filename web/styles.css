@@ -122,14 +122,18 @@ label {
   color: #d96f16;
 }
 
-.login-brand-panel .company-name-ui,
-.sidebar .company-name-ui {
-  color: #fff;
-}
-
+.eyebrow.company-name-ui,
+.eyebrow-light.company-name-ui,
+.topbar .company-name-ui,
+.brand-ribbon .company-name-ui,
 .auth-footer .company-name-ui,
 .app-footer .company-name-ui {
   color: var(--ink);
+}
+
+.login-brand-panel .company-name-ui,
+.sidebar .company-name-ui {
+  color: #fff;
 }
 
 .brand-row,
@@ -1486,6 +1490,21 @@ th {
   max-height: calc(100vh - 210px);
   overflow: auto;
   padding-right: 4px;
+}
+
+.dashboard-popup-shell {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.dashboard-popup-shell .report-preview-shell {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.dashboard-popup-shell .report-preview-page {
+  min-height: 0;
 }
 
 .app-footer {
