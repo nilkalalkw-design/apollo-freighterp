@@ -5277,53 +5277,53 @@ function tcnDimensionsTable(lines, volumeCategory = "") {
 
 function tcnTermsHtml() {
   const terms = [
-    TCN Carriage Terms & Conditions
-
-* These Terms apply to all transport, freight forwarding, customs clearance coordination, storage, handling, collection and delivery services performed by the Company.
-* By placing a booking, accepting a quotation, handing over cargo, signing a TCN, receiving delivery, or paying any invoice, the Customer accepts these Terms.
-* These Terms override any conflicting terms issued by the Customer, consignee, supplier or third party, unless the Company agrees otherwise in writing.
-* The Customer confirms that it is the owner of the cargo or is authorized by the owner to instruct the Company.
-* The Customer is fully responsible for providing accurate and complete shipment details, including cargo description, quantity, weight, dimensions, value, HS code, origin, destination, invoice, packing list, permits and customs documents.
-* The Customer is responsible for all consequences arising from incorrect, incomplete, late or misleading documents or declarations, including customs fines, penalties, delays, storage, demurrage, seizure, re-export, destruction or additional charges.
-* The Customer must declare in writing before collection if the cargo is fragile, valuable, dangerous, restricted, perishable, temperature-sensitive, bonded, time-critical or requires special handling.
-* The Customer is responsible for proper packing, wrapping, palletizing, labeling and cargo readiness. The Company is not liable for loss or damage caused by weak packing, poor palletizing, concealed damage, leakage, breakage, insufficient wrapping or unsuitable packaging.
-* Unless agreed in writing, loading at origin and unloading at destination are the Customer’s responsibility. Any assistance by the Company, driver or subcontractor is at the Customer’s risk unless proven gross negligence is established.
-* The Company is not responsible for the contents, count, weight, condition or shortage inside sealed cartons, pallets, trailers, containers or packages. Acceptance of cargo confirms only apparent external condition.
-* Any weights, quantities, measurements or descriptions shown on the TCN are based on information supplied by the Customer unless verified and confirmed by the Company in writing.
-* Transit times, border crossing times, customs clearance times and delivery dates are estimates only and are not guaranteed unless expressly agreed in writing.
-* The Company may choose the route, vehicle, driver, border, subcontractor, consolidation method and delivery sequence at its discretion.
-* The Company may consolidate, reload, transfer, cross-dock, store or transship cargo where operationally required, unless the Customer has paid for a dedicated exclusive truck service.
-* The Company is not liable for delay caused by customs, border congestion, government action, road closure, accident, breakdown, weather, war, unrest, force majeure, incomplete documents, customer delay, consignee delay or events outside the Company’s reasonable control.
-* Freight charges do not include cargo insurance unless expressly agreed and charged separately. The Customer is responsible for arranging cargo insurance for the full cargo value if full-value protection is required.
-* The Company shall only be liable for direct physical loss of or damage to cargo where the Customer proves that such loss or damage was directly caused by the Company’s proven fault during the period in which the cargo was in the Company’s care, custody and control.
-* The Company’s liability, if any, shall be strictly limited to the coverage, terms, conditions, exclusions, deductibles and maximum limits of the Company’s applicable haulage / carrier liability insurance policy.
-* The Company shall not be liable for any amount, loss, claim or damage that is not admitted, covered or paid by the insurer under the applicable haulage / carrier liability insurance policy, unless mandatory law provides otherwise.
-* The Company’s liability shall never exceed the amount actually recoverable and paid under the applicable haulage / carrier liability insurance policy for the affected shipment, after application of all deductibles, exclusions, depreciation, survey findings and policy limits.
-* The Company’s liability is not cargo insurance and shall not be treated as full-value protection for the cargo. The Customer is responsible for arranging its own cargo insurance if it requires protection for the full invoice value, commercial value, profit, delay risk or consequential loss.
-* The Company shall not be liable for loss of profit, loss of sales, loss of market, business interruption, contractual penalties, production delay, loss of goodwill, indirect loss, special loss, punitive loss or consequential damages, whether or not such losses were foreseeable.
-* Nothing in these Terms shall make the Company liable for loss, damage, delay, shortage, customs penalties, authority action, confiscation, rejection, seizure or additional charges caused by incorrect documents, poor packing, inherent nature of the cargo, loading or unloading by others, customer delay, consignee delay, undeclared cargo risks, force majeure, government action, customs action or events outside the Company’s reasonable control.
-* Dangerous, prohibited, illegal, restricted, hazardous, flammable, explosive, toxic, controlled or sanctioned cargo must not be handed to the Company unless declared in writing and accepted by the Company in writing before collection.
-* The Customer is fully liable for all claims, fines, penalties, damages, injury, clean-up cost, delay, legal cost or authority action arising from undeclared, misdeclared, illegal, dangerous or restricted cargo.
-* The Company may refuse, suspend, return, unload, store, abandon, destroy or hand over to authorities any cargo that is unsafe, illegal, misdeclared, restricted, unpaid, undocumented or unsuitable for transport, at the Customer’s risk and expense.
-* All customs duties, taxes, deposits, government charges, inspection fees, penalties, storage, demurrage, waiting time, re-delivery, cancellation, documentation and additional charges are payable by the Customer on demand.
-* If no credit facility is approved in writing, all charges are payable before release or delivery.
-* The Customer shall pay all invoices without set-off, deduction, withholding or counterclaim. Any claim must be handled separately and does not justify withholding freight, duties, deposits or other charges.
-* The Company may suspend services, hold cargo, hold documents, cancel credit terms, require advance payment, or refuse delivery if any amount is overdue or if payment risk becomes unacceptable.
-* The Company has a general and particular lien over all cargo, documents and goods in its possession or control for any amount owed by the Customer, whether related to the same shipment or any previous shipment.
-* If payment is not made after notice, the Company may store, sell, dispose of, return or otherwise deal with the cargo as permitted by law, and all related costs remain payable by the Customer.
-* The Company may subcontract all or part of the services. All protections, exclusions, defenses and limits of liability available to the Company also apply to its employees, drivers, agents, subcontractors and service providers.
-* The Customer shall indemnify and protect the Company against all claims, losses, damages, fines, penalties, costs and legal expenses arising from incorrect documents, misdeclaration, unpaid charges, customs issues, poor packing, illegal cargo, dangerous cargo, customer delay, consignee delay, or breach of these Terms.
-* Any visible loss or damage must be clearly written on the delivery note or TCN at the time of delivery. A clean signature is evidence that the cargo was received in good apparent order and condition.
-* Concealed damage must be reported in writing within 3 calendar days from delivery. Non-delivery, shortage or delay claims must be reported in writing within 7 calendar days.
-* All claims must be supported by documents, photos, invoice value, packing list, damage report, proof of actual loss and any other evidence requested by the Company.
-* No claim shall be accepted if the cargo, packaging or evidence is not preserved for inspection by the Company or its insurer.
-* Any legal action against the Company must be started within 9 months from the delivery date, expected delivery date, or the date the services ended, whichever is earlier, unless mandatory law provides otherwise.
-* The Company is not liable for failure or delay caused by force majeure, including war, civil unrest, border closure, customs system failure, government restriction, accident, road closure, natural disaster, fire, flood, strike, fuel shortage, cyberattack, sanctions, epidemic, pandemic, or any event beyond the Company’s reasonable control.
-* Email, WhatsApp, scanned copies, electronic signatures, digital proof of delivery and electronic shipment records are valid evidence of instructions, acceptance, delivery and charges.
-* Delivery may be made to the consignee, warehouse, receiving staff, security gate, nominated agent or any person appearing to have authority to receive cargo at the stated delivery location.
-* If the consignee refuses or delays delivery, or if documents or payment are missing, the Company may store, return, re-route or hold the cargo at the Customer’s risk and expense.
-* These Terms are governed by the laws of the United Arab Emirates, unless mandatory law requires otherwise. Any dispute shall be subject to the courts or dispute forum selected by the Company, unless otherwise agreed in writing.
-* By instructing the Company, the Customer confirms that it accepts these Terms and understands that the Company’s liability is limited and that cargo insurance should be arranged separately for full-value protection.  ];
+    "TCN Carriage Terms & Conditions"
+"* These Terms apply to all transport, freight forwarding, customs clearance coordination, storage, handling, collection and delivery services performed by the Company."
+"* By placing a booking, accepting a quotation, handing over cargo, signing a TCN, receiving delivery, or paying any invoice, the Customer accepts these Terms."
+"* These Terms override any conflicting terms issued by the Customer, consignee, supplier or third party, unless the Company agrees otherwise in writing."
+"* The Customer confirms that it is the owner of the cargo or is authorized by the owner to instruct the Company."
+"* The Customer is fully responsible for providing accurate and complete shipment details, including cargo description, quantity, weight, dimensions, value, HS code, origin, destination, invoice, packing list, permits and customs documents."
+"* The Customer is responsible for all consequences arising from incorrect, incomplete, late or misleading documents or declarations, including customs fines, penalties, delays, storage, demurrage, seizure, re-export, destruction or additional charges."
+"* The Customer must declare in writing before collection if the cargo is fragile, valuable, dangerous, restricted, perishable, temperature-sensitive, bonded, time-critical or requires special handling."
+"* The Customer is responsible for proper packing, wrapping, palletizing, labeling and cargo readiness. The Company is not liable for loss or damage caused by weak packing, poor palletizing, concealed damage, leakage, breakage, insufficient wrapping or unsuitable packaging."
+"* Unless agreed in writing, loading at origin and unloading at destination are the Customer’s responsibility. Any assistance by the Company, driver or subcontractor is at the Customer’s risk unless proven gross negligence is established."
+"* The Company is not responsible for the contents, count, weight, condition or shortage inside sealed cartons, pallets, trailers, containers or packages. Acceptance of cargo confirms only apparent external condition."
+"* Any weights, quantities, measurements or descriptions shown on the TCN are based on information supplied by the Customer unless verified and confirmed by the Company in writing."
+"* Transit times, border crossing times, customs clearance times and delivery dates are estimates only and are not guaranteed unless expressly agreed in writing."
+"* The Company may choose the route, vehicle, driver, border, subcontractor, consolidation method and delivery sequence at its discretion."
+"* The Company may consolidate, reload, transfer, cross-dock, store or transship cargo where operationally required, unless the Customer has paid for a dedicated exclusive truck service."
+"* The Company is not liable for delay caused by customs, border congestion, government action, road closure, accident, breakdown, weather, war, unrest, force majeure, incomplete documents, customer delay, consignee delay or events outside the Company’s reasonable control."
+"* Freight charges do not include cargo insurance unless expressly agreed and charged separately. The Customer is responsible for arranging cargo insurance for the full cargo value if full-value protection is required."
+"* The Company shall only be liable for direct physical loss of or damage to cargo where the Customer proves that such loss or damage was directly caused by the Company’s proven fault during the period in which the cargo was in the Company’s care, custody and control."
+"* The Company’s liability, if any, shall be strictly limited to the coverage, terms, conditions, exclusions, deductibles and maximum limits of the Company’s applicable haulage / carrier liability insurance policy."
+"* The Company shall not be liable for any amount, loss, claim or damage that is not admitted, covered or paid by the insurer under the applicable haulage / carrier liability insurance policy, unless mandatory law provides otherwise."
+"* The Company’s liability shall never exceed the amount actually recoverable and paid under the applicable haulage / carrier liability insurance policy for the affected shipment, after application of all deductibles, exclusions, depreciation, survey findings and policy limits."
+"* The Company’s liability is not cargo insurance and shall not be treated as full-value protection for the cargo. The Customer is responsible for arranging its own cargo insurance if it requires protection for the full invoice value, commercial value, profit, delay risk or consequential loss."
+"* The Company shall not be liable for loss of profit, loss of sales, loss of market, business interruption, contractual penalties, production delay, loss of goodwill, indirect loss, special loss, punitive loss or consequential damages, whether or not such losses were foreseeable."
+"* Nothing in these Terms shall make the Company liable for loss, damage, delay, shortage, customs penalties, authority action, confiscation, rejection, seizure or additional charges caused by incorrect documents, poor packing, inherent nature of the cargo, loading or unloading by others, customer delay, consignee delay, undeclared cargo risks, force majeure, government action, customs action or events outside the Company’s reasonable control."
+"* Dangerous, prohibited, illegal, restricted, hazardous, flammable, explosive, toxic, controlled or sanctioned cargo must not be handed to the Company unless declared in writing and accepted by the Company in writing before collection."
+"* The Customer is fully liable for all claims, fines, penalties, damages, injury, clean-up cost, delay, legal cost or authority action arising from undeclared, misdeclared, illegal, dangerous or restricted cargo."
+"* The Company may refuse, suspend, return, unload, store, abandon, destroy or hand over to authorities any cargo that is unsafe, illegal, misdeclared, restricted, unpaid, undocumented or unsuitable for transport, at the Customer’s risk and expense."
+"* All customs duties, taxes, deposits, government charges, inspection fees, penalties, storage, demurrage, waiting time, re-delivery, cancellation, documentation and additional charges are payable by the Customer on demand."
+"* If no credit facility is approved in writing, all charges are payable before release or delivery."
+"* The Customer shall pay all invoices without set-off, deduction, withholding or counterclaim. Any claim must be handled separately and does not justify withholding freight, duties, deposits or other charges."
+"* The Company may suspend services, hold cargo, hold documents, cancel credit terms, require advance payment, or refuse delivery if any amount is overdue or if payment risk becomes unacceptable."
+"* The Company has a general and particular lien over all cargo, documents and goods in its possession or control for any amount owed by the Customer, whether related to the same shipment or any previous shipment."
+"* If payment is not made after notice, the Company may store, sell, dispose of, return or otherwise deal with the cargo as permitted by law, and all related costs remain payable by the Customer."
+"* The Company may subcontract all or part of the services. All protections, exclusions, defenses and limits of liability available to the Company also apply to its employees, drivers, agents, subcontractors and service providers."
+"* The Customer shall indemnify and protect the Company against all claims, losses, damages, fines, penalties, costs and legal expenses arising from incorrect documents, misdeclaration, unpaid charges, customs issues, poor packing, illegal cargo, dangerous cargo, customer delay, consignee delay, or breach of these Terms."
+"* Any visible loss or damage must be clearly written on the delivery note or TCN at the time of delivery. A clean signature is evidence that the cargo was received in good apparent order and condition."
+"* Concealed damage must be reported in writing within 3 calendar days from delivery. Non-delivery, shortage or delay claims must be reported in writing within 7 calendar days."
+"* All claims must be supported by documents, photos, invoice value, packing list, damage report, proof of actual loss and any other evidence requested by the Company."
+"* No claim shall be accepted if the cargo, packaging or evidence is not preserved for inspection by the Company or its insurer."
+"* Any legal action against the Company must be started within 9 months from the delivery date, expected delivery date, or the date the services ended, whichever is earlier, unless mandatory law provides otherwise."
+"* The Company is not liable for failure or delay caused by force majeure, including war, civil unrest, border closure, customs system failure, government restriction, accident, road closure, natural disaster, fire, flood, strike, fuel shortage, cyberattack, sanctions, epidemic, pandemic, or any event beyond the Company’s reasonable control."
+"* Email, WhatsApp, scanned copies, electronic signatures, digital proof of delivery and electronic shipment records are valid evidence of instructions, acceptance, delivery and charges."
+"* Delivery may be made to the consignee, warehouse, receiving staff, security gate, nominated agent or any person appearing to have authority to receive cargo at the stated delivery location."
+"* If the consignee refuses or delays delivery, or if documents or payment are missing, the Company may store, return, re-route or hold the cargo at the Customer’s risk and expense."
+"* These Terms are governed by the laws of the United Arab Emirates, unless mandatory law requires otherwise. Any dispute shall be subject to the courts or dispute forum selected by the Company, unless otherwise agreed in writing."
+"* By instructing the Company, the Customer confirms that it accepts these Terms and understands that the Company’s liability is limited and that cargo insurance should be arranged separately for full-value protection."
+  ];
   return `<section class="tcn-terms"><h2>Terms and Conditions:</h2><ol>${terms.map((term) => `<li>${escapeHtml(term)}</li>`).join("")}</ol></section>`;
 }
 
