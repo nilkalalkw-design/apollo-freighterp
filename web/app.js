@@ -3716,7 +3716,6 @@ function cargoItemsBuilder(initialValue = "[]") {
     <input type="hidden" name="cargoItemsJson" value="${escapeHtml(initialValue || "[]")}" />
     <input type="hidden" name="palletDimensionsJson" value="${escapeHtml(initialValue || "[]")}" />
     <div class="tariff-charge-entry cargo-entry">
-      ${select("volumeCategory", "", volumeCategoryOptions(), "1 CBM = 250 KG")}
       ${select("palletPackageType", "Package Type", ["Pallet", "Carton", "Crate", "Box", "Package", "Drum"], "Pallet")}
       ${input("palletCount", "Quantity", "1", false, "number")}
       ${input("palletLength", "Length", "100", false, "number")}
@@ -3734,6 +3733,7 @@ function cargoItemsBuilder(initialValue = "[]") {
     </div>
     <div class="tariff-charge-table" data-pallet-lines-list></div>
     <div class="form-section-grid cargo-totals">
+      ${select("volumeCategory", "", volumeCategoryOptions(), "1 CBM = 250 KG")}
       ${input("cbm", "Grand Total CBM", "0", true, "number")}
       ${input("actualKg", "Total Actual Weight", "0", true, "number")}
       ${input("chargeableKg", "Chargeable Weight", "0", false, "number")}
