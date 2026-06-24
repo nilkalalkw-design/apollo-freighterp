@@ -5243,12 +5243,7 @@ function tcnDocumentHtml(record) {
       </table>
       ${tcnDimensionsTable(cargoLines, mergedRecord.volumeCategory)}
       ${tcnTermsHtml()}
-      <section class="tcn-signatures">
-        <div><span>RECEIVER'S SIGN</span><strong>${escapeHtml(mergedRecord.receivedBy || "")}</strong></div>
-        <div><span>SHIPPER'S SIGN</span><strong>${escapeHtml(mergedRecord.shipperName || mergedRecord.customer || "")}</strong></div>
-      </section>
-    `,
-    { hideDefaultSignatures: true }
+   
   );
 }
 
