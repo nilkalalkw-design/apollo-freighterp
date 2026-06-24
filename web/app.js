@@ -5243,7 +5243,10 @@ function tcnDocumentHtml(record) {
       </table>
       ${tcnDimensionsTable(cargoLines, mergedRecord.volumeCategory)}
       ${tcnTermsHtml()}
-   
+         <section class="tcn-signatures">
+      </section>
+    `,
+    { hideDefaultSignatures: true }
   );
 }
 
