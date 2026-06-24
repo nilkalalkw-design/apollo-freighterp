@@ -5277,13 +5277,48 @@ function tcnDimensionsTable(lines, volumeCategory = "") {
 
 function tcnTermsHtml() {
   const terms = [
-    "The consignor certifies that he is either the owner of the goods or is duly authorized by the owner to act as his agent.",
-    "The consignor agrees to indemnify the carrier against any claims arising out of damage to the goods or any injury caused by the goods.",
-    "The carrier is not liable for damage caused by delay, negligence, or any reason beyond the carrier control.",
-    "The carrier liability for loss or damage is limited to the declared or applicable cargo value.",
-    "The consignor agrees to pay all transportation charges, including loading and unloading charges if requested.",
-    "The consignor agrees to provide all necessary documentation for transportation of the goods.",
-    "The consignor is considered to have accepted these terms and conditions upon receipt of this consignment note."
+    "Cargo Insurance",
+"Freight charges do not include cargo insurance unless expressly agreed in writing and charged separately.",
+"The Customer is responsible for arranging full cargo insurance for the invoice value of the Cargo.",
+"The Company’s liability is limited under these Terms and is not equal to cargo insurance.",
+"The Customer acknowledges that carrier liability is limited and may be substantially lower than the commercial value of Cargo.",
+"If the Customer requires cargo insurance, it must request this in writing before collection and pay the applicable premium and charges.",
+
+"Limitation of Liability",
+"The Company shall not be liable for any loss, damage, delay, shortage, mis delivery or claim unless the Customer proves that such loss was directly caused by the Company’s proven fault.",
+"To the fullest extent permitted by law, the Company’s liability for loss or damage to Cargo shall be limited to the lowest of the following:",
+"The actual proven loss.",
+"The repair cost of the damaged Cargo.",
+"The depreciated replacement value of the affected Cargo only.",
+
+"The Company shall not be liable for:",
+"Loss of profit.",
+"Loss of sales.",
+"Loss of market.",
+"Business interruption.",
+"Penalties imposed by the Customer’s customer.",
+"Production delay.",
+"Contractual penalties.",
+"Loss of goodwill.",
+"Loss of opportunity.",
+"Consequential, indirect or special damages.",
+"Delay damages unless expressly agreed in writing.",
+
+"The Company shall not be liable for losses or damage caused by:",
+"Poor packing.",
+"Inherent vice or nature of the Cargo.",
+"Rust, oxidation, leakage, evaporation or contamination.",
+"Temperature sensitivity unless reefer service was specifically booked.",
+"Fragility not declared in writing.",
+"Acts or omissions of the Customer, shipper, consignee or their agents.",
+"Customs, police, border or government action.",
+"Force majeure.",
+"Loading or unloading by others.",
+"Incorrect documents or declarations.",
+"Undeclared high-value cargo.",
+"Undeclared dangerous or restricted cargo.",
+"Theft, robbery or hijacking unless caused by proven gross negligence of the Company.",
+"If the Customer declares a higher value and the Company accepts it in writing before collection, the Company may charge additional freight, insurance or risk premium. Without written acceptance and additional payment, any declared value is for customs purposes only and does not increase the Company’s liability."
   ];
   return `<section class="tcn-terms"><h2>Terms and Conditions:</h2><ol>${terms.map((term) => `<li>${escapeHtml(term)}</li>`).join("")}</ol></section>`;
 }
