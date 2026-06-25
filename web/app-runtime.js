@@ -3709,7 +3709,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     <input type="hidden" name="tcnNumber" value="${escapeHtml(fieldValue("tcnNumber"))}" />
     <input type="hidden" name="transitDays" value="${escapeHtml(fieldValue("transitDays", "3"))}" />
     <input type="hidden" name="shipmentServiceOther" value="${escapeHtml(fieldValue("shipmentServiceOther"))}" />
-    ${checkbox("printOnlyCargoDetails", "Print only Cargo details", fieldValue("printOnlyCargoDetails", false))}
+    ${checkbox("printOnlyCargoDetails", "Cargo Summary", fieldValue("printOnlyCargoDetails", false))}
     <div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN</button></div>
   `;
 }
