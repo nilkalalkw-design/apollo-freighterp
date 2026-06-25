@@ -10,7 +10,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: APP_ORIGIN
-        value: https://apollo-freight-client.vercel.app,https://apollo-freight-pst1.onrender.com
+        value: https://apollo-freight-client.vercel.app,https://apollo-freighterp.vercel.app,https://apollo-freight-pst1.onrender.com
       - key: DATABASE_SSL
         value: require
       - key: DATABASE_URL

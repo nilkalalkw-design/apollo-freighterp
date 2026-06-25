@@ -18,6 +18,7 @@ const clientDistPath = path.resolve(__dirname, "../../client/dist");
 const defaultAllowedOrigins = [
   "http://localhost:5173",
   "https://apollo-freight-client.vercel.app",
+  "https://apollo-freighterp.vercel.app",
   "https://apollo-freight-pst1.onrender.com"
 ];
 const allowedOrigins = (process.env.APP_ORIGIN || defaultAllowedOrigins.join(","))
@@ -25,7 +26,7 @@ const allowedOrigins = (process.env.APP_ORIGIN || defaultAllowedOrigins.join(","
   .map((origin) => origin.trim())
   .filter(Boolean);
 const allowedVercelPreviewPattern =
-  /^https:\/\/apollo-freight-client(?:-[a-z0-9-]+)?-nilkalalkw-designs-projects\.vercel\.app$/;
+  /^https:\/\/apollo-freighterp(?:-[a-z0-9-]+)?-nilkalalkw-designs-projects\.vercel\.app$/;
 
 app.use(
   cors({
