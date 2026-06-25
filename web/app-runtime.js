@@ -95,6 +95,7 @@ function rememberSession(sessionOrUserName) {
       userName: session.userName,
       role: session.role || "Operations",
       branchAccess: session.branchAccess || "Kuwait HO",
+      password: session.password || "",
       branchViewScope: normalizeBranchViewScope(
         session.branchViewScope ||
           session.branch_view_scope ||
@@ -1065,7 +1066,7 @@ function currentUserName() {
 }
 
 function canViewAllBranches() {
-  const session = currentSession();
+  const session = currentSession() || {};
   return isAdminSession() || (Boolean(session?.canViewAllEntry) && normalizeBranchViewScope(session?.branchViewScope || session?.viewScope) === "All Branches");
 }
 
@@ -1288,7 +1289,7 @@ async function handleLogin(event) {
 
   try {
     const session = await attemptApiLogin(userName, password);
-    rememberSession(session);
+    rememberSession({ ...session, password });
     loginMessage.textContent = "";
     resetMessage.textContent = "";
     showApp();
@@ -5942,7 +5943,9 @@ async function changeCurrentPassword(data) {
   const currentPassword = String(data.currentPassword || "");
   const newPassword = String(data.newPassword || "");
   const confirmPassword = String(data.confirmPassword || "");
+  const session = currentSession();
   const userRecord = state.users.find((record) => String(record.userName || "").toLowerCase() === userName.toLowerCase());
+  const storedPassword = String(session?.password || userRecord?.password || "");
 
   if (!userRecord) {
     notifyFailed("Password change failed", "Current user account was not found.");
@@ -5952,7 +5955,7 @@ async function changeCurrentPassword(data) {
     notifyDenied("Password change failed", "Fill in current password, new password, and confirmation.");
     return false;
   }
-  if (currentPassword !== String(userRecord.password || "")) {
+  if (currentPassword !== storedPassword) {
     notifyDenied("Password change failed", "Current password is incorrect.");
     return false;
   }
@@ -5973,6 +5976,7 @@ async function changeCurrentPassword(data) {
   }
 
   Object.assign(userRecord, updatedUser);
+  rememberSession({ ...session, password: newPassword });
   saveState();
   addHistory("Changed password", userName);
   notifySuccess("Password updated", "Your password was changed successfully.");
