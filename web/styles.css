@@ -715,7 +715,7 @@ label {
 }
 
 .table-wrap table {
-  font-size: 10px;
+  font-size: 11px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -975,7 +975,7 @@ td {
 
 th {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -1457,9 +1457,10 @@ th {
 
 .record-dialog {
   width: min(1120px, calc(100vw - 32px));
-  min-width: min(560px, calc(100vw - 32px));
-  min-height: min(520px, calc(100vh - 40px));
-  max-height: calc(100vh - 40px);
+  min-width: 480px;
+  min-height: 360px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
   resize: both;
   overflow: auto;
   border: 1px solid var(--line);
@@ -1506,12 +1507,16 @@ th {
 }
 
 .dashboard-popup-shell .report-preview-shell {
+  width: 100%;
+  min-width: 0;
   padding: 0;
   border: 0;
   background: transparent;
 }
 
 .dashboard-popup-shell .report-preview-page {
+  width: 100%;
+  min-width: 0;
   min-height: 0;
 }
 
