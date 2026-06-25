@@ -44,6 +44,7 @@ const dateFilterStatusText = document.querySelector("#dateFilterStatusText");
 const resetFilters = document.querySelector("#resetFilters");
 const branchFilterPanel = document.querySelector("#branchFilterPanel");
 const newShipmentButton = document.querySelector("#newShipmentButton");
+const changePasswordButton = document.querySelector("#changePasswordButton");
 const logoutButton = document.querySelector("#logoutButton");
 const resetEmail = document.querySelector("#resetEmail");
 const resetPasswordButton = document.querySelector("#resetPasswordButton");
@@ -255,6 +256,7 @@ function shipmentMetaNotes(data) {
     billingParty2Mobile: String(data.billingParty2Mobile || "").trim(),
     billingParty2Email: String(data.billingParty2Email || "").trim(),
     billingParty2Percentage: String(data.billingParty2Percentage || "").trim(),
+    printOnlyCargoDetails: isChecked(data.printOnlyCargoDetails),
     manualChargeableKg: Number(data.manualChargeableKg || 0),
     natureOfGoods: String(data.natureOfGoods || "").trim(),
     cargoItemsJson: data.cargoItemsJson || data.palletDimensionsJson || "[]",
@@ -445,6 +447,7 @@ function shipment(
     customerReference: meta.customerReference || "",
     vehicleType: meta.vehicleType || "",
     deliveryRemarks: meta.deliveryRemarks || "",
+    printOnlyCargoDetails: isChecked(meta.printOnlyCargoDetails),
     pocName: meta.pocName || "",
     pocMobile: meta.pocMobile || "",
     additionalContact: meta.additionalContact || "",
@@ -855,6 +858,7 @@ function boot() {
     sessionStorage.removeItem(SESSION_KEY);
     showLogin();
   });
+  changePasswordButton?.addEventListener("click", openChangePasswordDialog);
   globalSearch.addEventListener("input", render);
   applyFilters.addEventListener("click", render);
   branchFilterPanel?.addEventListener("change", handleAdminBranchFilterChange);
@@ -1246,6 +1250,23 @@ function handlePasswordReset() {
   }
 
   resetMessage.textContent = `Password reset is not configured yet for ${email}. Enable SMTP or Microsoft 365 on the API to activate this flow.`;
+}
+
+function openChangePasswordDialog() {
+  openDialog({
+    title: "Change Password",
+    typeLabel: "Security",
+    body: changePasswordDialogBody(),
+    saveLabel: "Update Password",
+    singleColumn: true,
+    async onSave() {
+      const data = collectFormValues(dialogBody.closest("form"));
+      const saved = await changeCurrentPassword(data);
+      if (!saved) return;
+      recordDialog.close();
+      render();
+    }
+  });
 }
 
 function toggleLoginPassword(event) {
@@ -3687,6 +3708,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     <input type="hidden" name="tcnNumber" value="${escapeHtml(fieldValue("tcnNumber"))}" />
     <input type="hidden" name="transitDays" value="${escapeHtml(fieldValue("transitDays", "3"))}" />
     <input type="hidden" name="shipmentServiceOther" value="${escapeHtml(fieldValue("shipmentServiceOther"))}" />
+    ${checkbox("printOnlyCargoDetails", "Print only Cargo details", fieldValue("printOnlyCargoDetails", false))}
     <div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN</button></div>
   `;
 }
@@ -3764,6 +3786,15 @@ function userDialogBody() {
     ${checkbox("canEditAllEntry", "User can edit all entry")}
     ${checkbox("canViewUpdatedHistory", "User can view updated history", true)}
     ${input("notes", "Notes", "Created from admin panel")}
+  `;
+}
+
+function changePasswordDialogBody() {
+  return `
+    ${input("userName", "User Name", currentUserName(), true)}
+    ${passwordField("currentPassword", "Current Password", "")}
+    ${passwordField("newPassword", "New Password", "")}
+    ${passwordField("confirmPassword", "Confirm Password", "")}
   `;
 }
 
@@ -5206,6 +5237,7 @@ function tcnDocumentHtml(record) {
   const shipmentRecord = shipmentForTcn(record);
   const mergedRecord = mergeFilled(shipmentRecord, record);
   const cargoLines = parsePalletDimensions(mergedRecord.cargoItemsJson || mergedRecord.palletDimensionsJson || "[]");
+  const printOnlyCargoDetails = isChecked(mergedRecord.printOnlyCargoDetails);
   const totalVolumetricWeight = cargoLines.reduce((sum, line) => sum + cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", mergedRecord.volumeCategory), 0);
   const cargoPieces = cargoLines.reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0);
   const totalPieces = Number(mergedRecord.pieces || 0) || cargoPieces || "";
@@ -5242,7 +5274,7 @@ function tcnDocumentHtml(record) {
         <thead><tr><th>No Of Pieces / Pallets</th><th>Gross Weight (Kgs)</th><th>Volume Weight (Kgs)</th><th>Nature of Goods</th></tr></thead>
         <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${money(totalGrossWeight)}</td><td>${money(chargeableWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
       </table>
-      ${tcnDimensionsTable(cargoLines, mergedRecord.volumeCategory)}
+      ${printOnlyCargoDetails ? "" : tcnDimensionsTable(cargoLines, mergedRecord.volumeCategory)}
       ${tcnTermsHtml()}
          <section class="tcn-signatures">
       </section>
@@ -5902,6 +5934,48 @@ async function createUser(data) {
   addHistory("Created user account", `${userName} - ${data.branchAccess}`);
   notifySuccess("User created", `${userName} was saved successfully.`);
   if (apiSaved) setTimeout(() => syncFromApi(), 300);
+  return true;
+}
+
+async function changeCurrentPassword(data) {
+  const userName = currentUserName();
+  const currentPassword = String(data.currentPassword || "");
+  const newPassword = String(data.newPassword || "");
+  const confirmPassword = String(data.confirmPassword || "");
+  const userRecord = state.users.find((record) => String(record.userName || "").toLowerCase() === userName.toLowerCase());
+
+  if (!userRecord) {
+    notifyFailed("Password change failed", "Current user account was not found.");
+    return false;
+  }
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    notifyDenied("Password change failed", "Fill in current password, new password, and confirmation.");
+    return false;
+  }
+  if (currentPassword !== String(userRecord.password || "")) {
+    notifyDenied("Password change failed", "Current password is incorrect.");
+    return false;
+  }
+  if (newPassword.length < 4) {
+    notifyDenied("Password change failed", "Use at least 4 characters for the new password.");
+    return false;
+  }
+  if (newPassword !== confirmPassword) {
+    notifyDenied("Password change failed", "New password and confirmation do not match.");
+    return false;
+  }
+
+  const updatedUser = { ...userRecord, password: newPassword };
+  const apiSaved = await persistRecord("user", updatedUser);
+  if (!apiSaved && state.api?.mode === "database") {
+    notifyFailed("Password change failed", "Could not save the password to the server.");
+    return false;
+  }
+
+  Object.assign(userRecord, updatedUser);
+  saveState();
+  addHistory("Changed password", userName);
+  notifySuccess("Password updated", "Your password was changed successfully.");
   return true;
 }
 
