@@ -191,6 +191,7 @@ create table if not exists app_users (
     role text not null default 'Operations',
     account_status text not null default 'Active',
     branch_access text not null default 'Kuwait HO',
+    branch_view_scope text not null default 'Assigned Branch Only',
     section_access text not null default 'All',
     password text not null default '',
     can_view_all_entry boolean not null default true,
@@ -203,6 +204,7 @@ create table if not exists app_users (
 );
 
 alter table app_users add column if not exists password text not null default '';
+alter table app_users add column if not exists branch_view_scope text not null default 'Assigned Branch Only';
 alter table app_users add column if not exists section_access text not null default 'All';
 
 create table if not exists unblock_requests (

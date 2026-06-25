@@ -157,6 +157,7 @@ const demoRows = {
       role: "Admin",
       account_status: "Active",
       branch_access: "Both",
+      branch_view_scope: "All Branches",
       section_access: "All",
       password: "admin123",
       can_view_all_entry: true,
@@ -337,6 +338,7 @@ const resources = {
       field("role"),
       field("account_status", ["accountStatus", "account_status"]),
       field("branch_access", ["branchAccess", "branch_access"]),
+      field("branch_view_scope", ["branchViewScope", "branch_view_scope"]),
       field("section_access", ["sectionAccess", "section_access"]),
       field("password"),
       field("can_view_all_entry", ["canViewAllEntry", "can_view_all_entry"]),
@@ -574,7 +576,7 @@ async function getRows(resourceName, config) {
 
 async function loginUser(identifier, password) {
   const result = await query(
-    `select user_name, email, role, account_status, branch_access, section_access,
+    `select user_name, email, role, account_status, branch_access, branch_view_scope, section_access,
             can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history
      from app_users
      where (lower(user_name) = lower($1) or lower(email) = lower($1))
@@ -821,6 +823,7 @@ app.post("/api/login", async (request, response, next) => {
         email: row.email,
         role: row.role,
         branchAccess: row.branch_access,
+        branchViewScope: row.branch_view_scope || "Assigned Branch Only",
         sectionAccess: row.section_access,
         canViewAllEntry: row.can_view_all_entry,
         canViewOnlySelfEntry: row.can_view_only_self_entry,
@@ -838,6 +841,7 @@ app.post("/api/login", async (request, response, next) => {
             email: "admin@apollofreightsolution.com",
             role: "Admin",
             branchAccess: "Both",
+            branchViewScope: "All Branches",
             sectionAccess: "All"
           }
         });

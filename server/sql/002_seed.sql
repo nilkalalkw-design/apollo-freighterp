@@ -187,6 +187,7 @@ insert into app_users (
     role,
     account_status,
     branch_access,
+    branch_view_scope,
     section_access,
     password,
     can_view_all_entry,
@@ -196,14 +197,15 @@ insert into app_users (
     notes
 )
 values
-    ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'All', 'admin123', true, true, true, true, 'System temporary admin'),
-    ('ops-kuwait', 'operations.kuwait@apollofreightsolution.com', 'Operations', 'Active', 'Kuwait HO', 'Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'ops123', false, true, false, false, 'Can create and track Kuwait HO shipments'),
-    ('billing-dubai', 'billing.dubai@apollofreightsolution.com', 'Billing', 'Active', 'Dubai 2', 'Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports', 'billing123', true, false, true, true, 'Invoice and finance access for Dubai 2')
+    ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'All Branches', 'All', 'admin123', true, true, true, true, 'System temporary admin'),
+    ('ops-kuwait', 'operations.kuwait@apollofreightsolution.com', 'Operations', 'Active', 'Kuwait HO', 'Assigned Branch Only', 'Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'ops123', false, true, false, false, 'Can create and track Kuwait HO shipments'),
+    ('billing-dubai', 'billing.dubai@apollofreightsolution.com', 'Billing', 'Active', 'Dubai 2', 'Assigned Branch Only', 'Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports', 'billing123', true, false, true, true, 'Invoice and finance access for Dubai 2')
 on conflict (user_name) do update set
     email = excluded.email,
     role = excluded.role,
     account_status = excluded.account_status,
     branch_access = excluded.branch_access,
+    branch_view_scope = excluded.branch_view_scope,
     section_access = excluded.section_access,
     can_view_all_entry = excluded.can_view_all_entry,
     can_view_only_self_entry = excluded.can_view_only_self_entry,

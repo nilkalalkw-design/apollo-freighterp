@@ -65,16 +65,16 @@ function currentSession() {
   try {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object") {
-      parsed.branchViewScope = normalizeBranchViewScope(parsed.branchViewScope || parsed.viewScope || "Assigned Branch Only");
+      parsed.branchViewScope = normalizeBranchViewScope(parsed.branchViewScope || parsed.branch_view_scope || parsed.viewScope || "Assigned Branch Only");
       return parsed;
     }
   } catch {}
 
   return {
-    userName: raw,
-    role: raw === "admin" ? "Admin" : "Operations",
-    branchAccess: raw === "admin" ? "Both" : "Kuwait HO",
-    branchViewScope: raw === "admin" ? "All Branches" : "Assigned Branch Only"
+      userName: raw,
+      role: raw === "admin" ? "Admin" : "Operations",
+      branchAccess: raw === "admin" ? "Both" : "Kuwait HO",
+      branchViewScope: raw === "admin" ? "All Branches" : "Assigned Branch Only"
   };
 }
 
@@ -94,7 +94,12 @@ function rememberSession(sessionOrUserName) {
       userName: session.userName,
       role: session.role || "Operations",
       branchAccess: session.branchAccess || "Kuwait HO",
-      branchViewScope: normalizeBranchViewScope(session.branchViewScope || session.viewScope || (String(session.role || "").toLowerCase() === "admin" ? "All Branches" : "Assigned Branch Only")),
+      branchViewScope: normalizeBranchViewScope(
+        session.branchViewScope ||
+          session.branch_view_scope ||
+          session.viewScope ||
+          (String(session.role || "").toLowerCase() === "admin" ? "All Branches" : "Assigned Branch Only")
+      ),
       sectionAccess: normalizeSectionAccess(session.sectionAccess || "All"),
       canViewAllEntry: Boolean(session.canViewAllEntry || (session.role || "").toLowerCase() === "admin"),
       canViewOnlySelfEntry: Boolean(session.canViewOnlySelfEntry),
@@ -651,7 +656,7 @@ function normalizeUsers(users) {
   return (Array.isArray(users) ? users : []).map((record) => ({
     ...record,
     sectionAccess: normalizeSectionAccess(record.sectionAccess || "All"),
-    branchViewScope: normalizeBranchViewScope(record.branchViewScope || record.viewScope || "Assigned Branch Only"),
+    branchViewScope: normalizeBranchViewScope(record.branchViewScope || record.branch_view_scope || record.viewScope || "Assigned Branch Only"),
     canViewAllEntry: isChecked(record.canViewAllEntry),
     canViewOnlySelfEntry: isChecked(record.canViewOnlySelfEntry),
     canEditAllEntry: isChecked(record.canEditAllEntry),
@@ -1053,10 +1058,6 @@ function renderModuleNav() {
 
 function currentUserName() {
   return currentSession()?.userName || "operations";
-}
-
-function canViewAllData() {
-  return canViewAllBranches();
 }
 
 function canViewAllBranches() {
@@ -2326,7 +2327,7 @@ function alert(title, detail) {
   return `<article class="alert"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></article>`;
 }
 
-function panelHeader(title, label) {
+function panelHeader(title) {
   return `<div class="panel-header"><div><h2>${escapeHtml(title)}</h2></div></div>`;
 }
 
