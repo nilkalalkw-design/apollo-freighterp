@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import logo from "./assets/logo.png";
 
 const DEFAULT_API_BASE_URL = import.meta.env.PROD
-  ? "/api/freight"
+  ? "https://apollo-freight-pst1.onrender.com"
   : "http://localhost:4000";
 const API_BASE_URL = (
   import.meta.env.PROD ? DEFAULT_API_BASE_URL : import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL
