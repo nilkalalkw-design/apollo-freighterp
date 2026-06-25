@@ -4,7 +4,9 @@ import logo from "./assets/logo.png";
 const DEFAULT_API_BASE_URL = import.meta.env.PROD
   ? "/api/freight"
   : "http://localhost:4000";
-const API_BASE_URL = (import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL).replace(/\/$/, "");
+const API_BASE_URL = (
+  import.meta.env.PROD ? DEFAULT_API_BASE_URL : import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL
+).replace(/\/$/, "");
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 const REPORT_FOOTER_TEXT =
   "Designed by ApolloIT | Copyright \u00a9 2026 Apollo-Freight Solutions. All rights reserved.";
