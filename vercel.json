@@ -4,27 +4,27 @@
   "rewrites": [
     {
       "source": "/erp",
-      "destination": "/apps/erp/web/index.html"
+      "destination": "/erp/index.html"
     },
     {
       "source": "/erp/",
-      "destination": "/apps/erp/web/index.html"
+      "destination": "/erp/index.html"
     },
     {
       "source": "/erp/(.*)",
-      "destination": "/apps/erp/web/$1"
+      "destination": "/erp/$1"
     },
     {
       "source": "/freight",
-      "destination": "/apps/freight/client/dist/index.html"
+      "destination": "/freight/index.html"
     },
     {
       "source": "/freight/",
-      "destination": "/apps/freight/client/dist/index.html"
+      "destination": "/freight/index.html"
     },
     {
       "source": "/freight/(.*)",
-      "destination": "/apps/freight/client/dist/$1"
+      "destination": "/freight/$1"
     },
     {
       "source": "/(.*)",
