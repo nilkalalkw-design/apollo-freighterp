@@ -1,0 +1,14 @@
+bin/
+obj/
+publish/
+server/node_modules/
+node_modules/
+dist/
+release/
+server/.env
+server/.env.local
+*.user
+*.suo
+*.tmp
+*.log
+.vs/

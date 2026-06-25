@@ -3,55 +3,32 @@
   "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/app.js",
-      "destination": "/web/app.js"
+      "source": "/erp",
+      "destination": "/apps/erp/web/index.html"
     },
     {
-      "source": "/app-runtime.js",
-      "destination": "/web/app-runtime.js"
+      "source": "/erp/",
+      "destination": "/apps/erp/web/index.html"
     },
     {
-      "source": "/config.js",
-      "destination": "/web/config.js"
+      "source": "/erp/(.*)",
+      "destination": "/apps/erp/web/$1"
     },
     {
-      "source": "/styles.css",
-      "destination": "/web/styles.css"
+      "source": "/freight",
+      "destination": "/apps/freight/client/dist/index.html"
     },
     {
-      "source": "/assets/(.*)",
-      "destination": "/web/assets/$1"
+      "source": "/freight/",
+      "destination": "/apps/freight/client/dist/index.html"
     },
     {
-      "source": "/(.*)",
-      "destination": "/web/index.html"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/app.js",
-      "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
-    },
-    {
-      "source": "/app-runtime.js",
-      "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
-    },
-    {
-      "source": "/config.js",
-      "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
-    },
-    {
-      "source": "/styles.css",
-      "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
+      "source": "/freight/(.*)",
+      "destination": "/apps/freight/client/dist/$1"
     },
     {
       "source": "/(.*)",
-      "headers": [
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        }
-      ]
+      "destination": "/index.html"
     }
   ]
 }

@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: apollo-freight
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm --workspace server run build
+    startCommand: npm run start:render
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ORIGIN
+        value: https://apollo-freight-client.vercel.app,https://apollo-freight-pst1.onrender.com
+      - key: DATABASE_SSL
+        value: require
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false

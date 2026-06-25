@@ -1,0 +1,42 @@
+{
+  "name": "apollo-freighterp-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Apollo Freight ERP Windows desktop application",
+  "main": "electron/main.js",
+  "author": "Apollo Freight Solutions",
+  "scripts": {
+    "desktop": "electron .",
+    "build:win": "electron-builder --win nsis portable"
+  },
+  "build": {
+    "appId": "com.apollofreight.erp",
+    "productName": "Apollo Freight ERP",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "web/**/*",
+      "README.md"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Apollo Freight ERP"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  }
+}
