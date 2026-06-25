@@ -21,10 +21,11 @@ const defaultAllowedOrigins = [
   "https://apollo-freighterp.vercel.app",
   "https://apollo-freight-pst1.onrender.com"
 ];
-const allowedOrigins = (process.env.APP_ORIGIN || defaultAllowedOrigins.join(","))
+const configuredOrigins = (process.env.APP_ORIGIN || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const allowedOrigins = [...new Set([...defaultAllowedOrigins, ...configuredOrigins])];
 const allowedVercelPreviewPattern =
   /^https:\/\/apollo-freighterp(?:-[a-z0-9-]+)?-nilkalalkw-designs-projects\.vercel\.app$/;
 
