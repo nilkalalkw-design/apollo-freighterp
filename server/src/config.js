@@ -35,7 +35,6 @@ module.exports = {
   databaseUrlSource: databaseConfig?.[0] || "",
   databaseHost,
   isNeonDatabase,
-  allowedOrigin: process.env.ALLOWED_ORIGIN || defaultAllowedOrigin,
   allowedOrigins,
   autoMigrate: process.env.AUTO_MIGRATE !== "false"
 };

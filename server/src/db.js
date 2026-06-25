@@ -45,7 +45,6 @@ async function closePool() {
 
 module.exports = {
   closePool,
-  getPool,
   query,
   testConnection
 };
