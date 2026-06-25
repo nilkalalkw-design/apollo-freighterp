@@ -27,10 +27,6 @@
       "destination": "/freight/$1"
     },
     {
-      "source": "/freight-api/(.*)",
-      "destination": "https://apollo-freight-pst1.onrender.com/$1"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
