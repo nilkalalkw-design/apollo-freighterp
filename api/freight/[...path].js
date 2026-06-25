@@ -25,10 +25,13 @@ module.exports = async function handler(request, response) {
     const buffer = Buffer.from(await upstreamResponse.arrayBuffer());
     const contentType = upstreamResponse.headers.get("content-type") || "";
 
-    if (!contentType.includes("application/json") && upstreamResponse.status >= 400) {
-      response.status(upstreamResponse.status).json({
-        message: `Freight API returned ${upstreamResponse.status}.`,
+    if (!contentType.includes("application/json")) {
+      const preview = buffer.toString("utf8", 0, 240).trim();
+      response.status(upstreamResponse.status >= 400 ? upstreamResponse.status : 502).json({
+        message:
+          preview || `Freight API returned non-JSON response from ${targetUrl.toString()}.`,
         upstreamUrl: targetUrl.toString(),
+        upstreamStatus: upstreamResponse.status,
         upstreamContentType: contentType || "unknown"
       });
       return;
