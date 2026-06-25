@@ -7,6 +7,10 @@
       "destination": "/web/app.js"
     },
     {
+      "source": "/app-runtime.js",
+      "destination": "/web/app-runtime.js"
+    },
+    {
       "source": "/config.js",
       "destination": "/web/config.js"
     },
@@ -26,6 +30,10 @@
   "headers": [
     {
       "source": "/app.js",
+      "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
+    },
+    {
+      "source": "/app-runtime.js",
       "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
     },
     {
