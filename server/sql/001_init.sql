@@ -288,7 +288,7 @@ create table if not exists app_settings (
     supplier_number_format text not null default 'TRN-###',
     default_volumetric_divisor text not null default '5000',
     require_pod_before_invoice text not null default 'Yes',
-    branches text not null default 'Kuwait HO, Dubai 2',
+    branches text not null default 'Kuwait HO, Dubai',
     dropdown_options text not null default '{}',
     updated_at timestamptz not null default now()
 );
