@@ -1,10 +1,10 @@
 services:
   - type: web
-    name: apollo-freighterp-f9kt
+    name: apollo-freighterp-api
     runtime: node
     plan: free
     region: frankfurt
-    rootDir: apps/erp/server
+    rootDir: server
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
@@ -16,36 +16,5 @@ services:
         value: https://apollo-freighterp.vercel.app
       - key: AUTO_MIGRATE
         value: "true"
-      - key: DATABASE_URL_ERP
-        sync: false
-  - type: web
-    name: apollo-freight-pst1
-    runtime: node
-    plan: free
-    region: frankfurt
-    rootDir: apps/freight/server
-    buildCommand: npm install
-    startCommand: npm run start:render
-    healthCheckPath: /api/health
-    autoDeploy: true
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: APP_ORIGIN
-        value: https://apollo-freighterp.vercel.app
-      - key: DATABASE_SSL
-        value: require
-      - key: DATABASE_URL_FREIGHT
-        sync: false
-      - key: JWT_SECRET
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
-      - key: SMTP_FROM
+      - key: NEON_DATABASE_URL
         sync: false
