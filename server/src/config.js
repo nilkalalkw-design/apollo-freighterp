@@ -27,6 +27,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGIN || defaultAllowedOrigin)
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
+const customerPortalSecret = process.env.CUSTOMER_PORTAL_SECRET || process.env.SESSION_SECRET || process.env.API_SECRET || "apollo-customer-portal-dev-secret";
 
 module.exports = {
   port: Number.isNaN(port) ? 4000 : port,
@@ -36,5 +37,6 @@ module.exports = {
   databaseHost,
   isNeonDatabase,
   allowedOrigins,
+  customerPortalSecret,
   autoMigrate: process.env.AUTO_MIGRATE !== "false"
 };

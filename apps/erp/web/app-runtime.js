@@ -132,7 +132,7 @@ function seedState() {
   return {
     shipments: [
       shipment("AFS-2605001", "Kuwait HO", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Booked", 14, 820, 5.2, 1040, 485, 330, "Pending", "Unbilled", "2026-05-05", "AWB-2605001", "TAR-1001", 3, "Export", "AE", ""),
-      shipment("AFS-2605002", "Dubai", "Desert Medical Supplies", "Shuwaikh", "Dammam", "In-Transit", 8, 410, 2.1, 420, 215, 150, "Pending", "Unbilled", "2026-05-05", "AWB-2605002", "TAR-1002", 2, "Import", "AI", ""),
+      shipment("AFS-2605002", "Dubai 2", "Desert Medical Supplies", "Shuwaikh", "Dammam", "In-Transit", 8, 410, 2.1, 420, 215, 150, "Pending", "Unbilled", "2026-05-05", "AWB-2605002", "TAR-1002", 2, "Import", "AI", ""),
       shipment("AFS-2605003", "Kuwait HO", "Al Noor Projects", "Ahmadi", "Doha", "Delivered", 22, 1250, 7.8, 1560, 780, 590, "Missing", "Unbilled", "2026-05-04", "AWB-2605003", "TAR-1001", 4, "Export", "LE", ""),
       shipment("AFS-2605004", "Kuwait HO", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Invoiced", 4, 160, 0.9, 180, 95, 70, "Uploaded", "INV-260001", "2026-05-02", "AWB-2605004", "TAR-1001", 3, "WHC", "WHC Remark", "Warehouse handling and cross-docking")
     ],
@@ -142,12 +142,12 @@ function seedState() {
     ],
     customers: [
       party("CUS-001", "Gulf Retail Trading", "Kuwait City", "ops@gulf-retail.example", "30 days", "Active", false, "Kuwait HO"),
-      party("CUS-002", "Desert Medical Supplies", "Shuwaikh", "logistics@desert-med.example", "15 days", "Active", true, "Dubai"),
+      party("CUS-002", "Desert Medical Supplies", "Shuwaikh", "logistics@desert-med.example", "15 days", "Active", true, "Dubai 2"),
       party("CUS-003", "Al Noor Projects", "Ahmadi", "cargo@alnoor.example", "45 days", "Active", false, "Kuwait HO")
     ],
     suppliers: [
       party("TRN-001", "Al Dana Transport", "Kuwait - Riyadh", "dispatch@aldana.example", "20 days", "Active", false, "Kuwait HO"),
-      party("TRN-002", "Falcon Line Haul", "Kuwait - Dammam", "ops@falconline.example", "30 days", "Active", false, "Dubai")
+      party("TRN-002", "Falcon Line Haul", "Kuwait - Dammam", "ops@falconline.example", "30 days", "Active", false, "Dubai 2")
     ],
     tariffs: [
       tariff("TAR-1001", "Gulf Retail Trading", "Kuwait City", "Riyadh", "FTL", "Minimum", "100 KG", 0.42, 35),
@@ -169,7 +169,7 @@ function seedState() {
     users: [
       user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All Branches", "All", true, true, true, true, "admin123", "System temporary admin"),
       user("ops-kuwait", "operations.kuwait@apollofreightsolution.com", "Operations", "Active", "Kuwait HO", "Assigned Branch Only", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Kuwait HO shipments"),
-      user("billing-dubai", "billing.dubai@apollofreightsolution.com", "Billing", "Active", "Dubai", "Assigned Branch Only", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Dubai")
+      user("billing-dubai", "billing.dubai@apollofreightsolution.com", "Billing", "Active", "Dubai 2", "Assigned Branch Only", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Dubai 2")
     ],
     unblockRequests: [],
     adminRequests: [],
@@ -191,7 +191,7 @@ function seedState() {
       columnLayoutJson: "{}",
       defaultVolumetricDivisor: "5000",
       requirePodBeforeInvoice: "Yes",
-      branches: "Kuwait HO, Dubai",
+      branches: "Kuwait HO, Dubai 2",
       dropdownOptionsJson: "{}"
     },
     api: {
@@ -789,7 +789,7 @@ function branchOptions() {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  return branches.length ? branches : ["Kuwait HO", "Dubai"];
+  return branches.length ? branches : ["Kuwait HO", "Dubai 2"];
 }
 
 function defaultUserBranch() {
@@ -1129,7 +1129,7 @@ function normalizeBranchName(value) {
   const text = String(value || "").trim();
   const normalized = text.toLowerCase();
   if (["branch 1", "kuwait 1", "kuwait ho"].includes(normalized)) return "Kuwait HO";
-  if (["branch 2", "Dubai"].includes(normalized)) return "Dubai";
+  if (["branch 2", "dubai 2"].includes(normalized)) return "Dubai 2";
   return text;
 }
 

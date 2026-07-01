@@ -1,10 +1,11 @@
 const express = require("express");
 const cors = require("cors");
+const crypto = require("crypto");
 const fs = require("fs");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const path = require("path");
-const { allowedOrigins, autoMigrate, databaseHost, databaseUrl, databaseUrlSource, isNeonDatabase, port } = require("./config");
+const { allowedOrigins, autoMigrate, customerPortalSecret, databaseHost, databaseUrl, databaseUrlSource, isNeonDatabase, port } = require("./config");
 const { query, testConnection } = require("./db");
 const { runMigrations } = require("./migrate");
 
@@ -210,6 +211,256 @@ const demoRows = {
   ]
 };
 
+const CUSTOMER_PORTAL_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+
+function normalizePortalStatus(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isPortalActive(value) {
+  return normalizePortalStatus(value) === "active";
+}
+
+function hashCustomerPassword(password, salt = crypto.randomBytes(8).toString("hex")) {
+  const derived = crypto.pbkdf2Sync(String(password || ""), salt, 120000, 32, "sha256").toString("hex");
+  return "pbkdf2$120000$" + salt + "$" + derived;
+}
+
+function verifyCustomerPassword(password, storedHash) {
+  const text = String(storedHash || "");
+  if (!text) return false;
+  if (!text.startsWith("pbkdf2$")) return String(password || "") === text;
+  const parts = text.split("$");
+  if (parts.length !== 4) return false;
+  const iterations = Number(parts[1] || 120000);
+  const salt = parts[2] || "";
+  const expected = parts[3] || "";
+  const actual = crypto.pbkdf2Sync(String(password || ""), salt, iterations, expected.length / 2, "sha256").toString("hex");
+  try {
+    return crypto.timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
+  } catch {
+    return actual === expected;
+  }
+}
+
+function signCustomerToken(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto.createHmac("sha256", customerPortalSecret).update(body).digest("base64url");
+  return body + "." + signature;
+}
+
+function verifyCustomerToken(token) {
+  const value = String(token || "").trim();
+  if (!value) return null;
+  const parts = value.split(".");
+  if (parts.length !== 2) return null;
+  const body = parts[0];
+  const signature = parts[1];
+  const expected = crypto.createHmac("sha256", customerPortalSecret).update(body).digest("base64url");
+  if (expected !== signature) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (payload && payload.exp && Date.now() > Number(payload.exp)) return null;
+    return payload && typeof payload === "object" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function customerSessionFromRow(row) {
+  const payload = {
+    customerUserId: String(row.id || ""),
+    customerCode: String(row.customer_code || "").trim(),
+    customerName: String(row.customer_name || "").trim(),
+    userName: String(row.username || "").trim(),
+    email: String(row.email || "").trim(),
+    role: "Customer",
+    portal: "customer",
+    branchAccess: String(row.customer_branch || row.branch || "Customer Portal").trim() || "Customer Portal",
+    branchViewScope: "Assigned Branch Only",
+    sectionAccess: "Dashboard, New Shipment, Shipments, Tracking, Profile, Notifications, Activity Logs",
+    status: String(row.status || "ACTIVE").toUpperCase(),
+    lastLogin: row.last_login || ""
+  };
+
+  return {
+    ...payload,
+    token: signCustomerToken({ ...payload, exp: Date.now() + CUSTOMER_PORTAL_TOKEN_TTL_MS })
+  };
+}
+
+function customerPortalAuthFromRequest(request) {
+  const bearer = String(request.headers.authorization || "").trim();
+  const token = bearer.toLowerCase().startsWith("bearer ")
+    ? bearer.slice(7).trim()
+    : String(request.headers["x-customer-token"] || request.headers["x-portal-token"] || "").trim();
+  return verifyCustomerToken(token);
+}
+
+function requireCustomerPortalAuth(request, response, next) {
+  const session = customerPortalAuthFromRequest(request);
+  if (!session) {
+    return response.status(401).json({ ok: false, error: "Customer login required." });
+  }
+
+  request.customerSession = session;
+  return next();
+}
+async function getCustomerAccount(identifier) {
+  const result = await query(
+    `select cu.id, cu.customer_code, cu.username, cu.email, cu.password_hash, cu.status, cu.last_login,
+            c.name as customer_name, c.branch as customer_branch, c.status as customer_status
+     from customer_users cu
+     left join customers c on lower(c.code) = lower(cu.customer_code)
+     where lower(cu.username) = lower($1) or lower(cu.email) = lower($1) or lower(cu.customer_code) = lower($1)
+     limit 1`,
+    [identifier]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function loginCustomer(identifier, password) {
+  const account = await getCustomerAccount(identifier);
+  if (!account) return null;
+  if (!isPortalActive(account.status) || !isPortalActive(account.customer_status)) return null;
+  if (!verifyCustomerPassword(password, account.password_hash)) return null;
+
+  await query(
+    `update customer_users
+     set last_login = now()
+     where id = $1`,
+    [account.id]
+  );
+
+  return customerSessionFromRow(account);
+}
+
+async function nextShipmentRequestNo() {
+  const result = await query(
+    `select request_no
+     from shipment_requests
+     order by id desc
+     limit 1`
+  );
+  const last = String(result.rows[0]?.request_no || "");
+  const match = last.match(/(\d+)$/);
+  const nextNumber = match ? Number(match[1]) + 1 : 1;
+  const year = String(new Date().getFullYear()).slice(-2);
+  return "SRQ-" + year + String(nextNumber).padStart(4, "0");
+}
+
+async function customerPortalSnapshot(customerSession) {
+  const customerCode = String(customerSession?.customerCode || "").trim();
+  const customerName = String(customerSession?.customerName || "").trim();
+  const [shipments, requests, notifications, activityLogs, hsCodes, settings] = await Promise.all([
+    customerName ? query(`select * from shipments where lower(customer_name) = lower($1) order by booking_date desc, created_at desc limit 500`, [customerName]) : Promise.resolve({ rows: [] }),
+    query(
+      `select * from shipment_requests
+       where lower(customer_code) = lower($1) or lower(customer_name) = lower($2)
+       order by created_at desc, id desc
+       limit 500`,
+      [customerCode, customerName]
+    ),
+    query(
+      `select * from notifications
+       where lower(user_type) = 'customer'
+         and (lower(customer_code) = lower($1) or lower(user_id) = lower($2))
+       order by created_at desc, id desc
+       limit 200`,
+      [customerCode, String(customerSession?.userName || "")]
+    ),
+    query(
+      `select * from customer_activity_logs
+       where lower(customer_code) = lower($1) or lower(customer_user_id) = lower($2)
+       order by created_at desc, id desc
+       limit 200`,
+      [customerCode, String(customerSession?.customerUserId || "")]
+    ),
+    query(`select * from hs_code_master where lower(status) = 'active' order by item_name asc, item_code asc limit 500`),
+    query(`select * from app_settings where settings_key = 'default' limit 1`)
+  ]);
+
+  return {
+    shipments: shipments.rows,
+    shipmentRequests: requests.rows,
+    notifications: notifications.rows,
+    activityLogs: activityLogs.rows,
+    hsCodeMaster: hsCodes.rows,
+    settings: settings.rows[0] || null
+  };
+}
+
+async function createCustomerNotification(data) {
+  await query(
+    `insert into notifications (user_id, user_type, customer_code, type, title, message, read_status)
+     values ($1, $2, $3, $4, $5, $6, $7)`,
+    [String(data.userId || ""), String(data.userType || "customer"), String(data.customerCode || ""), String(data.type || ""), String(data.title || ""), String(data.message || ""), String(data.readStatus || "UNREAD")]
+  );
+}
+
+async function createCustomerActivity(data) {
+  await query(
+    `insert into customer_activity_logs (customer_user_id, customer_code, action, description, ip_address)
+     values ($1, $2, $3, $4, $5)`,
+    [String(data.customerUserId || ""), String(data.customerCode || ""), String(data.action || ""), String(data.description || ""), String(data.ipAddress || "")]
+  );
+}
+
+async function evaluateShipmentRequestStatus(data, customerAccount) {
+  const settings = await query(`select enable_auto_approval from app_settings where settings_key = 'default' limit 1`);
+  const autoApprovalEnabled = settings.rows[0]?.enable_auto_approval !== false;
+  const customerActive = isPortalActive(customerAccount?.status) && isPortalActive(customerAccount?.customer_status);
+  const requiredFieldsComplete = Boolean(String(data.shipmentType || "").trim() && String(data.origin || "").trim() && String(data.destination || "").trim() && String(data.consignee || "").trim() && String(data.itemName || "").trim() && Number(data.quantity || 0) > 0 && Number(data.weight || 0) > 0);
+  const hsCodeMatched = Boolean(String(data.hsCode || "").trim() && String(data.itemCode || "").trim());
+
+  if (!customerActive || !requiredFieldsComplete) {
+    return "PENDING_REVIEW";
+  }
+
+  if (autoApprovalEnabled && hsCodeMatched) {
+    return "AUTO_APPROVED";
+  }
+
+  return "PENDING_REVIEW";
+}
+
+async function demoCustomerPortalSnapshot(identifier) {
+  return {
+    session: {
+      customerUserId: "1",
+      customerCode: "CUS-001",
+      customerName: "Gulf Retail Trading",
+      userName: identifier || "gulf.retail",
+      email: "portal@gulf-retail.example",
+      role: "Customer",
+      portal: "customer",
+      branchAccess: "Customer Portal",
+      branchViewScope: "Assigned Branch Only",
+      sectionAccess: "Dashboard, New Shipment, Shipments, Tracking, Profile, Notifications, Activity Logs",
+      status: "ACTIVE",
+      lastLogin: ""
+    },
+    data: {
+      shipments: [
+        { job_no: "AFS-2605001", customer_name: "Gulf Retail Trading", origin: "Kuwait City", destination: "Riyadh", status: "Booked", pieces: 14, actual_kg: 820, cbm: 5.2, chargeable_kg: 1040, sell: 485, buy_cost: 330, pod_status: "Pending", invoice_status: "Unbilled", booking_date: "2026-05-05", airway_bill_no: "AWB-2605001", created_by: "admin" }
+      ],
+      shipmentRequests: [
+        { request_no: "SRQ-260001", customer_code: "CUS-001", customer_name: "Gulf Retail Trading", shipment_type: "Export", origin: "Kuwait City", destination: "Riyadh", consignee: "Gulf Retail Trading", item_name: "Laptop Charger", hs_code: "8504.40", item_code: "ITEM-1001", quantity: 10, weight: 25, invoice_value: 420, remarks: "Demo request", status: "AUTO_APPROVED", created_by: "gulf.retail", created_at: new Date().toISOString() }
+      ],
+      notifications: [
+        { id: 1, user_id: "gulf.retail", user_type: "customer", customer_code: "CUS-001", type: "Shipment Submitted", title: "Shipment request received", message: "Your request SRQ-260001 was submitted successfully.", read_status: "UNREAD", created_at: new Date().toISOString() }
+      ],
+      activityLogs: [
+        { id: 1, customer_user_id: "1", customer_code: "CUS-001", action: "Login", description: "Customer portal login", ip_address: "127.0.0.1", created_at: new Date().toISOString() }
+      ],
+      hsCodeMaster: [
+        { id: 1, item_name: "Laptop Charger", alternate_name: "Notebook Charger", hs_code: "8504.40", item_code: "ITEM-1001", status: "ACTIVE", created_at: new Date().toISOString() }
+      ],
+      settings: { enable_auto_approval: true }
+    }
+  };
+}
 const resources = {
   shipments: {
     table: "shipments",
@@ -348,6 +599,84 @@ const resources = {
       field("notes")
     ]
   },
+  "customer-users": {
+    table: "customer_users",
+    key: "username",
+    order: "created_at desc",
+    hiddenFields: ["password_hash"],
+    fields: [
+      field("customer_code", ["customerCode", "customer_code"], true),
+      field("username", ["username"], true),
+      field("email", ["email"]),
+      field("password_hash", ["passwordHash", "password", "password_hash"]),
+      field("status"),
+      field("last_login", ["lastLogin", "last_login"])
+    ]
+  },
+  "hs-code-master": {
+    table: "hs_code_master",
+    key: "item_code",
+    order: "created_at desc",
+    fields: [
+      field("item_name", ["itemName", "item_name"], true),
+      field("alternate_name", ["alternateName", "alternate_name"]),
+      field("hs_code", ["hsCode", "hs_code"]),
+      field("item_code", ["itemCode", "item_code"], true),
+      field("status")
+    ]
+  },
+  "shipment-requests": {
+    table: "shipment_requests",
+    key: "request_no",
+    order: "created_at desc",
+    fields: [
+      field("request_no", ["requestNo", "request_no"]),
+      field("customer_code", ["customerCode", "customer_code"], true),
+      field("customer_name", ["customerName", "customer_name"], true),
+      field("shipment_type", ["shipmentType", "shipment_type"], true),
+      field("origin", ["origin"], true),
+      field("destination", ["destination"], true),
+      field("consignee", ["consignee"], true),
+      field("item_name", ["itemName", "item_name"], true),
+      field("hs_code", ["hsCode", "hs_code"]),
+      field("item_code", ["itemCode", "item_code"]),
+      field("quantity", ["quantity"], true),
+      field("weight", ["weight"], true),
+      field("invoice_value", ["invoiceValue", "invoice_value"]),
+      field("remarks", ["remarks"]),
+      field("attachments_json", ["attachmentsJson", "attachments_json"]),
+      field("status", ["status"]),
+      field("approval_notes", ["approvalNotes", "approval_notes"]),
+      field("auto_approved", ["autoApproved", "auto_approved"]),
+      field("created_by", ["createdBy", "created_by"])
+    ]
+  },
+  notifications: {
+    table: "notifications",
+    key: "id",
+    order: "created_at desc",
+    fields: [
+      field("user_id", ["userId", "user_id"], true),
+      field("user_type", ["userType", "user_type"], true),
+      field("customer_code", ["customerCode", "customer_code"]),
+      field("type"),
+      field("title"),
+      field("message"),
+      field("read_status", ["readStatus", "read_status"])
+    ]
+  },
+  "customer-activity-logs": {
+    table: "customer_activity_logs",
+    key: "id",
+    order: "created_at desc",
+    fields: [
+      field("customer_user_id", ["customerUserId", "customer_user_id"]),
+      field("customer_code", ["customerCode", "customer_code"]),
+      field("action"),
+      field("description"),
+      field("ip_address", ["ipAddress", "ip_address"])
+    ]
+  },
   "unblock-requests": {
     table: "unblock_requests",
     key: "request_no",
@@ -462,6 +791,7 @@ const resources = {
       field("supplier_number_format", ["supplierNumberFormat", "supplier_number_format"]),
       field("default_volumetric_divisor", ["defaultVolumetricDivisor", "default_volumetric_divisor"]),
       field("require_pod_before_invoice", ["requirePodBeforeInvoice", "require_pod_before_invoice"]),
+      field("enable_auto_approval", ["enableAutoApproval", "enable_auto_approval"]),
       field("branches"),
       field("column_layout_json", ["columnLayoutJson", "column_layout_json"]),
       field("dropdown_options", ["dropdownOptionsJson", "dropdown_options"])
@@ -499,6 +829,7 @@ function partyResource(table) {
 function isDatabaseSetupError(error) {
   return Boolean(
     error?.code === "42P01" ||
+      error?.code === "42703" ||
       error?.message?.includes("DATABASE_URL is required") ||
       error?.message?.includes("connect ECONNREFUSED") ||
       error?.message?.includes("does not exist")
@@ -588,7 +919,58 @@ async function loginUser(identifier, password) {
   return result.rows[0] || null;
 }
 
+async function prepareRecordForConfig(config, body) {
+  const prepared = { ...(body || {}) };
+
+  if (config.table === "customer_users") {
+    const password = String(prepared.password || "").trim();
+    const passwordHash = String(prepared.password_hash || prepared.passwordHash || "").trim();
+    if (password) {
+      prepared.password_hash = password.startsWith("pbkdf2$") ? password : hashCustomerPassword(password);
+    } else if (passwordHash && !passwordHash.startsWith("pbkdf2$") && passwordHash.length > 0) {
+      prepared.password_hash = hashCustomerPassword(passwordHash);
+    }
+    if (!String(prepared.status || "").trim()) {
+      prepared.status = "ACTIVE";
+    }
+    delete prepared.password;
+    delete prepared.passwordHash;
+  }
+
+  if (config.table === "shipment_requests") {
+    if (!String(prepared.request_no || "").trim()) {
+      prepared.request_no = await nextShipmentRequestNo();
+    }
+    if (!String(prepared.status || "").trim()) {
+      prepared.status = "SUBMITTED";
+    }
+    const attachments = prepared.attachments_json || prepared.attachmentsJson || prepared.attachments;
+    if (Array.isArray(attachments)) {
+      prepared.attachments_json = JSON.stringify(attachments);
+    } else if (attachments && typeof attachments === "object") {
+      prepared.attachments_json = JSON.stringify(attachments);
+    } else if (typeof attachments === "string" && attachments.trim()) {
+      prepared.attachments_json = attachments;
+    }
+    if (!String(prepared.customer_name || "").trim() && String(prepared.customer_code || "").trim()) {
+      const customerByCode = await query(`select name from customers where lower(code) = lower($1) limit 1`, [prepared.customer_code]);
+      prepared.customer_name = customerByCode.rows[0]?.name || prepared.customer_name || "";
+    }
+    if (!String(prepared.customer_code || "").trim() && String(prepared.customer_name || "").trim()) {
+      const customerByName = await query(`select code from customers where lower(name) = lower($1) limit 1`, [prepared.customer_name]);
+      prepared.customer_code = customerByName.rows[0]?.code || prepared.customer_code || "";
+    }
+    prepared.auto_approved = String(prepared.status || "").toUpperCase() === "AUTO_APPROVED";
+  }
+
+  if (config.table === "notifications" && !String(prepared.read_status || "").trim()) {
+    prepared.read_status = "UNREAD";
+  }
+
+  return prepared;
+}
 async function insertRow(config, body) {
+  body = await prepareRecordForConfig(config, body);
   const { columns, values } = collectValues(config, body);
   requireFields(config, columns);
 
@@ -622,6 +1004,7 @@ async function updateRow(config, id, body) {
     throw error;
   }
 
+  body = await prepareRecordForConfig(config, body);
   const { columns, values } = collectValues(config, body, false);
   if (!columns.length) {
     const error = new Error("No values supplied.");
@@ -747,6 +1130,14 @@ app.get("/", (_request, response) => {
   });
 });
 
+app.get(["/customer", "/customer/*"], (_request, response) => {
+  if (fs.existsSync(webIndex)) {
+    return response.sendFile(webIndex);
+  }
+
+  return response.redirect(302, "/");
+});
+
 app.get("/api/health", async (_request, response) => {
   try {
     const db = await testConnection();
@@ -857,6 +1248,281 @@ app.post("/api/login", async (request, response, next) => {
   }
 });
 
+app.post("/api/customer-login", async (request, response, next) => {
+  const identifier = String(request.body?.userName || request.body?.email || request.body?.customerCode || "").trim();
+  const password = String(request.body?.password || "");
+
+  if (!identifier || !password) {
+    return response.status(400).json({
+      ok: false,
+      error: "Customer user name and password are required."
+    });
+  }
+
+  try {
+    const session = await loginCustomer(identifier, password);
+    if (!session) {
+      return response.status(401).json({
+        ok: false,
+        error: "Invalid customer login credentials."
+      });
+    }
+
+    await createCustomerActivity({
+      customerUserId: session.customerUserId,
+      customerCode: session.customerCode,
+      action: "Login",
+      description: "Customer portal login",
+      ipAddress: request.ip || ""
+    });
+
+    const snapshot = await customerPortalSnapshot(session);
+    return response.json({
+      ok: true,
+      session,
+      data: snapshot
+    });
+  } catch (error) {
+    if (isDatabaseSetupError(error) && String(password || "") === "customer123") {
+      const demo = await demoCustomerPortalSnapshot(identifier);
+      return response.json({
+        ok: true,
+        mode: "demo",
+        session: demo.session,
+        data: demo.data
+      });
+    }
+
+    return next(error);
+  }
+});
+
+app.get("/api/customer/bootstrap", requireCustomerPortalAuth, async (request, response, next) => {
+  try {
+    const data = await customerPortalSnapshot(request.customerSession);
+    response.json({
+      ok: true,
+      session: request.customerSession,
+      data
+    });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) {
+      const demo = await demoCustomerPortalSnapshot(request.customerSession?.userName || "gulf.retail");
+      return response.json({
+        ok: true,
+        mode: "demo",
+        session: demo.session,
+        data: demo.data
+      });
+    }
+
+    return next(error);
+  }
+});
+
+app.post("/api/customer/shipment-requests", requireCustomerPortalAuth, async (request, response, next) => {
+  const data = request.body || {};
+
+  try {
+    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
+    if (!account) {
+      return response.status(404).json({ ok: false, error: "Customer account not found." });
+    }
+
+    const hsCodeResult = await query(
+      `select item_name, alternate_name, hs_code, item_code
+       from hs_code_master
+       where lower(item_name) = lower($1)
+          or lower(alternate_name) = lower($1)
+          or lower(item_code) = lower($1)
+       limit 1`,
+      [String(data.itemName || data.item_code || data.itemCode || "").trim()]
+    );
+    const hsCode = hsCodeResult.rows[0] || null;
+    const status = await evaluateShipmentRequestStatus({
+      ...data,
+      hsCode: data.hsCode || hsCode?.hs_code || "",
+      itemCode: data.itemCode || hsCode?.item_code || ""
+    }, account);
+    const requestNo = await nextShipmentRequestNo();
+    const attachments = Array.isArray(data.attachments) ? data.attachments : Array.isArray(data.attachmentsJson) ? data.attachmentsJson : [];
+    const row = {
+      request_no: requestNo,
+      customer_code: account.customer_code,
+      customer_name: account.customer_name || request.customerSession.customerName || account.customer_code,
+      shipment_type: String(data.shipmentType || data.shipment_type || "").trim(),
+      origin: String(data.origin || "").trim(),
+      destination: String(data.destination || "").trim(),
+      consignee: String(data.consignee || "").trim(),
+      item_name: String(data.itemName || data.item_name || "").trim(),
+      hs_code: String(data.hsCode || hsCode?.hs_code || "").trim(),
+      item_code: String(data.itemCode || hsCode?.item_code || "").trim(),
+      quantity: Number(data.quantity || 0),
+      weight: Number(data.weight || 0),
+      invoice_value: Number(data.invoiceValue || data.invoice_value || 0),
+      remarks: String(data.remarks || "").trim(),
+      attachments_json: JSON.stringify(attachments),
+      status,
+      approval_notes: status === "AUTO_APPROVED" ? "Auto approved by portal rules." : "",
+      auto_approved: status === "AUTO_APPROVED",
+      created_by: request.customerSession.userName
+    };
+
+    const saved = await insertRow(resources["shipment-requests"], row);
+
+    await Promise.all([
+      createCustomerNotification({
+        userId: request.customerSession.userName,
+        customerCode: account.customer_code,
+        userType: "customer",
+        type: status === "AUTO_APPROVED" ? "Shipment Auto Approved" : "Shipment Pending Review",
+        title: "Shipment request " + requestNo,
+        message: "Your shipment request " + requestNo + " was submitted with " + status.toLowerCase().replace(/_/g, " ") + "."
+      }),
+      createCustomerNotification({
+        userId: "admin",
+        customerCode: account.customer_code,
+        userType: "company",
+        type: "Shipment Submitted",
+        title: "New customer request " + requestNo,
+        message: (account.customer_name || account.customer_code) + " submitted a shipment request."
+      }),
+      createCustomerActivity({
+        customerUserId: request.customerSession.customerUserId,
+        customerCode: account.customer_code,
+        action: "Shipment Submission",
+        description: "Submitted " + requestNo + " for " + row.item_name,
+        ipAddress: request.ip || ""
+      })
+    ]);
+
+    return response.status(201).json({
+      ok: true,
+      row: saved,
+      status
+    });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) {
+      return response.status(201).json({
+        ok: true,
+        mode: "demo",
+        row: { ...data, requestNo: "SRQ-260002" },
+        status: "AUTO_APPROVED"
+      });
+    }
+
+    return next(error);
+  }
+});
+
+app.get("/api/customer/profile", requireCustomerPortalAuth, async (request, response, next) => {
+  try {
+    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
+    if (!account) {
+      return response.status(404).json({ ok: false, error: "Customer account not found." });
+    }
+
+    response.json({
+      ok: true,
+      profile: {
+        customerUserId: String(account.id || ""),
+        customerCode: account.customer_code || "",
+        customerName: account.customer_name || "",
+        username: account.username || "",
+        email: account.email || "",
+        status: account.status || "ACTIVE",
+        lastLogin: account.last_login || "",
+        branch: account.customer_branch || ""
+      }
+    });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) {
+      return response.json({
+        ok: true,
+        mode: "demo",
+        profile: {
+          customerUserId: "1",
+          customerCode: "CUS-001",
+          customerName: "Gulf Retail Trading",
+          username: "gulf.retail",
+          email: "portal@gulf-retail.example",
+          status: "ACTIVE",
+          lastLogin: "",
+          branch: "Kuwait HO"
+        }
+      });
+    }
+
+    return next(error);
+  }
+});
+
+app.put("/api/customer/profile", requireCustomerPortalAuth, async (request, response, next) => {
+  const data = request.body || {};
+  try {
+    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
+    if (!account) {
+      return response.status(404).json({ ok: false, error: "Customer account not found." });
+    }
+
+    const userSets = [];
+    const userValues = [];
+    const customerSets = [];
+    const customerValues = [];
+
+    if (String(data.email || "").trim()) {
+      userValues.push(String(data.email).trim());
+      userSets.push("email = $" + userValues.length);
+      customerValues.push(String(data.email).trim());
+      customerSets.push("email = $" + customerValues.length);
+    }
+
+    if (String(data.password || "").trim()) {
+      userValues.push(hashCustomerPassword(String(data.password).trim()));
+      userSets.push("password_hash = $" + userValues.length);
+    }
+
+    if (String(data.mobile || "").trim()) {
+      customerValues.push(String(data.mobile).trim());
+      customerSets.push("mobile = $" + customerValues.length);
+    }
+
+    if (String(data.fullAddress || data.full_address || "").trim()) {
+      customerValues.push(String(data.fullAddress || data.full_address).trim());
+      customerSets.push("full_address = $" + customerValues.length);
+    }
+
+    if (!userSets.length && !customerSets.length) {
+      return response.status(400).json({ ok: false, error: "No profile changes were provided." });
+    }
+
+    if (userSets.length) {
+      userValues.push(account.id);
+      await query("update customer_users set " + userSets.join(", ") + " where id = $" + userValues.length, userValues);
+    }
+
+    if (customerSets.length) {
+      customerValues.push(account.customer_code);
+      await query("update customers set " + customerSets.join(", ") + " where code = $" + customerValues.length, customerValues);
+    }
+
+    await createCustomerActivity({
+      customerUserId: request.customerSession.customerUserId,
+      customerCode: account.customer_code,
+      action: "Profile Update",
+      description: "Updated customer profile details",
+      ipAddress: request.ip || ""
+    });
+
+    return response.json({ ok: true });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) {
+      return response.json({ ok: true, mode: "demo" });
+    }
+
+    return next(error);
+  }
+});
 app.get("/api/:resource", async (request, response, next) => {
   const resourceName = request.params.resource;
   const config = resources[resourceName];
