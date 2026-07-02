@@ -65,6 +65,9 @@ const dialogTitle = document.querySelector("#dialogTitle");
 const dialogBody = document.querySelector("#dialogBody");
 const dialogSecondary = document.querySelector("#dialogSecondary");
 const dialogSave = document.querySelector("#dialogSave");
+const dialogMinimize = document.querySelector("#recordDialogMinimize");
+const dialogMaximize = document.querySelector("#recordDialogMaximize");
+const dialogClose = document.querySelector("#recordDialogClose");
 const toastStack = document.querySelector("#toastStack");
 const CANONICAL_BRANCHES = ["Kuwait HO", "Dubai", "Both"];
 
@@ -933,6 +936,9 @@ function boot() {
   moduleContent.addEventListener("keydown", handleModuleKeydown);
   moduleContent.addEventListener("submit", handleModuleSubmit);
   dialogSecondary.addEventListener("click", () => dialogState?.onSecondary?.());
+  dialogMinimize?.addEventListener("click", toggleDialogMinimized);
+  dialogMaximize?.addEventListener("click", toggleDialogMaximized);
+  dialogClose?.addEventListener("click", () => recordDialog.close());
   dialogSave.addEventListener("click", saveDialogRecord);
   recordDialog.addEventListener("close", resetDialogShell);
   document.addEventListener("focus", handleDropdownFocus, true);
@@ -3264,6 +3270,7 @@ function openRecord(type, id) {
   if (type === "load") bindConsolidationJobPicker();
   if (type === "invoice") bindInvoiceShipmentTariff();
   bindDialogPasswordToggles();
+  resetDialogChrome();
   recordDialog.showModal();
 }
 function duplicateRecordExists(type, id) {
@@ -3489,6 +3496,27 @@ function resetDialogShell() {
   dialogSecondary.textContent = "Secondary";
   dialogSave.textContent = "Save Changes";
   dialogBody.classList.remove("single-column");
+  resetDialogChrome();
+}
+
+function resetDialogChrome() {
+  recordDialog.classList.remove("is-minimized", "is-maximized");
+  dialogMinimize?.setAttribute("aria-pressed", "false");
+  dialogMaximize?.setAttribute("aria-pressed", "false");
+}
+
+function toggleDialogMinimized() {
+  const minimized = recordDialog.classList.toggle("is-minimized");
+  if (minimized) recordDialog.classList.remove("is-maximized");
+  dialogMinimize?.setAttribute("aria-pressed", String(minimized));
+  dialogMaximize?.setAttribute("aria-pressed", String(recordDialog.classList.contains("is-maximized")));
+}
+
+function toggleDialogMaximized() {
+  const maximized = recordDialog.classList.toggle("is-maximized");
+  if (maximized) recordDialog.classList.remove("is-minimized");
+  dialogMaximize?.setAttribute("aria-pressed", String(maximized));
+  dialogMinimize?.setAttribute("aria-pressed", String(recordDialog.classList.contains("is-minimized")));
 }
 
 function openDialog({ title, typeLabel, body, saveLabel, secondaryLabel = "", onSave = null, onSecondary = null, afterOpen = null, singleColumn = false }) {
@@ -3770,6 +3798,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
   const actualMode = record?.entryMode || mode || "shipment";
   const isAirway = actualMode === "airway";
   const loaded = Boolean(record);
+  const sectionOpen = loaded;
   const defaultCustomer = record?.customer || "";
   const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
   return `
@@ -3787,7 +3816,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${select("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
       ${input("salesPerson", "Sales Person", fieldValue("salesPerson", currentUserName()))}
       ${input("airwayBillNo", "Airway Bill / Bill of Lading", fieldValue("airwayBillNo", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo")), false)}
-    `)}
+    `, true, sectionOpen)}
     ${formSection("Customer Information", `
       ${selectFrom("customer", "Customer Name", state.customers.map((row) => row.name), defaultCustomer)}
       ${selectFrom("customerCode", "Customer Code", state.customers.map((row) => ({ value: row.code, label: `${row.code} | ${row.name}` })), fieldValue("customerCode"))}
@@ -3795,7 +3824,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("customerMobile", "Mobile Number", fieldValue("customerMobile"))}
       ${input("customerEmail", "Email Address", fieldValue("customerEmail"), false, "email")}
       ${textarea("customerAddress", "Address", fieldValue("customerAddress"), false, 3)}
-    `)}
+    `, true, sectionOpen)}
     ${formSection("Shipper Information", `
       ${checkbox("copyCustomerToShipper", "Same as customer information")}
       ${input("shipperName", "Shipper Name", fieldValue("shipperName"))}
@@ -3805,7 +3834,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("shipperEmail", "Email Address", fieldValue("shipperEmail"), false, "email")}
       ${input("shipperVatTrn", "VAT / TRN Number", fieldValue("shipperVatTrn"))}
       ${input("shipperCountry", "Country", fieldValue("shipperCountry", "Kuwait"))}
-    `, true)}
+    `, true, sectionOpen)}
     ${formSection("Consignee Information", `
       ${checkbox("copyCustomerToConsignee", "Same as customer information")}
       ${selectFrom("consigneeName", "Consignee Name", state.customers.map((row) => row.name), fieldValue("consigneeName", defaultCustomer))}
@@ -3814,7 +3843,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("consigneeMobile", "Mobile Number", fieldValue("consigneeMobile"))}
       ${input("consigneeEmail", "Email Address", fieldValue("consigneeEmail"), false, "email")}
       ${input("consigneeCountry", "Country", fieldValue("consigneeCountry"))}
-    `, true)}
+    `, true, sectionOpen)}
     ${formSection("Pickup Information", `
       ${checkbox("copyCustomerToPickup", "Same as customer information")}
       ${input("pickupLocation", "Pickup Location", fieldValue("pickupLocation"))}
@@ -3823,7 +3852,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("pickupMobile", "Pickup Mobile", fieldValue("pickupMobile"))}
       ${input("pickupDate", "Pickup Date", fieldValue("pickupDate", today()), false, "date")}
       ${input("pickupTime", "Pickup Time", fieldValue("pickupTime"), false, "time")}
-    `, true)}
+    `, true, sectionOpen)}
     ${formSection("Delivery Information", `
       ${input("deliveryLocation", "Delivery Location", fieldValue("deliveryLocation"))}
       ${textarea("deliveryAddress", "Delivery Address", fieldValue("deliveryAddress"), false, 3)}
@@ -3831,7 +3860,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("deliveryMobile", "Delivery Mobile", fieldValue("deliveryMobile"))}
       ${input("deliveryDate", "Delivery Date", fieldValue("deliveryDate"), false, "date")}
       ${input("deliveryTime", "Delivery Time", fieldValue("deliveryTime"), false, "time")}
-    `, true)}
+    `, true, sectionOpen)}
     ${formSection("Billing Party 1", `
       ${checkbox("copyCustomerToBilling1", "Same as customer information")}
       ${input("billTo1", "Billing Party Name", fieldValue("billTo1", defaultCustomer))}
@@ -3840,7 +3869,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("billingParty1Mobile", "Mobile Number", fieldValue("billingParty1Mobile"))}
       ${input("billingParty1Email", "Email Address", fieldValue("billingParty1Email"), false, "email")}
       ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"], fieldValue("billingParty1CreditTerms"))}
-    `, true)}
+    `, true, sectionOpen)}
     ${cargoItemsBuilder(fieldValue("cargoItemsJson", record?.palletDimensionsJson || "[]"))}
     <input type="hidden" name="transportMode" value="" />
     <input type="hidden" name="tcnNumber" value="${escapeHtml(fieldValue("tcnNumber"))}" />
@@ -3851,10 +3880,10 @@ function shipmentDialogBody(mode = "shipment", record = null) {
   `;
 }
 
-function formSection(title, body, collapsible = false) {
+function formSection(title, body, collapsible = false, open = false) {
   const sectionBody = `<div class="form-section-grid">${body}</div>`;
   if (!collapsible) return `<section class="form-section"><h3>${escapeHtml(title)}</h3>${sectionBody}</section>`;
-  return `<details class="form-section collapsible-section"><summary>${escapeHtml(title)}</summary>${sectionBody}</details>`;
+  return `<details class="form-section collapsible-section" ${open ? "open" : ""}><summary>${escapeHtml(title)}</summary>${sectionBody}</details>`;
 }
 
 function palletDimensionBuilder(initialValue = "[]") {
