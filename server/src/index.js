@@ -205,7 +205,7 @@ const demoRows = {
       invoice_number_format: "INV-YY###",
       default_volumetric_divisor: "5000",
       require_pod_before_invoice: "Yes",
-      branches: "Kuwait HO, Dubai 2",
+      branches: "Kuwait HO, Dubai",
       dropdown_options: "{}"
     }
   ]

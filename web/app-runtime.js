@@ -66,6 +66,7 @@ const dialogBody = document.querySelector("#dialogBody");
 const dialogSecondary = document.querySelector("#dialogSecondary");
 const dialogSave = document.querySelector("#dialogSave");
 const toastStack = document.querySelector("#toastStack");
+const CANONICAL_BRANCHES = ["Kuwait HO", "Dubai", "Both"];
 
 function currentSession() {
   const raw = sessionStorage.getItem(SESSION_KEY);
@@ -825,17 +826,14 @@ function nextAdditionalChargeNumber() {
 }
 
 function branchOptions() {
-  const branches = String(state.settings.branches || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return branches.length ? branches : ["Kuwait HO", "Dubai"];
+  return CANONICAL_BRANCHES.slice();
 }
 
 function defaultUserBranch() {
   const access = String(currentSession()?.branchAccess || "").trim();
   if (access && !["both", "all"].includes(access.toLowerCase())) {
-    return access.split(",").map((item) => item.trim()).filter(Boolean)[0] || branchOptions()[0];
+    const normalized = normalizeBranchName(access);
+    if (CANONICAL_BRANCHES.includes(normalized)) return normalized;
   }
   return branchOptions()[0];
 }
@@ -1169,15 +1167,12 @@ function normalizeBranchName(value) {
   const text = String(value || "").trim();
   const normalized = text.toLowerCase();
   if (["branch 1", "kuwait 1", "kuwait ho"].includes(normalized)) return "Kuwait HO";
-  if (["branch 2", "Dubai"].includes(normalized)) return "Dubai";
+  if (["branch 2", "dubai 2", "dubai"].includes(normalized)) return "Dubai";
   return text;
 }
 
 function allBranchFilterOptions() {
-  const values = ["Both", ...branchOptions()]
-    .map(normalizeBranchName)
-    .filter(Boolean);
-  return [...new Set(values)];
+  return CANONICAL_BRANCHES.slice();
 }
 
 function selectedAdminBranches() {
@@ -2188,7 +2183,7 @@ function renderSettings() {
           ${input("supplierNumberFormat", "Supplier / Transporter Number Format", state.settings.supplierNumberFormat)}
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
-          ${input("branches", "Branches", state.settings.branches)}
+          ${select("branches", "Branches", branchOptions(), normalizeBranchName(state.settings.branches || branchOptions()[0]))}
           <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
@@ -2832,7 +2827,7 @@ function accountStatusOptions() {
 }
 
 function branchAccessOptions() {
-  return dropdownOptions("branchAccess", [...branchOptions(), "Both"]);
+  return CANONICAL_BRANCHES.slice();
 }
 
 function volumeCategoryOptions() {
@@ -3765,7 +3760,7 @@ function partyDialogConfig(key, label) {
       ${input("mobile", "Mobile Number", "")}
       ${select("terms", "Credit Limit Days", ["15 days", "30 days", "45 days"])}
       ${select("status", "Status", ["Active", "Inactive", "Blocked"])}
-      ${select("branch", "Branch", [...branchOptions(), "Both"], defaultUserBranch())}
+      ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
     `,
     onSave: (data) => createParty(key, data)
   };
@@ -3859,7 +3854,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
 function formSection(title, body, collapsible = false) {
   const sectionBody = `<div class="form-section-grid">${body}</div>`;
   if (!collapsible) return `<section class="form-section"><h3>${escapeHtml(title)}</h3>${sectionBody}</section>`;
-  return `<details class="form-section collapsible-section" open><summary>${escapeHtml(title)}</summary>${sectionBody}</details>`;
+  return `<details class="form-section collapsible-section"><summary>${escapeHtml(title)}</summary>${sectionBody}</details>`;
 }
 
 function palletDimensionBuilder(initialValue = "[]") {
