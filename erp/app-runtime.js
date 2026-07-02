@@ -542,6 +542,44 @@ function additionalCharge(
   };
 }
 
+function invoiceDialogBody(record = {}) {
+  const shipmentItem = state.shipments.find((row) => row.jobNo === record.shipmentNo) || null;
+  const tariffItem = assignedTariffForShipment(shipmentItem) || state.tariffs.find((row) => row.tariffNo === record.tariffNo) || null;
+  const lines = parseInvoiceLineItems(record.invoiceLinesJson || JSON.stringify(invoiceLinesFromTariff(shipmentItem, tariffItem)));
+  let snapshot = {};
+  try { snapshot = JSON.parse(record.invoiceSnapshotJson || '{}'); } catch {}
+  const taxPercent = Number(record.taxPercent ?? snapshot.taxPercent ?? 0);
+  const chargeableWeight = Number(record.chargeableWeight ?? snapshot.chargeableWeight ?? shipmentItem?.manualChargeableKg ?? shipmentItem?.chargeableKg ?? shipmentItem?.actualKg ?? 0);
+  const grossWeight = Number(record.grossWeight ?? snapshot.grossWeight ?? shipmentItem?.actualKg ?? 0);
+  const volumeWeight = Number(record.volumeWeight ?? snapshot.volumeWeight ?? shipmentItem?.cbm ?? 0);
+  const tariffName = record.tariffName || snapshot.tariffName || tariffItem?.customer || '';
+  const revenue = Number(record.revenue ?? snapshot.revenue ?? invoiceTotals(lines, taxPercent).revenue);
+  const supplierCost = Number(record.supplierCost ?? record.totalCost ?? snapshot.cost ?? invoiceTotals(lines, taxPercent).cost);
+  const totals = invoiceTotals(lines, taxPercent);
+  return
+    input('customer', 'Customer', record.customer || shipmentItem?.customer || '') +
+    selectFrom('shipmentNo', 'Shipment No', invoiceShipmentOptions(record.customer || shipmentItem?.customer || ''), record.shipmentNo || shipmentItem?.jobNo || '') +
+    selectFrom('tariffNo', 'Tariff No', invoiceTariffOptions(record.customer || shipmentItem?.customer || ''), record.tariffNo || tariffItem?.tariffNo || '') +
+    tariffPreviewShell('invoice') +
+    input('tariffName', 'Tariff Name', tariffName, true) +
+    input('chargeableWeight', 'Chargeable Weight', chargeableWeight, true, 'number') +
+    input('grossWeight', 'Gross Weight', grossWeight, true, 'number') +
+    input('volumeWeight', 'Volume Weight', volumeWeight, true, 'number') +
+    selectEditable('currency', 'Currency', 'currency', currencyOptions(), record.currency || shipmentItem?.currency || 'KD') +
+    input('taxPercent', 'Tax %', taxPercent, false, 'number') +
+    input('revenue', 'Revenue', revenue, true, 'number') +
+    input('supplierCost', 'Cost', supplierCost, false, 'number') +
+    input('totalCost', 'Total Cost', supplierCost, true, 'number') +
+    input('taxAmount', 'Tax Amount', totals.taxAmount, true, 'number') +
+    input('grossProfit', 'Gross Profit', totals.grossProfit, true, 'number') +
+    input('profitPercent', 'Profit %', totals.profitPercent, true, 'number') +
+    input('grandTotal', 'Grand Total', totals.grandTotal, true, 'number') +
+    select('status', 'Status', ['Draft', 'Approved', 'Sent', 'Paid', 'Overdue']) +
+    input('date', 'Date', record.date || today(), false, 'date') +
+    '<input type="hidden" name="invoiceLinesJson" value="' + escapeHtml(record.invoiceLinesJson || JSON.stringify(lines)) + '" />' +
+    '<input type="hidden" name="tariffSnapshotJson" value="' + escapeHtml(record.tariffSnapshotJson || JSON.stringify(tariffItem || {})) + '" />' +
+    '<input type="hidden" name="invoiceSnapshotJson" value="' + escapeHtml(record.invoiceSnapshotJson || JSON.stringify(snapshot || invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent))) + '" />';
+}
 function invoice(invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, createdBy = currentUserName()) {
   return { invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, grossProfit: revenue - supplierCost, createdBy };
 }
@@ -3155,6 +3193,52 @@ function openRecord(type, id) {
     return;
   }
 
+  if (type === "invoice") {
+    editing = { type, id, record };
+    dialogState = null;
+    openDialog({
+      title: `Invoice - ${id}`,
+      typeLabel: "Invoice",
+      saveLabel: "Save Changes",
+      body: invoiceDialogBody(record),
+      onSave: async () => {
+        const data = collectFormValues(dialogBody.closest("form"));
+        rememberDropdownOptions(data);
+        const updatedRecord = {
+          ...record,
+          customer: data.customer || record.customer || "",
+          shipmentNo: data.shipmentNo || record.shipmentNo || "",
+          tariffNo: data.tariffNo || record.tariffNo || "",
+          tariffName: data.tariffName || record.tariffName || "",
+          chargeableWeight: Number(data.chargeableWeight || record.chargeableWeight || 0),
+          grossWeight: Number(data.grossWeight || record.grossWeight || 0),
+          volumeWeight: Number(data.volumeWeight || record.volumeWeight || 0),
+          currency: data.currency || record.currency || "KD",
+          taxPercent: Number(data.taxPercent || record.taxPercent || 0),
+          revenue: Number(data.revenue || record.revenue || 0),
+          supplierCost: Number(data.supplierCost || data.totalCost || record.supplierCost || 0),
+          totalCost: Number(data.totalCost || record.totalCost || data.supplierCost || 0),
+          taxAmount: Number(data.taxAmount || record.taxAmount || 0),
+          grossProfit: Number(data.grossProfit || record.grossProfit || 0),
+          profitPercent: Number(data.profitPercent || record.profitPercent || 0),
+          grandTotal: Number(data.grandTotal || record.grandTotal || 0),
+          status: data.status || record.status || "Draft",
+          date: data.date || record.date || today(),
+          invoiceLinesJson: data.invoiceLinesJson || record.invoiceLinesJson || "[]",
+          tariffSnapshotJson: data.tariffSnapshotJson || record.tariffSnapshotJson || "{}",
+          invoiceSnapshotJson: data.invoiceSnapshotJson || record.invoiceSnapshotJson || "{}"
+        };
+        state.invoices = state.invoices.map((row) => rowId("invoice", row) === id ? updatedRecord : row);
+        await persistRecord("invoice", updatedRecord);
+        saveState();
+        recordDialog.close();
+        render();
+      },
+      afterOpen: bindInvoiceShipmentTariff
+    });
+    return;
+  }
+
   editing = { type, id, record };
   dialogState = null;
   dialogType.textContent = `${type} record`;
@@ -3180,7 +3264,6 @@ function openRecord(type, id) {
   bindDialogPasswordToggles();
   recordDialog.showModal();
 }
-
 function duplicateRecordExists(type, id) {
   const normalized = String(id || "").trim().toLowerCase();
   if (!normalized) return false;
@@ -3644,56 +3727,10 @@ function dialogConfigFor(type, mode = "") {
     invoice: {
       title: "New Invoice",
       typeLabel: "Invoice",
-      saveLabel: "Generate Invoice",
-      body: `
-        ${input("invoiceNo", "Invoice No", nextInvoiceNumber(), false)}
-        ${selectEditable("customer", "Customer", "customer", state.customers.map((row) => row.name), "")}
-        ${selectFrom("shipmentNo", "Shipment", shipmentOptions())}
-        ${selectFrom("tariffNo", "Assigned Tariff", tariffSelectionOptions())}
-        ${input("tariffName", "Tariff Name", "", true)}
-        ${tariffPreviewShell("invoice")}
-        ${input("chargeableWeight", "Chargeable Weight", "", true, "number")}
-        ${input("grossWeight", "Gross Weight", "", true, "number")}
-        ${input("volumeWeight", "Volume Weight", "", true, "number")}
-        ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
-        ${input("taxPercent", "Tax %", "0", false, "number")}
-        ${input("revenue", "Revenue", "0", true, "number")}
-        ${input("supplierCost", "Cost", "0", false, "number")}
-        ${input("totalCost", "Total Cost", "0", true, "number")}
-        ${input("taxAmount", "Tax Amount", "0", true, "number")}
-        ${input("grossProfit", "Gross Profit", "0", true, "number")}
-        ${input("profitPercent", "Profit %", "0", true, "number")}
-        ${input("grandTotal", "Grand Total", "0", true, "number")}
-        ${select("status", "Status", ["Draft", "Approved", "Sent", "Paid", "Overdue"])}
-        ${input("date", "Date", today(), false, "date")}
-        <input type="hidden" name="invoiceLinesJson" value="[]" />
-        <input type="hidden" name="tariffSnapshotJson" value="{}" />
-        <input type="hidden" name="invoiceSnapshotJson" value="{}" />
-      `,
+      saveLabel: "Create Invoice",
+      body: invoiceDialogBody(),
       onSave: createInvoice,
       afterOpen: bindInvoiceShipmentTariff
-    },    pod: {
-      title: "Delivery Update",
-      typeLabel: "POD",
-      saveLabel: "Mark Delivered + Upload POD",
-      body: `
-        ${selectFrom("jobNo", "Shipment No", shipmentOptions())}
-        ${input("receiver", "Receiver", "Receiver Name")}
-      `,
-      onSave: updatePod
-    },
-    status: {
-      title: "Shipment Status Update",
-      typeLabel: "Status",
-      saveLabel: "Update Shipment Status",
-      body: `
-        ${selectFrom("jobNo", "Shipment No", shipmentOptions())}
-        ${select("status", "Shipment Status", statusOptions())}
-        ${select("podStatus", "POD Status", ["Pending", "Uploaded", "Missing", "Disputed", "Approved"])}
-        ${select("invoiceStatus", "Invoice Status", ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue"])}
-        ${input("notes", "Notes", "Status update")}
-      `,
-      onSave: updateStatus
     },
     user: {
       title: "Create User / Permissions",
