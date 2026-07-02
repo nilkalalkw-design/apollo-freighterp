@@ -549,11 +549,12 @@ function additionalCharge(
 function invoiceDialogBody(record = {}) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === record.shipmentNo) || null;
   const tariffItem = assignedTariffForShipment(shipmentItem) || state.tariffs.find((row) => row.tariffNo === record.tariffNo) || null;
+  const customerName = record.customer || shipmentItem?.customer || record.customerName || shipmentItem?.customerName || '';
   const lines = parseInvoiceLineItems(record.invoiceLinesJson || JSON.stringify(invoiceLinesFromTariff(shipmentItem, tariffItem)));
   let snapshot = {};
   try { snapshot = JSON.parse(record.invoiceSnapshotJson || '{}'); } catch {}
   const taxPercent = Number(record.taxPercent ?? snapshot.taxPercent ?? 0);
-  const chargeableWeight = Number(record.chargeableWeight ?? snapshot.chargeableWeight ?? shipmentItem?.manualChargeableKg ?? shipmentItem?.chargeableKg ?? shipmentItem?.actualKg ?? 0);
+  const chargeableWeight = Number(record.chargeableWeight ?? snapshot.chargeableWeight ?? effectiveChargeableWeightForShipment(shipmentItem));
   const grossWeight = Number(record.grossWeight ?? snapshot.grossWeight ?? shipmentItem?.actualKg ?? 0);
   const volumeWeight = Number(record.volumeWeight ?? snapshot.volumeWeight ?? shipmentItem?.cbm ?? 0);
   const tariffName = record.tariffName || snapshot.tariffName || tariffItem?.customer || '';
@@ -561,9 +562,9 @@ function invoiceDialogBody(record = {}) {
   const supplierCost = Number(record.supplierCost ?? record.totalCost ?? snapshot.cost ?? invoiceTotals(lines, taxPercent).cost);
   const totals = invoiceTotals(lines, taxPercent);
   return (
-    input('customer', 'Customer', record.customer || shipmentItem?.customer || '') +
-    selectFrom('shipmentNo', 'Shipment No', invoiceShipmentOptions(record.customer || shipmentItem?.customer || ''), record.shipmentNo || shipmentItem?.jobNo || '') +
-    selectFrom('tariffNo', 'Tariff No', invoiceTariffOptions(record.customer || shipmentItem?.customer || ''), record.tariffNo || tariffItem?.tariffNo || '') +
+    selectFrom('customer', 'Customer', invoiceCustomerOptions(), customerName) +
+    selectFrom('shipmentNo', 'Shipment No', invoiceShipmentOptionsForCustomer(customerName), record.shipmentNo || shipmentItem?.jobNo || '') +
+    selectFrom('tariffNo', 'Tariff No', invoiceTariffOptionsForCustomer(customerName), record.tariffNo || tariffItem?.tariffNo || '') +
     tariffPreviewShell('invoice') +
     input('tariffName', 'Tariff Name', tariffName, true) +
     input('chargeableWeight', 'Chargeable Weight', chargeableWeight, true, 'number') +
@@ -587,6 +588,7 @@ function invoiceDialogBody(record = {}) {
 }
 
 function invoice(invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, createdBy = currentUserName()) {
+
   return { invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, grossProfit: revenue - supplierCost, createdBy };
 }
 
@@ -4652,18 +4654,82 @@ function tariffChargeTable(lines, total, grandTotal, showActions = true, options
   </table></div>`;
 }
 
+function normalizeLookupText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function customerSearchTokens(customerName) {
+  const lookup = normalizeLookupText(customerName);
+  if (!lookup) return [];
+  const tokens = new Set([lookup]);
+  visibleRows(state.customers).forEach((customer) => {
+    const matched = [customer.name, customer.code, customer.customerName, customer.customerCode].some((value) => {
+      const candidate = normalizeLookupText(value);
+      return candidate && (candidate === lookup || candidate.includes(lookup) || lookup.includes(candidate));
+    });
+    if (!matched) return;
+    [customer.name, customer.code, customer.customerName, customer.customerCode].forEach((value) => {
+      const candidate = normalizeLookupText(value);
+      if (candidate) tokens.add(candidate);
+    });
+  });
+  return [...tokens];
+}
+
+function rowMatchesLookup(row, fields, tokens) {
+  if (!tokens.length) return true;
+  return fields.some((value) => {
+    const candidate = normalizeLookupText(value);
+    return candidate && tokens.some((token) => candidate === token || candidate.includes(token) || token.includes(candidate));
+  });
+}
+
+function invoiceCustomerOptions() {
+  const options = [];
+  const seen = new Set();
+  const addOption = (value, label) => {
+    const key = normalizeLookupText(value);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    options.push({ value, label: label || value });
+  };
+
+  visibleRows(state.customers).forEach((row) => {
+    addOption(row.name || row.customerName || '', [row.code, row.name || row.customerName || ''].filter(Boolean).join(' | '));
+  });
+  visibleRows(state.shipments).forEach((row) => {
+    addOption(row.customer || row.customerName || row.consigneeName || row.billTo1 || '', [row.jobNo, row.customerCode, row.origin, row.destination].filter(Boolean).join(' | '));
+  });
+
+  return options;
+}
+
+function invoiceShipmentOptionsForCustomer(customerName) {
+  return invoiceShipmentsForCustomer(customerName).map((row) => ({
+    value: row.jobNo,
+    label: row.jobNo + ' | ' + (row.customer || row.customerName || row.billTo1 || '') + ' | ' + (row.origin || '') + ' to ' + (row.destination || '')
+  }));
+}
+
+function invoiceTariffOptionsForCustomer(customerName) {
+  return invoiceTariffsForCustomer(customerName).map((row) => ({
+    value: row.tariffNo,
+    label: row.tariffNo + ' | ' + (row.customer || '') + ' | ' + (row.origin || '') + ' to ' + (row.destination || '')
+  }));
+}
+
 function invoiceTariffsForCustomer(customerName) {
-  var lookup = String(customerName || '').trim().toLowerCase();
-  var rows = visibleRows(state.tariffs);
-  return lookup ? rows.filter((row) => String(row.customer || '').trim().toLowerCase() === lookup) : rows;
+  const lookup = normalizeLookupText(customerName);
+  const rows = visibleRows(state.tariffs);
+  const tokens = customerSearchTokens(customerName);
+  return lookup ? rows.filter((row) => rowMatchesLookup(row, [row.customer, row.consigneeName, row.customerName, row.customerCode, row.tariffNo], tokens)) : rows;
 }
 
 function invoiceShipmentsForCustomer(customerName) {
-  var lookup = String(customerName || '').trim().toLowerCase();
-  var rows = visibleRows(state.shipments);
-  return lookup
-    ? rows.filter((row) => [row.customer, row.customerName, row.billTo1, row.shipperName].some((value) => String(value || '').trim().toLowerCase() === lookup))
-    : rows;
+  const lookup = normalizeLookupText(customerName);
+  const rows = visibleRows(state.shipments);
+  const tokens = customerSearchTokens(customerName);
+  return lookup ? rows.filter((row) => rowMatchesLookup(row, [row.customer, row.customerName, row.billTo1, row.shipperName, row.consigneeName, row.customerCode], tokens)) : rows;
 }
 
 function parseInvoiceLineItems(value) {
@@ -4714,9 +4780,21 @@ function invoiceTotals(lines, taxPercent) {
   };
 }
 
+function effectiveChargeableWeightForShipment(shipmentItem) {
+  const manual = Number(shipmentItem?.manualChargeableKg || 0);
+  if (manual > 0) return Number(manual.toFixed(3));
+  const actual = Number(shipmentItem?.actualKg || 0);
+  const cbm = Number(shipmentItem?.cbm || 0);
+  const divisor = Number(shipmentItem?.chargeableDivisor || volumeDivisorFor(shipmentItem?.volumeCategory || '') || 0);
+  const volumetric = divisor > 0 && cbm > 0 ? Number((cbm * divisor).toFixed(3)) : 0;
+  const calculated = Math.max(actual, volumetric);
+  if (calculated > 0) return Number(calculated.toFixed(3));
+  return Number(shipmentItem?.chargeableKg || 0);
+}
+
 function invoiceLinesFromTariff(shipmentItem, tariffItem) {
   if (!tariffItem) return [];
-  var chargeableWeight = Number(shipmentItem?.manualChargeableKg || shipmentItem?.chargeableKg || shipmentItem?.actualKg || 0);
+  var chargeableWeight = effectiveChargeableWeightForShipment(shipmentItem);
   var baseRate = Number(tariffItem?.rate || 0);
   var baseAmount = Math.max(Number(tariffItem?.minCharge || 0), chargeableWeight * baseRate);
   var lines = [{
@@ -4758,7 +4836,7 @@ function invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercen
     shipmentNo: shipmentItem?.jobNo || '',
     tariffNo: tariffItem?.tariffNo || '',
     tariffName: tariffItem?.customer || '',
-    chargeableWeight: Number(shipmentItem?.chargeableKg || shipmentItem?.manualChargeableKg || shipmentItem?.actualKg || 0),
+    chargeableWeight: effectiveChargeableWeightForShipment(shipmentItem),
     grossWeight: Number(shipmentItem?.actualKg || 0),
     volumeWeight: Number(shipmentItem?.cbm || 0),
     lines: lines,
@@ -4774,7 +4852,7 @@ function invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercen
 
 function invoiceLineTable(lines, canEditCost) {
   var rows = lines.length ? lines.map((line, index) => {
-    return '<tr>' +
+    return '<tr data-invoice-line-row="' + index + '">' +
       '<td>' + (index + 1) + '</td>' +
       '<td><input data-invoice-line-field="description" data-line-index="' + index + '" value="' + escapeHtml(line.description || '') + '" /></td>' +
       '<td><input data-invoice-line-field="unit" data-line-index="' + index + '" value="' + escapeHtml(line.unit || '') + '" /></td>' +
@@ -4791,12 +4869,12 @@ function invoiceLineTable(lines, canEditCost) {
 
 function invoicePreviewSummary(summary) {
   return '<section class="summary-card invoice-summary">' +
-    '<div><span>Revenue</span><strong>' + money(summary.revenue) + '</strong></div>' +
-    '<div><span>Cost</span><strong>' + money(summary.cost) + '</strong></div>' +
-    '<div><span>Tax</span><strong>' + money(summary.taxAmount) + '</strong></div>' +
-    '<div><span>Gross Profit</span><strong>' + money(summary.grossProfit) + '</strong></div>' +
-    '<div><span>Profit %</span><strong>' + money(summary.profitPercent) + '%</strong></div>' +
-    '<div><span>Grand Total</span><strong>' + money(summary.grandTotal) + '</strong></div>' +
+    '<div><span>Revenue</span><strong data-invoice-summary="revenue">' + money(summary.revenue) + '</strong></div>' +
+    '<div><span>Cost</span><strong data-invoice-summary="cost">' + money(summary.cost) + '</strong></div>' +
+    '<div><span>Tax</span><strong data-invoice-summary="taxAmount">' + money(summary.taxAmount) + '</strong></div>' +
+    '<div><span>Gross Profit</span><strong data-invoice-summary="grossProfit">' + money(summary.grossProfit) + '</strong></div>' +
+    '<div><span>Profit %</span><strong data-invoice-summary="profitPercent">' + money(summary.profitPercent) + '%</strong></div>' +
+    '<div><span>Grand Total</span><strong data-invoice-summary="grandTotal">' + money(summary.grandTotal) + '</strong></div>' +
   '</section>';
 }
 
@@ -4819,7 +4897,9 @@ function invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, canEd
     '<div class="action-row"><button type="button" class="secondary-button" data-add-invoice-line>Add Charge</button></div>' +
   '</section>';
 }
+
 function tariffSelectionOptions() {
+
   return visibleRows(state.tariffs).map((row) => ({
     value: row.tariffNo,
     label: `${row.tariffNo} | ${row.customer} | ${row.origin} to ${row.destination}`
@@ -4992,26 +5072,57 @@ function bindInvoiceShipmentTariff() {
 
   const syncDatalist = () => {
     if (shipmentDatalist) {
-      const shipments = invoiceShipmentsForCustomer(customerField?.value || '');
-      shipmentDatalist.innerHTML = shipments.map((option) => '<option value="' + escapeHtml(option.jobNo || '') + '" label="' + escapeHtml(option.jobNo + ' - ' + (option.customer || '')) + '"></option>').join('');
+      const shipments = invoiceShipmentOptionsForCustomer(customerField?.value || '');
+      shipmentDatalist.innerHTML = shipments.map((option) => '<option value="' + escapeHtml(option.value || '') + '" label="' + escapeHtml(option.label || option.value || '') + '"></option>').join('');
+      if (shipmentField?.value && !shipments.some((option) => option.value === shipmentField.value)) shipmentField.value = '';
     }
     if (tariffDatalist) {
-      const tariffs = invoiceTariffsForCustomer(customerField?.value || '');
-      tariffDatalist.innerHTML = tariffs.map((option) => '<option value="' + escapeHtml(option.tariffNo || '') + '" label="' + escapeHtml(option.tariffNo + ' - ' + (option.customer || '')) + '"></option>').join('');
+      const tariffs = invoiceTariffOptionsForCustomer(customerField?.value || '');
+      tariffDatalist.innerHTML = tariffs.map((option) => '<option value="' + escapeHtml(option.value || '') + '" label="' + escapeHtml(option.label || option.value || '') + '"></option>').join('');
+      if (tariffField?.value && !tariffs.some((option) => option.value === tariffField.value)) tariffField.value = '';
     }
   };
 
-  const syncInvoice = () => {
+  const renderInvoicePreview = (shipmentItem, tariffItem, taxPercent) => {
+    if (previewContainer) previewContainer.innerHTML = invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, isAdminSession());
+  };
+
+  const updateInvoicePreviewSummary = (summary) => {
+    if (!previewContainer) return;
+    const summaryMap = {
+      revenue: summary.revenue,
+      cost: summary.cost,
+      taxAmount: summary.taxAmount,
+      grossProfit: summary.grossProfit,
+      profitPercent: summary.profitPercent,
+      grandTotal: summary.grandTotal
+    };
+    Object.entries(summaryMap).forEach(([key, value]) => {
+      const node = previewContainer.querySelector('[data-invoice-summary="' + key + '"]');
+      if (node) node.textContent = key === 'profitPercent' ? money(value) + '%' : money(value);
+    });
+    lines.forEach((line, index) => {
+      const amountField = previewContainer.querySelector('[data-invoice-line-row="' + index + '"] [data-invoice-line-field="amount"]');
+      if (amountField) amountField.value = invoiceLineAmount(line);
+    });
+  };
+
+  const syncInvoice = (renderPreview = false) => {
     const shipmentItem = selectedShipment();
     const tariffItem = selectedTariff();
     const taxPercent = Number(taxPercentField?.value || 0);
+    const currentChargeable = Number(chargeableWeightField?.value || 0);
+    const currentGross = Number(grossWeightField?.value || 0);
+    const currentVolume = Number(volumeWeightField?.value || 0);
     if (shipmentItem) {
       customerField.value = shipmentItem.customer || shipmentItem.customerName || customerField.value || '';
-      if (chargeableWeightField) chargeableWeightField.value = Number(shipmentItem.manualChargeableKg || shipmentItem.chargeableKg || shipmentItem.actualKg || 0);
-      if (grossWeightField) grossWeightField.value = Number(shipmentItem.actualKg || 0);
-      if (volumeWeightField) volumeWeightField.value = Number(shipmentItem.cbm || 0);
+    } else if (tariffItem && !customerField.value) {
+      customerField.value = tariffItem.customer || '';
     }
-    if (tariffItem && tariffNameField) tariffNameField.value = tariffItem.customer || '';
+    if (chargeableWeightField) chargeableWeightField.value = shipmentItem ? effectiveChargeableWeightForShipment(shipmentItem) : currentChargeable;
+    if (grossWeightField) grossWeightField.value = shipmentItem ? Number(shipmentItem.actualKg || 0) : currentGross;
+    if (volumeWeightField) volumeWeightField.value = shipmentItem ? Number(shipmentItem.cbm || 0) : currentVolume;
+    if (tariffNameField) tariffNameField.value = tariffItem ? tariffItem.customer || '' : '';
     if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
     const summary = invoiceTotals(lines, taxPercent);
     if (revenueField) revenueField.value = summary.revenue;
@@ -5023,7 +5134,13 @@ function bindInvoiceShipmentTariff() {
     if (invoiceLinesField) invoiceLinesField.value = JSON.stringify(lines);
     if (tariffSnapshotField) tariffSnapshotField.value = JSON.stringify(tariffItem || {});
     if (invoiceSnapshotField) invoiceSnapshotField.value = JSON.stringify(invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent));
-    if (previewContainer) previewContainer.innerHTML = invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, isAdminSession());
+    if (previewContainer) {
+      if (renderPreview || !previewContainer.querySelector('[data-invoice-summary="revenue"]')) {
+        renderInvoicePreview(shipmentItem, tariffItem, taxPercent);
+      } else {
+        updateInvoicePreviewSummary(summary);
+      }
+    }
   };
 
   const loadSelection = () => {
@@ -5034,61 +5151,59 @@ function bindInvoiceShipmentTariff() {
     lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
     if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
     syncDatalist();
-    syncInvoice();
+    syncInvoice(true);
   };
 
   const updateLineValue = (index, field, value) => {
     const line = lines[index];
     if (!line) return;
     line[field] = field === 'qty' || field === 'rate' || field === 'amount' || field === 'cost' ? Number(value || 0) : value;
-    if (field === 'qty' || field === 'rate') {
-      line.amount = Number((Number(line.qty || 0) * Number(line.rate || 0)).toFixed(3));
-    }
-    if (field === 'amount' && !value) {
-      line.amount = Number((Number(line.qty || 0) * Number(line.rate || 0)).toFixed(3));
-    }
+    if (field === 'qty' || field === 'rate') line.amount = Number((Number(line.qty || 0) * Number(line.rate || 0)).toFixed(3));
+    if (field === 'amount' && !value) line.amount = Number((Number(line.qty || 0) * Number(line.rate || 0)).toFixed(3));
     syncInvoice();
   };
+
   dialogBody.addEventListener('input', (event) => {
     const target = event.target;
     if (target === customerField || target === shipmentField || target === tariffField || target === taxPercentField) {
       syncDatalist();
       const shipmentItem = selectedShipment();
       const tariffItem = selectedTariff();
-      if (target === tariffField || target === shipmentField) {
+      if (target === customerField) {
+        lines = shipmentItem && tariffItem ? parseInvoiceLineItems(invoiceLinesField?.value || '[]') : [];
+      } else if (target === tariffField || target === shipmentField) {
         lines = tariffItem ? invoiceLinesFromTariff(shipmentItem, tariffItem) : [];
       } else {
-        lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
-        if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
+        lines = shipmentItem && tariffItem ? parseInvoiceLineItems(invoiceLinesField?.value || '[]') : [];
       }
-      syncInvoice();
+      syncInvoice(true);
       return;
     }
     const lineIndex = target?.dataset?.lineIndex;
     const lineField = target?.dataset?.invoiceLineField;
-    if (lineIndex !== undefined && lineField) {
-      updateLineValue(Number(lineIndex), lineField, target.value);
-    }
+    if (lineIndex !== undefined && lineField) updateLineValue(Number(lineIndex), lineField, target.value);
   });
 
   dialogBody.addEventListener('click', (event) => {
     const addButton = event.target.closest('[data-add-invoice-line]');
     if (addButton) {
       lines.push({ id: 'manual-' + Date.now(), source: 'manual', description: '', unit: 'Unit', qty: 1, rate: 0, amount: 0, cost: 0, remarks: '' });
-      syncInvoice();
+      syncInvoice(true);
       return;
     }
     const removeButton = event.target.closest('[data-remove-invoice-line]');
     if (removeButton) {
       lines.splice(Number(removeButton.dataset.removeInvoiceLine), 1);
-      syncInvoice();
+      syncInvoice(true);
     }
   });
 
   syncDatalist();
-  syncInvoice();
+  syncInvoice(true);
 }
+
 function assignedTariffForShipment(shipmentItem) {
+
   return state.tariffs.find((row) => row.tariffNo === shipmentItem?.tariffNo)
     || state.tariffs.find((row) => row.customer === shipmentItem?.customer && row.origin === shipmentItem?.origin && row.destination === shipmentItem?.destination)
     || null;
@@ -5632,7 +5747,7 @@ function invoiceFromTo(shipmentItem) {
 function invoiceWeightText(shipmentItem) {
   if (!shipmentItem) return "";
   const gross = Number(shipmentItem.actualKg || 0);
-  const chargeable = Number(shipmentItem.manualChargeableKg || shipmentItem.chargeableKg || 0);
+  const chargeable = effectiveChargeableWeightForShipment(shipmentItem);
   return `${money(gross || chargeable)} KGS`;
 }
 
