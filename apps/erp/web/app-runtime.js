@@ -4691,6 +4691,7 @@ function invoiceTotals(lines, taxPercent) {
 }
 
 function invoiceLinesFromTariff(shipmentItem, tariffItem) {
+  if (!tariffItem) return [];
   var chargeableWeight = Number(shipmentItem?.manualChargeableKg || shipmentItem?.chargeableKg || shipmentItem?.actualKg || 0);
   var baseRate = Number(tariffItem?.rate || 0);
   var baseAmount = Math.max(Number(tariffItem?.minCharge || 0), chargeableWeight * baseRate);
@@ -4788,6 +4789,7 @@ function invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, canEd
   var summary = invoiceTotals(lines, taxPercent);
   return '<section class="invoice-preview-shell">' +
     invoicePreviewMeta(shipmentItem, tariffItem) +
+    (tariffItem ? tariffPreviewHtml([tariffItem], 'Select a tariff to view full details.') : '<p class="empty-state">Select a tariff to view full details.</p>') +
     invoicePreviewSummary(summary) +
     invoiceLineTable(lines, canEditCost) +
     '<div class="action-row"><button type="button" class="secondary-button" data-add-invoice-line>Add Charge</button></div>' +
@@ -5023,11 +5025,13 @@ function bindInvoiceShipmentTariff() {
     const target = event.target;
     if (target === customerField || target === shipmentField || target === tariffField || target === taxPercentField) {
       syncDatalist();
-      lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
-      if (!lines.length) {
-        const shipmentItem = selectedShipment();
-        const tariffItem = selectedTariff();
-        if (tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
+      const shipmentItem = selectedShipment();
+      const tariffItem = selectedTariff();
+      if (target === tariffField || target === shipmentField) {
+        lines = tariffItem ? invoiceLinesFromTariff(shipmentItem, tariffItem) : [];
+      } else {
+        lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
+        if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
       }
       syncInvoice();
       return;
