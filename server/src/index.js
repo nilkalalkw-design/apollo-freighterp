@@ -567,9 +567,21 @@ const resources = {
     fields: [
       field("invoice_no", ["invoiceNo", "invoice_no"], true),
       field("customer"),
+      field("customer_code", ["customerCode", "customer_code"]),
       field("shipment_no", ["shipmentNo", "shipment_no"]),
+      field("tariff_no", ["tariffNo", "tariff_no"]),
+      field("tariff_name", ["tariffName", "tariff_name"]),
+      field("chargeable_weight", ["chargeableWeight", "chargeable_weight"]),
       field("revenue"),
       field("supplier_cost", ["supplierCost", "supplier_cost"]),
+      field("total_cost", ["totalCost", "total_cost"]),
+      field("tax_percent", ["taxPercent", "tax_percent"]),
+      field("tax_amount", ["taxAmount", "tax_amount"]),
+      field("grand_total", ["grandTotal", "grand_total"]),
+      field("profit_percent", ["profitPercent", "profit_percent"]),
+      field("invoice_lines_json", ["invoiceLinesJson", "invoice_lines_json"]),
+      field("tariff_snapshot_json", ["tariffSnapshotJson", "tariff_snapshot_json"]),
+      field("invoice_snapshot_json", ["invoiceSnapshotJson", "invoice_snapshot_json"]),
       field("status"),
       field("date"),
       field("due_date", ["dueDate", "due_date"]),
@@ -961,6 +973,58 @@ async function prepareRecordForConfig(config, body) {
       prepared.customer_code = customerByName.rows[0]?.code || prepared.customer_code || "";
     }
     prepared.auto_approved = String(prepared.status || "").toUpperCase() === "AUTO_APPROVED";
+  }
+
+  if (config.table === "invoices") {
+    const stringify = (value, fallback) => {
+      if (typeof value === "string") return value;
+      if (value && typeof value === "object") return JSON.stringify(value);
+      return fallback;
+    };
+    prepared.customer_code = String(prepared.customer_code || prepared.customerCode || "").trim();
+    prepared.tariff_no = String(prepared.tariff_no || prepared.tariffNo || "").trim();
+    prepared.tariff_name = String(prepared.tariff_name || prepared.tariffName || "").trim();
+    prepared.chargeable_weight = Number(prepared.chargeable_weight || prepared.chargeableWeight || 0);
+    prepared.revenue = Number(prepared.revenue || 0);
+    prepared.supplier_cost = Number(prepared.supplier_cost || prepared.supplierCost || 0);
+    prepared.total_cost = Number(prepared.total_cost || prepared.totalCost || prepared.supplier_cost || 0);
+    prepared.tax_percent = Number(prepared.tax_percent || prepared.taxPercent || 0);
+    prepared.tax_amount = Number(prepared.tax_amount || prepared.taxAmount || 0);
+    prepared.grand_total = Number(prepared.grand_total || prepared.grandTotal || prepared.revenue + prepared.tax_amount);
+    prepared.profit_percent = Number(
+      prepared.profit_percent ||
+        prepared.profitPercent ||
+        (prepared.revenue ? (((prepared.revenue - prepared.total_cost) / prepared.revenue) * 100) : 0)
+    );
+    prepared.invoice_lines_json = stringify(prepared.invoice_lines_json || prepared.invoiceLinesJson, "[]");
+    prepared.tariff_snapshot_json = stringify(prepared.tariff_snapshot_json || prepared.tariffSnapshotJson, "{}");
+    prepared.invoice_snapshot_json = stringify(prepared.invoice_snapshot_json || prepared.invoiceSnapshotJson, "{}");
+  }
+
+  if (config.table === "invoices") {
+    const stringify = (value, fallback) => {
+      if (typeof value === "string") return value;
+      if (value && typeof value === "object") return JSON.stringify(value);
+      return fallback;
+    };
+    prepared.customer_code = String(prepared.customer_code || prepared.customerCode || "").trim();
+    prepared.tariff_no = String(prepared.tariff_no || prepared.tariffNo || "").trim();
+    prepared.tariff_name = String(prepared.tariff_name || prepared.tariffName || "").trim();
+    prepared.chargeable_weight = Number(prepared.chargeable_weight || prepared.chargeableWeight || 0);
+    prepared.revenue = Number(prepared.revenue || 0);
+    prepared.supplier_cost = Number(prepared.supplier_cost || prepared.supplierCost || 0);
+    prepared.total_cost = Number(prepared.total_cost || prepared.totalCost || prepared.supplier_cost || 0);
+    prepared.tax_percent = Number(prepared.tax_percent || prepared.taxPercent || 0);
+    prepared.tax_amount = Number(prepared.tax_amount || prepared.taxAmount || 0);
+    prepared.grand_total = Number(prepared.grand_total || prepared.grandTotal || prepared.revenue + prepared.tax_amount);
+    prepared.profit_percent = Number(
+      prepared.profit_percent ||
+        prepared.profitPercent ||
+        (prepared.revenue ? (((prepared.revenue - prepared.total_cost) / prepared.revenue) * 100) : 0)
+    );
+    prepared.invoice_lines_json = stringify(prepared.invoice_lines_json || prepared.invoiceLinesJson, "[]");
+    prepared.tariff_snapshot_json = stringify(prepared.tariff_snapshot_json || prepared.tariffSnapshotJson, "{}");
+    prepared.invoice_snapshot_json = stringify(prepared.invoice_snapshot_json || prepared.invoiceSnapshotJson, "{}");
   }
 
   if (config.table === "notifications" && !String(prepared.read_status || "").trim()) {

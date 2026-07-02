@@ -132,7 +132,7 @@ function seedState() {
   return {
     shipments: [
       shipment("AFS-2605001", "Kuwait HO", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Booked", 14, 820, 5.2, 1040, 485, 330, "Pending", "Unbilled", "2026-05-05", "AWB-2605001", "TAR-1001", 3, "Export", "AE", ""),
-      shipment("AFS-2605002", "Dubai 2", "Desert Medical Supplies", "Shuwaikh", "Dammam", "In-Transit", 8, 410, 2.1, 420, 215, 150, "Pending", "Unbilled", "2026-05-05", "AWB-2605002", "TAR-1002", 2, "Import", "AI", ""),
+      shipment("AFS-2605002", "Dubai", "Desert Medical Supplies", "Shuwaikh", "Dammam", "In-Transit", 8, 410, 2.1, 420, 215, 150, "Pending", "Unbilled", "2026-05-05", "AWB-2605002", "TAR-1002", 2, "Import", "AI", ""),
       shipment("AFS-2605003", "Kuwait HO", "Al Noor Projects", "Ahmadi", "Doha", "Delivered", 22, 1250, 7.8, 1560, 780, 590, "Missing", "Unbilled", "2026-05-04", "AWB-2605003", "TAR-1001", 4, "Export", "LE", ""),
       shipment("AFS-2605004", "Kuwait HO", "Gulf Retail Trading", "Kuwait City", "Riyadh", "Invoiced", 4, 160, 0.9, 180, 95, 70, "Uploaded", "INV-260001", "2026-05-02", "AWB-2605004", "TAR-1001", 3, "WHC", "WHC Remark", "Warehouse handling and cross-docking")
     ],
@@ -142,12 +142,12 @@ function seedState() {
     ],
     customers: [
       party("CUS-001", "Gulf Retail Trading", "Kuwait City", "ops@gulf-retail.example", "30 days", "Active", false, "Kuwait HO"),
-      party("CUS-002", "Desert Medical Supplies", "Shuwaikh", "logistics@desert-med.example", "15 days", "Active", true, "Dubai 2"),
+      party("CUS-002", "Desert Medical Supplies", "Shuwaikh", "logistics@desert-med.example", "15 days", "Active", true, "Dubai"),
       party("CUS-003", "Al Noor Projects", "Ahmadi", "cargo@alnoor.example", "45 days", "Active", false, "Kuwait HO")
     ],
     suppliers: [
       party("TRN-001", "Al Dana Transport", "Kuwait - Riyadh", "dispatch@aldana.example", "20 days", "Active", false, "Kuwait HO"),
-      party("TRN-002", "Falcon Line Haul", "Kuwait - Dammam", "ops@falconline.example", "30 days", "Active", false, "Dubai 2")
+      party("TRN-002", "Falcon Line Haul", "Kuwait - Dammam", "ops@falconline.example", "30 days", "Active", false, "Dubai")
     ],
     tariffs: [
       tariff("TAR-1001", "Gulf Retail Trading", "Kuwait City", "Riyadh", "FTL", "Minimum", "100 KG", 0.42, 35),
@@ -169,7 +169,7 @@ function seedState() {
     users: [
       user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All Branches", "All", true, true, true, true, "admin123", "System temporary admin"),
       user("ops-kuwait", "operations.kuwait@apollofreightsolution.com", "Operations", "Active", "Kuwait HO", "Assigned Branch Only", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Kuwait HO shipments"),
-      user("billing-dubai", "billing.dubai@apollofreightsolution.com", "Billing", "Active", "Dubai 2", "Assigned Branch Only", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Dubai 2")
+      user("billing-dubai", "billing.dubai@apollofreightsolution.com", "Billing", "Active", "Dubai", "Assigned Branch Only", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Dubai")
     ],
     unblockRequests: [],
     adminRequests: [],
@@ -191,7 +191,7 @@ function seedState() {
       columnLayoutJson: "{}",
       defaultVolumetricDivisor: "5000",
       requirePodBeforeInvoice: "Yes",
-      branches: "Kuwait HO, Dubai 2",
+      branches: "Kuwait HO, Dubai",
       dropdownOptionsJson: "{}"
     },
     api: {
@@ -789,7 +789,7 @@ function branchOptions() {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  return branches.length ? branches : ["Kuwait HO", "Dubai 2"];
+  return branches.length ? branches : ["Kuwait HO", "Dubai"];
 }
 
 function defaultUserBranch() {
@@ -1129,7 +1129,7 @@ function normalizeBranchName(value) {
   const text = String(value || "").trim();
   const normalized = text.toLowerCase();
   if (["branch 1", "kuwait 1", "kuwait ho"].includes(normalized)) return "Kuwait HO";
-  if (["branch 2", "dubai 2"].includes(normalized)) return "Dubai 2";
+  if (["branch 2", "Dubai"].includes(normalized)) return "Dubai";
   return text;
 }
 
@@ -3647,20 +3647,32 @@ function dialogConfigFor(type, mode = "") {
       saveLabel: "Generate Invoice",
       body: `
         ${input("invoiceNo", "Invoice No", nextInvoiceNumber(), false)}
-        ${selectFrom("customer", "Consignee", state.customers.map((row) => row.name))}
+        ${selectEditable("customer", "Customer", "customer", state.customers.map((row) => row.name), "")}
         ${selectFrom("shipmentNo", "Shipment", shipmentOptions())}
         ${selectFrom("tariffNo", "Assigned Tariff", tariffSelectionOptions())}
+        ${input("tariffName", "Tariff Name", "", true)}
         ${tariffPreviewShell("invoice")}
+        ${input("chargeableWeight", "Chargeable Weight", "", true, "number")}
+        ${input("grossWeight", "Gross Weight", "", true, "number")}
+        ${input("volumeWeight", "Volume Weight", "", true, "number")}
         ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
-        ${input("revenue", "Revenue", "100.000", false, "number")}
-        ${input("supplierCost", "Supplier Cost", "70.000", false, "number")}
+        ${input("taxPercent", "Tax %", "0", false, "number")}
+        ${input("revenue", "Revenue", "0", true, "number")}
+        ${input("supplierCost", "Cost", "0", false, "number")}
+        ${input("totalCost", "Total Cost", "0", true, "number")}
+        ${input("taxAmount", "Tax Amount", "0", true, "number")}
+        ${input("grossProfit", "Gross Profit", "0", true, "number")}
+        ${input("profitPercent", "Profit %", "0", true, "number")}
+        ${input("grandTotal", "Grand Total", "0", true, "number")}
         ${select("status", "Status", ["Draft", "Approved", "Sent", "Paid", "Overdue"])}
         ${input("date", "Date", today(), false, "date")}
+        <input type="hidden" name="invoiceLinesJson" value="[]" />
+        <input type="hidden" name="tariffSnapshotJson" value="{}" />
+        <input type="hidden" name="invoiceSnapshotJson" value="{}" />
       `,
       onSave: createInvoice,
       afterOpen: bindInvoiceShipmentTariff
-    },
-    pod: {
+    },    pod: {
       title: "Delivery Update",
       typeLabel: "POD",
       saveLabel: "Mark Delivered + Upload POD",
@@ -4572,6 +4584,171 @@ function tariffChargeTable(lines, total, grandTotal, showActions = true, options
   </table></div>`;
 }
 
+function invoiceTariffsForCustomer(customerName) {
+  var lookup = String(customerName || '').trim().toLowerCase();
+  var rows = visibleRows(state.tariffs);
+  return lookup ? rows.filter((row) => String(row.customer || '').trim().toLowerCase() === lookup) : rows;
+}
+
+function invoiceShipmentsForCustomer(customerName) {
+  var lookup = String(customerName || '').trim().toLowerCase();
+  var rows = visibleRows(state.shipments);
+  return lookup
+    ? rows.filter((row) => [row.customer, row.customerName, row.billTo1, row.shipperName].some((value) => String(value || '').trim().toLowerCase() === lookup))
+    : rows;
+}
+
+function parseInvoiceLineItems(value) {
+  try {
+    var parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed)
+      ? parsed.map((line, index) => ({
+          id: line.id || 'invoice-line-' + (index + 1),
+          source: line.source || 'manual',
+          description: line.description || '',
+          unit: line.unit || 'Unit',
+          qty: Number(line.qty || 0),
+          rate: Number(line.rate || 0),
+          amount: Number(line.amount || line.total || 0),
+          cost: Number(line.cost || 0),
+          remarks: line.remarks || '',
+          tariffNo: line.tariffNo || '',
+          tariffName: line.tariffName || '',
+          chargeableWeight: Number(line.chargeableWeight || 0)
+        }))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function invoiceLineAmount(line) {
+  var qty = Number(line?.qty || 0);
+  var rate = Number(line?.rate || 0);
+  var amount = Number(line?.amount || 0);
+  return amount || qty * rate;
+}
+
+function invoiceTotals(lines, taxPercent) {
+  var revenue = lines.reduce((sum, line) => sum + invoiceLineAmount(line), 0);
+  var cost = lines.reduce((sum, line) => sum + Number(line?.cost || 0), 0);
+  var taxAmount = revenue * (Number(taxPercent || 0) / 100);
+  var grandTotal = revenue + taxAmount;
+  var grossProfit = revenue - cost;
+  var profitPercent = revenue ? (grossProfit / revenue) * 100 : 0;
+  return {
+    revenue: Number(revenue.toFixed(3)),
+    cost: Number(cost.toFixed(3)),
+    taxAmount: Number(taxAmount.toFixed(3)),
+    grandTotal: Number(grandTotal.toFixed(3)),
+    grossProfit: Number(grossProfit.toFixed(3)),
+    profitPercent: Number(profitPercent.toFixed(2))
+  };
+}
+
+function invoiceLinesFromTariff(shipmentItem, tariffItem) {
+  var chargeableWeight = Number(shipmentItem?.manualChargeableKg || shipmentItem?.chargeableKg || shipmentItem?.actualKg || 0);
+  var baseRate = Number(tariffItem?.rate || 0);
+  var baseAmount = Math.max(Number(tariffItem?.minCharge || 0), chargeableWeight * baseRate);
+  var lines = [{
+    id: 'tariff-base',
+    source: 'tariff-base',
+    description: tariffItem?.customer || 'Freight Charge',
+    unit: 'KG',
+    qty: chargeableWeight || 1,
+    rate: baseRate,
+    amount: baseAmount,
+    cost: Number(tariffItem?.supplierCost || 0),
+    remarks: '',
+    chargeableWeight: chargeableWeight,
+    tariffNo: tariffItem?.tariffNo || '',
+    tariffName: tariffItem?.customer || ''
+  }];
+  var extras = parseTariffChargeLines(tariffItem?.additionalChargesJson || '[]').map((line, index) => ({
+    id: 'tariff-extra-' + (index + 1),
+    source: 'tariff-extra',
+    description: line.description || '',
+    unit: 'Unit',
+    qty: Number(line.units || 1),
+    rate: Number(line.quotation || 0),
+    amount: Number(line.total || Number(line.quotation || 0) * Number(line.units || 0)),
+    cost: Number(line.cost || 0),
+    remarks: String(line.remarks || ''),
+    chargeableWeight: chargeableWeight,
+    tariffNo: tariffItem?.tariffNo || '',
+    tariffName: tariffItem?.customer || ''
+  }));
+  return lines.concat(extras);
+}
+
+function invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent) {
+  var summary = invoiceTotals(lines, taxPercent);
+  return {
+    customerCode: shipmentItem?.customerCode || '',
+    customerName: shipmentItem?.customer || '',
+    shipmentNo: shipmentItem?.jobNo || '',
+    tariffNo: tariffItem?.tariffNo || '',
+    tariffName: tariffItem?.customer || '',
+    chargeableWeight: Number(shipmentItem?.chargeableKg || shipmentItem?.manualChargeableKg || shipmentItem?.actualKg || 0),
+    grossWeight: Number(shipmentItem?.actualKg || 0),
+    volumeWeight: Number(shipmentItem?.cbm || 0),
+    lines: lines,
+    taxPercent: Number(taxPercent || 0),
+    revenue: summary.revenue,
+    cost: summary.cost,
+    taxAmount: summary.taxAmount,
+    grandTotal: summary.grandTotal,
+    grossProfit: summary.grossProfit,
+    profitPercent: summary.profitPercent
+  };
+}
+
+function invoiceLineTable(lines, canEditCost) {
+  var rows = lines.length ? lines.map((line, index) => {
+    return '<tr>' +
+      '<td>' + (index + 1) + '</td>' +
+      '<td><input data-invoice-line-field="description" data-line-index="' + index + '" value="' + escapeHtml(line.description || '') + '" /></td>' +
+      '<td><input data-invoice-line-field="unit" data-line-index="' + index + '" value="' + escapeHtml(line.unit || '') + '" /></td>' +
+      '<td><input data-invoice-line-field="qty" data-line-index="' + index + '" type="number" step="0.001" value="' + escapeHtml(line.qty ?? 0) + '" /></td>' +
+      '<td><input data-invoice-line-field="rate" data-line-index="' + index + '" type="number" step="0.001" value="' + escapeHtml(line.rate ?? 0) + '" /></td>' +
+      '<td><input data-invoice-line-field="amount" data-line-index="' + index + '" type="number" step="0.001" value="' + escapeHtml(invoiceLineAmount(line)) + '" /></td>' +
+      '<td><input data-invoice-line-field="cost" data-line-index="' + index + '" type="number" step="0.001" ' + (canEditCost ? '' : 'readonly') + ' value="' + escapeHtml(line.cost ?? 0) + '" /></td>' +
+      '<td><input data-invoice-line-field="remarks" data-line-index="' + index + '" value="' + escapeHtml(line.remarks || '') + '" /></td>' +
+      '<td><button type="button" class="ghost-button" data-remove-invoice-line="' + index + '">Remove</button></td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="9" class="empty-state">No tariff lines loaded yet.</td></tr>';
+  return '<div class="table-wrap"><table class="tariff-charges-table invoice-lines-table"><thead><tr><th>Sr no</th><th>Description</th><th>Unit</th><th>Qty</th><th>Rate</th><th>Amount</th><th>Cost</th><th>Remarks</th><th>Button</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function invoicePreviewSummary(summary) {
+  return '<section class="summary-card invoice-summary">' +
+    '<div><span>Revenue</span><strong>' + money(summary.revenue) + '</strong></div>' +
+    '<div><span>Cost</span><strong>' + money(summary.cost) + '</strong></div>' +
+    '<div><span>Tax</span><strong>' + money(summary.taxAmount) + '</strong></div>' +
+    '<div><span>Gross Profit</span><strong>' + money(summary.grossProfit) + '</strong></div>' +
+    '<div><span>Profit %</span><strong>' + money(summary.profitPercent) + '%</strong></div>' +
+    '<div><span>Grand Total</span><strong>' + money(summary.grandTotal) + '</strong></div>' +
+  '</section>';
+}
+
+function invoicePreviewMeta(shipmentItem, tariffItem) {
+  return '<div class="tariff-preview-meta">' +
+    '<div><span>Shipment</span><strong>' + escapeHtml(shipmentItem?.jobNo || '') + '</strong></div>' +
+    '<div><span>Customer</span><strong>' + escapeHtml(shipmentItem?.customer || '') + '</strong></div>' +
+    '<div><span>Tariff</span><strong>' + escapeHtml(tariffItem?.tariffNo || '') + '</strong></div>' +
+    '<div><span>Weights</span><strong>' + escapeHtml([shipmentItem?.actualKg, shipmentItem?.cbm].filter(Boolean).join(' / ')) + '</strong></div>' +
+  '</div>';
+}
+
+function invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, canEditCost) {
+  var summary = invoiceTotals(lines, taxPercent);
+  return '<section class="invoice-preview-shell">' +
+    invoicePreviewMeta(shipmentItem, tariffItem) +
+    invoicePreviewSummary(summary) +
+    invoiceLineTable(lines, canEditCost) +
+    '<div class="action-row"><button type="button" class="secondary-button" data-add-invoice-line>Add Charge</button></div>' +
+  '</section>';
+}
 function tariffSelectionOptions() {
   return visibleRows(state.tariffs).map((row) => ({
     value: row.tariffNo,
@@ -4627,8 +4804,14 @@ function tariffPreviewHtml(tariffs, emptyText = "Select a tariff to view full de
 }
 
 function updateTariffPreview(scope, tariffs, emptyText) {
-  const container = dialogBody.querySelector(`[data-tariff-preview='${CSS.escape(scope)}']`);
+  const container = dialogBody.querySelector('[data-tariff-preview="' + scope + '"]');
   if (!container) return;
+  if (scope === 'invoice') {
+    const invoiceLinesField = dialogBody.querySelector('input[name="invoiceLinesJson"]');
+    const taxPercentField = dialogBody.querySelector('input[name="taxPercent"]');
+    container.innerHTML = invoicePreviewMarkup(null, tariffs[0] || null, parseInvoiceLineItems(invoiceLinesField?.value || '[]'), Number(taxPercentField?.value || 0), isAdminSession());
+    return;
+  }
   container.innerHTML = tariffPreviewHtml(tariffs, emptyText);
 }
 
@@ -4712,33 +4895,253 @@ function collectFormValues(form) {
 }
 
 function bindInvoiceShipmentTariff() {
-  const shipmentField = dialogBody.querySelector("input[name='shipmentNo']");
-  const customerField = dialogBody.querySelector("input[name='customer']");
-  const tariffField = dialogBody.querySelector("input[name='tariffNo']");
-  const revenueField = dialogBody.querySelector("input[name='revenue']");
-  const supplierCostField = dialogBody.querySelector("input[name='supplierCost']");
-  if (!shipmentField && !tariffField) return;
+  const customerField = dialogBody.querySelector('input[name="customer"]');
+  const shipmentField = dialogBody.querySelector('input[name="shipmentNo"]');
+  const tariffField = dialogBody.querySelector('input[name="tariffNo"]');
+  const taxPercentField = dialogBody.querySelector('input[name="taxPercent"]');
+  const invoiceLinesField = dialogBody.querySelector('input[name="invoiceLinesJson"]');
+  const tariffSnapshotField = dialogBody.querySelector('input[name="tariffSnapshotJson"]');
+  const invoiceSnapshotField = dialogBody.querySelector('input[name="invoiceSnapshotJson"]');
+  const totalCostField = dialogBody.querySelector('input[name="totalCost"]');
+  const supplierCostField = dialogBody.querySelector('input[name="supplierCost"]');
+  const revenueField = dialogBody.querySelector('input[name="revenue"]');
+  const grandTotalField = dialogBody.querySelector('input[name="grandTotal"]');
+  const profitPercentField = dialogBody.querySelector('input[name="profitPercent"]');
+  const taxAmountField = dialogBody.querySelector('input[name="taxAmount"]');
+  const chargeableWeightField = dialogBody.querySelector('input[name="chargeableWeight"]');
+  const grossWeightField = dialogBody.querySelector('input[name="grossWeight"]');
+  const volumeWeightField = dialogBody.querySelector('input[name="volumeWeight"]');
+  const tariffNameField = dialogBody.querySelector('input[name="tariffName"]');
+  const previewContainer = dialogBody.querySelector('[data-tariff-preview="invoice"]');
+  const shipmentDatalist = shipmentField?.getAttribute('list') ? dialogBody.querySelector('#' + shipmentField.getAttribute('list') + 'Options') : null;
+  const tariffDatalist = tariffField?.getAttribute('list') ? dialogBody.querySelector('#' + tariffField.getAttribute('list') + 'Options') : null;
+  let lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
 
-  const sync = () => {
-    const shipmentItem = state.shipments.find((row) => row.jobNo === shipmentField?.value);
-    const selectedTariff = state.tariffs.find((row) => String(row.tariffNo || "").trim().toLowerCase() === String(tariffField?.value || "").trim().toLowerCase());
-    const tariffItem = selectedTariff || assignedTariffForShipment(shipmentItem);
-    if (shipmentItem) {
-      if (customerField) customerField.value = shipmentItem.customer || "";
-      if (tariffField && !selectedTariff) tariffField.value = shipmentItem.tariffNo || tariffItem?.tariffNo || "";
-      if (supplierCostField) supplierCostField.value = numericInputValue(shipmentItem.buyCost || 0);
+  const selectedShipment = () => state.shipments.find((row) => String(row.jobNo || '').trim().toLowerCase() === String(shipmentField?.value || '').trim().toLowerCase()) || null;
+  const selectedTariff = () => state.tariffs.find((row) => String(row.tariffNo || '').trim().toLowerCase() === String(tariffField?.value || '').trim().toLowerCase()) || assignedTariffForShipment(selectedShipment()) || null;
+
+  const syncDatalist = () => {
+    if (shipmentDatalist) {
+      const shipments = invoiceShipmentsForCustomer(customerField?.value || '');
+      shipmentDatalist.innerHTML = shipments.map((option) => '<option value="' + escapeHtml(option.jobNo || '') + '" label="' + escapeHtml(option.jobNo + ' - ' + (option.customer || '')) + '"></option>').join('');
     }
-    if (revenueField && tariffItem) revenueField.value = numericInputValue(tariffItem.grandTotal || shipmentItem?.sell || 0);
-    updateTariffPreview("invoice", [tariffItem], "Select a shipment or tariff number to view full tariff details.");
+    if (tariffDatalist) {
+      const tariffs = invoiceTariffsForCustomer(customerField?.value || '');
+      tariffDatalist.innerHTML = tariffs.map((option) => '<option value="' + escapeHtml(option.tariffNo || '') + '" label="' + escapeHtml(option.tariffNo + ' - ' + (option.customer || '')) + '"></option>').join('');
+    }
   };
 
-  shipmentField?.addEventListener("input", sync);
-  shipmentField?.addEventListener("change", sync);
-  tariffField?.addEventListener("input", sync);
-  tariffField?.addEventListener("change", sync);
-  sync();
+  const syncInvoice = () => {
+    const shipmentItem = selectedShipment();
+    const tariffItem = selectedTariff();
+    const taxPercent = Number(taxPercentField?.value || 0);
+    if (shipmentItem) {
+      customerField.value = shipmentItem.customer || shipmentItem.customerName || customerField.value || '';
+      if (chargeableWeightField) chargeableWeightField.value = Number(shipmentItem.manualChargeableKg || shipmentItem.chargeableKg || shipmentItem.actualKg || 0);
+      if (grossWeightField) grossWeightField.value = Number(shipmentItem.actualKg || 0);
+      if (volumeWeightField) volumeWeightField.value = Number(shipmentItem.cbm || 0);
+    }
+    if (tariffItem && tariffNameField) tariffNameField.value = tariffItem.customer || '';
+    if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
+    const summary = invoiceTotals(lines, taxPercent);
+    if (revenueField) revenueField.value = summary.revenue;
+    if (supplierCostField) supplierCostField.value = summary.cost;
+    if (totalCostField) totalCostField.value = summary.cost;
+    if (taxAmountField) taxAmountField.value = summary.taxAmount;
+    if (grandTotalField) grandTotalField.value = summary.grandTotal;
+    if (profitPercentField) profitPercentField.value = summary.profitPercent;
+    if (invoiceLinesField) invoiceLinesField.value = JSON.stringify(lines);
+    if (tariffSnapshotField) tariffSnapshotField.value = JSON.stringify(tariffItem || {});
+    if (invoiceSnapshotField) invoiceSnapshotField.value = JSON.stringify(invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent));
+    if (previewContainer) previewContainer.innerHTML = invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, isAdminSession());
+  };
+
+  const loadSelection = () => {
+    const shipmentItem = selectedShipment();
+    const tariffItem = selectedTariff();
+    if (shipmentItem && !customerField.value) customerField.value = shipmentItem.customer || shipmentItem.customerName || '';
+    if (shipmentItem && tariffField && !tariffField.value && tariffItem) tariffField.value = tariffItem.tariffNo || '';
+    lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
+    if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
+    syncDatalist();
+    syncInvoice();
+  };
+
+  const updateLineValue = (index, field, value) => {
+    const line = lines[index];
+    if (!line) return;
+    line[field] = field === 'qty' || field === 'rate' || field === 'amount' || field === 'cost' ? Number(value || 0) : value;
+    if (field === 'amount' && !value) line.amount = invoiceLineAmount(line);
+    syncInvoice();
+  };
+
+  dialogBody.addEventListener('input', (event) => {
+    const target = event.target;
+    if (target === customerField || target === shipmentField || target === tariffField || target === taxPercentField) {
+      syncDatalist();
+      lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
+      if (!lines.length) {
+        const shipmentItem = selectedShipment();
+        const tariffItem = selectedTariff();
+        if (tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
+      }
+      syncInvoice();
+      return;
+    }
+    const lineIndex = target?.dataset?.lineIndex;
+    const lineField = target?.dataset?.invoiceLineField;
+    if (lineIndex !== undefined && lineField) {
+      updateLineValue(Number(lineIndex), lineField, target.value);
+    }
+  });
+
+  dialogBody.addEventListener('click', (event) => {
+    const addButton = event.target.closest('[data-add-invoice-line]');
+    if (addButton) {
+      lines.push({ id: 'manual-' + Date.now(), source: 'manual', description: '', unit: 'Unit', qty: 1, rate: 0, amount: 0, cost: 0, remarks: '' });
+      syncInvoice();
+      return;
+    }
+    const removeButton = event.target.closest('[data-remove-invoice-line]');
+    if (removeButton) {
+      lines.splice(Number(removeButton.dataset.removeInvoiceLine), 1);
+      syncInvoice();
+    }
+  });
+
+  syncDatalist();
+  syncInvoice();
+}
+function collectFormValues(form) {
+  const formData = new FormData(form);
+  const data = Object.fromEntries(formData.entries());
+  if (form.querySelectorAll("input[name='sectionAccessList']").length) {
+    data.sectionAccess = normalizeSectionAccess(formData.getAll("sectionAccessList").join(", ") || "Dashboard");
+  }
+  form.querySelectorAll("input[type='checkbox'][name]").forEach((input) => {
+    if (input.name === "sectionAccessList") return;
+    data[input.name] = input.checked;
+  });
+  return data;
 }
 
+function bindInvoiceShipmentTariff() {
+  const customerField = dialogBody.querySelector('input[name="customer"]');
+  const shipmentField = dialogBody.querySelector('input[name="shipmentNo"]');
+  const tariffField = dialogBody.querySelector('input[name="tariffNo"]');
+  const taxPercentField = dialogBody.querySelector('input[name="taxPercent"]');
+  const invoiceLinesField = dialogBody.querySelector('input[name="invoiceLinesJson"]');
+  const tariffSnapshotField = dialogBody.querySelector('input[name="tariffSnapshotJson"]');
+  const invoiceSnapshotField = dialogBody.querySelector('input[name="invoiceSnapshotJson"]');
+  const totalCostField = dialogBody.querySelector('input[name="totalCost"]');
+  const supplierCostField = dialogBody.querySelector('input[name="supplierCost"]');
+  const revenueField = dialogBody.querySelector('input[name="revenue"]');
+  const grandTotalField = dialogBody.querySelector('input[name="grandTotal"]');
+  const profitPercentField = dialogBody.querySelector('input[name="profitPercent"]');
+  const taxAmountField = dialogBody.querySelector('input[name="taxAmount"]');
+  const chargeableWeightField = dialogBody.querySelector('input[name="chargeableWeight"]');
+  const grossWeightField = dialogBody.querySelector('input[name="grossWeight"]');
+  const volumeWeightField = dialogBody.querySelector('input[name="volumeWeight"]');
+  const tariffNameField = dialogBody.querySelector('input[name="tariffName"]');
+  const previewContainer = dialogBody.querySelector('[data-tariff-preview="invoice"]');
+  const shipmentDatalist = shipmentField?.getAttribute('list') ? dialogBody.querySelector('#' + shipmentField.getAttribute('list') + 'Options') : null;
+  const tariffDatalist = tariffField?.getAttribute('list') ? dialogBody.querySelector('#' + tariffField.getAttribute('list') + 'Options') : null;
+  let lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
+
+  const selectedShipment = () => state.shipments.find((row) => String(row.jobNo || '').trim().toLowerCase() === String(shipmentField?.value || '').trim().toLowerCase()) || null;
+  const selectedTariff = () => state.tariffs.find((row) => String(row.tariffNo || '').trim().toLowerCase() === String(tariffField?.value || '').trim().toLowerCase()) || assignedTariffForShipment(selectedShipment()) || null;
+
+  const syncDatalist = () => {
+    if (shipmentDatalist) {
+      const shipments = invoiceShipmentsForCustomer(customerField?.value || '');
+      shipmentDatalist.innerHTML = shipments.map((option) => '<option value="' + escapeHtml(option.jobNo || '') + '" label="' + escapeHtml(option.jobNo + ' - ' + (option.customer || '')) + '"></option>').join('');
+    }
+    if (tariffDatalist) {
+      const tariffs = invoiceTariffsForCustomer(customerField?.value || '');
+      tariffDatalist.innerHTML = tariffs.map((option) => '<option value="' + escapeHtml(option.tariffNo || '') + '" label="' + escapeHtml(option.tariffNo + ' - ' + (option.customer || '')) + '"></option>').join('');
+    }
+  };
+
+  const syncInvoice = () => {
+    const shipmentItem = selectedShipment();
+    const tariffItem = selectedTariff();
+    const taxPercent = Number(taxPercentField?.value || 0);
+    if (shipmentItem) {
+      customerField.value = shipmentItem.customer || shipmentItem.customerName || customerField.value || '';
+      if (chargeableWeightField) chargeableWeightField.value = Number(shipmentItem.manualChargeableKg || shipmentItem.chargeableKg || shipmentItem.actualKg || 0);
+      if (grossWeightField) grossWeightField.value = Number(shipmentItem.actualKg || 0);
+      if (volumeWeightField) volumeWeightField.value = Number(shipmentItem.cbm || 0);
+    }
+    if (tariffItem && tariffNameField) tariffNameField.value = tariffItem.customer || '';
+    if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
+    const summary = invoiceTotals(lines, taxPercent);
+    if (revenueField) revenueField.value = summary.revenue;
+    if (supplierCostField) supplierCostField.value = summary.cost;
+    if (totalCostField) totalCostField.value = summary.cost;
+    if (taxAmountField) taxAmountField.value = summary.taxAmount;
+    if (grandTotalField) grandTotalField.value = summary.grandTotal;
+    if (profitPercentField) profitPercentField.value = summary.profitPercent;
+    if (invoiceLinesField) invoiceLinesField.value = JSON.stringify(lines);
+    if (tariffSnapshotField) tariffSnapshotField.value = JSON.stringify(tariffItem || {});
+    if (invoiceSnapshotField) invoiceSnapshotField.value = JSON.stringify(invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent));
+    if (previewContainer) previewContainer.innerHTML = invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, isAdminSession());
+  };
+
+  const loadSelection = () => {
+    const shipmentItem = selectedShipment();
+    const tariffItem = selectedTariff();
+    if (shipmentItem && !customerField.value) customerField.value = shipmentItem.customer || shipmentItem.customerName || '';
+    if (shipmentItem && tariffField && !tariffField.value && tariffItem) tariffField.value = tariffItem.tariffNo || '';
+    lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
+    if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
+    syncDatalist();
+    syncInvoice();
+  };
+
+  const updateLineValue = (index, field, value) => {
+    const line = lines[index];
+    if (!line) return;
+    line[field] = field === 'qty' || field === 'rate' || field === 'amount' || field === 'cost' ? Number(value || 0) : value;
+    if (field === 'amount' && !value) line.amount = invoiceLineAmount(line);
+    syncInvoice();
+  };
+
+  dialogBody.addEventListener('input', (event) => {
+    const target = event.target;
+    if (target === customerField || target === shipmentField || target === tariffField || target === taxPercentField) {
+      syncDatalist();
+      lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
+      if (!lines.length) {
+        const shipmentItem = selectedShipment();
+        const tariffItem = selectedTariff();
+        if (tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
+      }
+      syncInvoice();
+      return;
+    }
+    const lineIndex = target?.dataset?.lineIndex;
+    const lineField = target?.dataset?.invoiceLineField;
+    if (lineIndex !== undefined && lineField) {
+      updateLineValue(Number(lineIndex), lineField, target.value);
+    }
+  });
+
+  dialogBody.addEventListener('click', (event) => {
+    const addButton = event.target.closest('[data-add-invoice-line]');
+    if (addButton) {
+      lines.push({ id: 'manual-' + Date.now(), source: 'manual', description: '', unit: 'Unit', qty: 1, rate: 0, amount: 0, cost: 0, remarks: '' });
+      syncInvoice();
+      return;
+    }
+    const removeButton = event.target.closest('[data-remove-invoice-line]');
+    if (removeButton) {
+      lines.splice(Number(removeButton.dataset.removeInvoiceLine), 1);
+      syncInvoice();
+    }
+  });
+
+  loadSelection();
+}
 function assignedTariffForShipment(shipmentItem) {
   return state.tariffs.find((row) => row.tariffNo === shipmentItem?.tariffNo)
     || state.tariffs.find((row) => row.customer === shipmentItem?.customer && row.origin === shipmentItem?.origin && row.destination === shipmentItem?.destination)
