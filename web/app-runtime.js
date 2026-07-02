@@ -556,7 +556,7 @@ function invoiceDialogBody(record = {}) {
   const revenue = Number(record.revenue ?? snapshot.revenue ?? invoiceTotals(lines, taxPercent).revenue);
   const supplierCost = Number(record.supplierCost ?? record.totalCost ?? snapshot.cost ?? invoiceTotals(lines, taxPercent).cost);
   const totals = invoiceTotals(lines, taxPercent);
-  return
+  return (
     input('customer', 'Customer', record.customer || shipmentItem?.customer || '') +
     selectFrom('shipmentNo', 'Shipment No', invoiceShipmentOptions(record.customer || shipmentItem?.customer || ''), record.shipmentNo || shipmentItem?.jobNo || '') +
     selectFrom('tariffNo', 'Tariff No', invoiceTariffOptions(record.customer || shipmentItem?.customer || ''), record.tariffNo || tariffItem?.tariffNo || '') +
@@ -578,8 +578,10 @@ function invoiceDialogBody(record = {}) {
     input('date', 'Date', record.date || today(), false, 'date') +
     '<input type="hidden" name="invoiceLinesJson" value="' + escapeHtml(record.invoiceLinesJson || JSON.stringify(lines)) + '" />' +
     '<input type="hidden" name="tariffSnapshotJson" value="' + escapeHtml(record.tariffSnapshotJson || JSON.stringify(tariffItem || {})) + '" />' +
-    '<input type="hidden" name="invoiceSnapshotJson" value="' + escapeHtml(record.invoiceSnapshotJson || JSON.stringify(snapshot || invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent))) + '" />';
+    '<input type="hidden" name="invoiceSnapshotJson" value="' + escapeHtml(record.invoiceSnapshotJson || JSON.stringify(snapshot || invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent))) + '" />'
+  );
 }
+
 function invoice(invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, createdBy = currentUserName()) {
   return { invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, grossProfit: revenue - supplierCost, createdBy };
 }
