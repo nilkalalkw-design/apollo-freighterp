@@ -3143,7 +3143,7 @@ function selectedNewRecordType(type) {
 }
 
 function handleLoadRecord(type) {
-  const selectedId = selectedRecordId(type);
+  let selectedId = selectedRecordId(type);
 
   if (type === "load") {
     if (!selectedId) {
@@ -3164,6 +3164,11 @@ function handleLoadRecord(type) {
   if (type === "pod") {
     openPodDialog(selectedId);
     return;
+  }
+
+  if (!selectedId) {
+    const fallback = collectionFor(type)[0];
+    selectedId = fallback ? rowId(type, fallback) : "";
   }
 
   if (selectedId) {

@@ -558,8 +558,8 @@ function invoiceDialogBody(record = {}) {
   const totals = invoiceTotals(lines, taxPercent);
   return (
     input('customer', 'Customer', record.customer || shipmentItem?.customer || '') +
-    selectFrom('shipmentNo', 'Shipment No', invoiceShipmentOptions(record.customer || shipmentItem?.customer || ''), record.shipmentNo || shipmentItem?.jobNo || '') +
-    selectFrom('tariffNo', 'Tariff No', invoiceTariffOptions(record.customer || shipmentItem?.customer || ''), record.tariffNo || tariffItem?.tariffNo || '') +
+    selectFrom('shipmentNo', 'Shipment No', shipmentOptions(), record.shipmentNo || shipmentItem?.jobNo || '') +
+    selectFrom('tariffNo', 'Tariff No', tariffSelectionOptions(), record.tariffNo || tariffItem?.tariffNo || '') +
     tariffPreviewShell('invoice') +
     input('tariffName', 'Tariff Name', tariffName, true) +
     input('chargeableWeight', 'Chargeable Weight', chargeableWeight, true, 'number') +
@@ -3143,7 +3143,7 @@ function selectedNewRecordType(type) {
 }
 
 function handleLoadRecord(type) {
-  const selectedId = selectedRecordId(type);
+  let selectedId = selectedRecordId(type);
 
   if (type === "load") {
     if (!selectedId) {
@@ -3164,6 +3164,11 @@ function handleLoadRecord(type) {
   if (type === "pod") {
     openPodDialog(selectedId);
     return;
+  }
+
+  if (!selectedId) {
+    const fallback = collectionFor(type)[0];
+    selectedId = fallback ? rowId(type, fallback) : "";
   }
 
   if (selectedId) {
