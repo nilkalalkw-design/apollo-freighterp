@@ -749,6 +749,7 @@ function invoiceDialogBody(record = {}) {
   const revenue = Number(record.revenue ?? snapshot.revenue ?? totals.revenue);
   const supplierCost = Number(record.supplierCost ?? record.totalCost ?? snapshot.cost ?? totals.cost);
   return (
+    input('invoiceNo', 'Invoice No', record.invoiceNo || nextInvoiceNumber(), Boolean(record.invoiceNo)) +
     selectFrom('customer', 'Customer', invoiceCustomerOptions(), customerName) +
     selectFrom('shipmentNo', 'Shipment No', invoiceShipmentOptionsForCustomer(customerName), record.shipmentNo || shipmentItem?.jobNo || '') +
     selectFrom('tariffNo', 'Tariff No', invoiceTariffOptionsForCustomer(customerName), record.tariffNo || tariffItem?.tariffNo || '') +
@@ -6806,8 +6807,9 @@ function chargeLineRef(baseRef, index, count) {
 }
 
 async function createInvoice(data) {
-  if (duplicateRecordExists("invoice", data.invoiceNo)) {
-    notifyDuplicate(data.invoiceNo);
+  const invoiceNo = String(data.invoiceNo || nextInvoiceNumber()).trim();
+  if (duplicateRecordExists("invoice", invoiceNo)) {
+    notifyDuplicate(invoiceNo);
     return false;
   }
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
@@ -6816,7 +6818,7 @@ async function createInvoice(data) {
   const lines = parseInvoiceLineItems(data.invoiceLinesJson || JSON.stringify(invoiceLinesFromTariff(shipmentItem, tariffItem, chargeableWeight)));
   const totals = invoiceTotals(lines, Number(data.taxPercent || 0));
   const customer = shipmentItem?.customer || data.customer;
-  const record = invoice(data.invoiceNo, customer, data.shipmentNo, Number(data.revenue || totals.revenue || 0), Number(data.supplierCost || data.totalCost || totals.cost || 0), data.status || "Draft", data.date || today());
+  const record = invoice(invoiceNo, customer, data.shipmentNo, Number(data.revenue || totals.revenue || 0), Number(data.supplierCost || data.totalCost || totals.cost || 0), data.status || "Draft", data.date || today());
   Object.assign(record, {
     customerCode: shipmentItem?.customerCode || data.customerCode || "",
     tariffNo: data.tariffNo || tariffItem?.tariffNo || "",
@@ -6833,9 +6835,9 @@ async function createInvoice(data) {
   });
   state.invoices.unshift(record);
   await postRecord("invoice", record);
-  if (shipmentItem) shipmentItem.invoiceStatus = data.invoiceNo;
-  addHistory("Generated invoice", data.invoiceNo);
-  notifySuccess("Invoice saved", data.invoiceNo + " was saved successfully.");
+  if (shipmentItem) shipmentItem.invoiceStatus = invoiceNo;
+  addHistory("Generated invoice", invoiceNo);
+  notifySuccess("Invoice saved", invoiceNo + " was saved successfully.");
   return true;
 }
 
