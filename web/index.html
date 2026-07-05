@@ -41,10 +41,12 @@
                   <button type="button" class="password-toggle" data-toggle-password aria-label="Show password" title="Show password">View</button>
                 </span>
               </label>
-              <label class="checkbox-field">
-                <input id="customerLoginMode" type="checkbox" name="customerLoginMode" value="customer" />
-                <span>Customer login system</span>
-              </label>
+              <div class="login-mode-switch" role="group" aria-label="Login mode">
+                <button type="button" class="login-mode-button is-active" data-login-mode-option="company" aria-pressed="true">Company Portal</button>
+                <button type="button" class="login-mode-button" data-login-mode-option="customer" aria-pressed="false">Customer Portal</button>
+              </div>
+              <input id="customerLoginMode" type="checkbox" name="customerLoginMode" value="customer" class="is-hidden" aria-hidden="true" tabindex="-1" />
+              <p class="login-mode-help">Choose Customer Portal to sign in with the customer user ID created in Company Portal.</p>
               <p id="loginMessage" class="form-message" role="status"></p>
               <button type="submit">Login</button>
             </form>

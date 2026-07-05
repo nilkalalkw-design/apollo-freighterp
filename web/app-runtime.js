@@ -493,7 +493,194 @@ function party(code, name, locationOrLane, email, terms, status, isAccountOverdu
 }
 
 function tariff(tariffNo, customer, origin, destination, mainSection, weightSection, minUpTo, rate, minCharge, additionalChargesJson = "[]", additionalChargesTotal = 0, grandTotal = 0, createdBy = currentUserName()) {
-  return { tariffNo, customer, origin, destination, mainSection, weightSection, minUpTo, rate, minCharge, additionalChargesJson, additionalChargesTotal, grandTotal: grandTotal || Number(minCharge || 0) + Number(additionalChargesTotal || 0), volumetricDivisor: 5000, effectiveFrom: "2026-01-01", effectiveTo: "2026-12-31", status: "Active", createdBy };
+  const weightRates = normalizeTariffWeightRates({ minimum: rate, upTo100: rate, upTo300: rate, upTo500: rate, upTo1000: rate, more: rate }, Number(rate || 0));
+  return {
+    tariffNo,
+    customer,
+    origin,
+    destination,
+    mainSection,
+    weightSection: weightSection || "Table",
+    minUpTo: minUpTo || "",
+    rate: tariffPrimaryRate(weightRates),
+    minCharge: Number(minCharge || 0),
+    additionalChargesJson,
+    additionalChargesTotal: Number(additionalChargesTotal || 0),
+    grandTotal: Number(grandTotal || Number(minCharge || 0) + Number(additionalChargesTotal || 0)),
+    weightRatesJson: JSON.stringify(weightRates),
+    currency: "KD",
+    rateType: "Per KG",
+    volumetricDivisor: 5000,
+    effectiveFrom: "2026-01-01",
+    effectiveTo: "2026-12-31",
+    status: "Active",
+    createdBy
+  };
+}
+
+function tariffWeightBandDefinitions() {
+  return [
+    { key: "minimum", label: "Minimum", max: 0 },
+    { key: "upTo100", label: "Up to 100", max: 100 },
+    { key: "upTo300", label: "300", max: 300 },
+    { key: "upTo500", label: "500", max: 500 },
+    { key: "upTo1000", label: "1000", max: 1000 },
+    { key: "more", label: "More", max: Infinity }
+  ];
+}
+
+function tariffWeightBandKeys() {
+  return tariffWeightBandDefinitions().map((band) => band.key);
+}
+
+function normalizeTariffWeightRates(value, fallbackRate = 0) {
+  let parsed = value;
+  if (typeof parsed === "string") {
+    try { parsed = JSON.parse(parsed || "{}"); } catch { parsed = {}; }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) parsed = {};
+  const fallback = Number(fallbackRate || parsed.rate || 0);
+  const rates = {};
+  tariffWeightBandKeys().forEach((key) => {
+    const raw = parsed[key];
+    rates[key] = raw === undefined || raw === null || raw === "" ? fallback : Number(raw || 0);
+  });
+  if (tariffWeightBandKeys().every((key) => Number(rates[key] || 0) === 0) && fallback > 0) {
+    tariffWeightBandKeys().forEach((key) => { rates[key] = fallback; });
+  }
+  return rates;
+}
+
+function tariffWeightBandForWeight(weight) {
+  const numeric = Number(weight || 0);
+  if (numeric <= 0) return tariffWeightBandDefinitions()[0];
+  if (numeric <= 100) return tariffWeightBandDefinitions()[1];
+  if (numeric <= 300) return tariffWeightBandDefinitions()[2];
+  if (numeric <= 500) return tariffWeightBandDefinitions()[3];
+  if (numeric <= 1000) return tariffWeightBandDefinitions()[4];
+  return tariffWeightBandDefinitions()[5];
+}
+
+function tariffWeightRateLookup(tariffItem, chargeableWeight) {
+  const rates = normalizeTariffWeightRates(tariffItem?.weightRatesJson || tariffItem?.weight_rates_json || {}, Number(tariffItem?.rate || 0));
+  const band = tariffWeightBandForWeight(chargeableWeight);
+  return { rates, band, rate: Number(rates[band.key] || 0) };
+}
+
+function tariffPrimaryRate(rates) {
+  const normalized = normalizeTariffWeightRates(rates || {}, 0);
+  for (const band of tariffWeightBandDefinitions()) {
+    const value = Number(normalized[band.key] || 0);
+    if (Number.isFinite(value) && value > 0) return Number(value.toFixed(3));
+  }
+  return 0;
+}
+
+function tariffPricingForWeight(tariffItem, chargeableWeight) {
+  if (!tariffItem) return { rates: normalizeTariffWeightRates({}, 0), band: tariffWeightBandForWeight(chargeableWeight), rate: 0, freight: 0, additional: 0, revenue: 0 };
+  const lookup = tariffWeightRateLookup(tariffItem, chargeableWeight);
+  const freight = Math.max(Number(tariffItem.minCharge || 0), Number(chargeableWeight || 0) * lookup.rate);
+  const additional = Number(tariffItem.additionalChargesTotal || 0);
+  return { ...lookup, freight: Number(freight.toFixed(3)), additional: Number(additional.toFixed(3)), revenue: Number((freight + additional).toFixed(3)) };
+}
+
+function buildTariffRecord(data = {}, existing = {}) {
+  const source = { ...existing, ...data };
+  const weightRates = normalizeTariffWeightRates(source.weightRatesJson || source.weight_rates_json || {}, Number(source.rate || 0));
+  const weightRatesJson = JSON.stringify(weightRates);
+  const minCharge = Number(source.minCharge ?? source.min_charge ?? 0);
+  const additionalChargesTotal = Number(source.additionalChargesTotal ?? source.additional_charges_total ?? 0);
+  const grandTotal = Number(source.grandTotal ?? source.grand_total ?? (minCharge + additionalChargesTotal));
+  return {
+    tariffNo: String(source.tariffNo || source.tariff_no || ""),
+    customer: String(source.customer || ""),
+    origin: String(source.origin || ""),
+    destination: String(source.destination || ""),
+    mainSection: String(source.mainSection || source.main_section || "FTL"),
+    weightSection: String(source.weightSection || source.weight_section || "Table"),
+    minUpTo: "",
+    rate: tariffPrimaryRate(weightRates),
+    minCharge,
+    additionalChargesJson: source.additionalChargesJson || source.additional_charges_json || "[]",
+    additionalChargesTotal,
+    grandTotal,
+    weightRatesJson,
+    currency: String(source.currency || "KD"),
+    rateType: String(source.rateType || source.rate_type || "Per KG"),
+    volumetricDivisor: Number(source.volumetricDivisor || source.volumetric_divisor || 5000),
+    effectiveFrom: String(source.effectiveFrom || source.effective_from || today()).slice(0, 10),
+    effectiveTo: String(source.effectiveTo || source.effective_to || today()).slice(0, 10),
+    status: String(source.status || "Active"),
+    createdBy: String(source.createdBy || source.created_by || currentUserName())
+  };
+}
+
+function tariffWeightRateTableHtml(tariffItem = {}, options = {}) {
+  const editable = Boolean(options.editable);
+  const selectedBand = options.selectedWeight === undefined || options.selectedWeight === null || options.selectedWeight === "" ? null : tariffWeightBandForWeight(options.selectedWeight);
+  const rates = normalizeTariffWeightRates(tariffItem.weightRatesJson || tariffItem.weight_rates_json || {}, Number(tariffItem.rate || 0));
+  const bands = tariffWeightBandDefinitions();
+  const header = bands.map((band) => "<th>" + escapeHtml(band.label) + "</th>").join("");
+  const cells = bands.map((band) => {
+    const selected = selectedBand && selectedBand.key === band.key ? " is-selected" : "";
+    const value = Number(rates[band.key] || 0);
+    if (editable) return "<td class=\"tariff-weight-cell" + selected + "\"><input type=\"number\" step=\"0.001\" min=\"0\" data-tariff-weight-rate=\"" + escapeHtml(band.key) + "\" value=\"" + escapeHtml(numericInputValue(value)) + "\" /></td>";
+    return "<td class=\"tariff-weight-cell" + selected + "\"><strong>" + money(value) + "</strong></td>";
+  }).join("");
+  return "<div class=\"table-wrap tariff-weight-wrap\"><table class=\"tariff-weight-table" + (editable ? " is-editable" : "") + "\"><thead><tr><th></th>" + header + "</tr></thead><tbody><tr><th>Rate</th>" + cells + "</tr></tbody></table></div>";
+}
+
+function tariffWeightRatesBuilder(record = {}) {
+  const weightRatesJson = record.weightRatesJson || record.weight_rates_json || JSON.stringify(normalizeTariffWeightRates({}, Number(record.rate || 0)));
+  const primaryRate = tariffPrimaryRate(weightRatesJson);
+  return "<div class=\"tariff-weight-builder\" data-tariff-weight-builder>" +
+    "<input type=\"hidden\" name=\"weightRatesJson\" value=\"" + escapeHtml(weightRatesJson) + "\" />" +
+    "<input type=\"hidden\" name=\"weightSection\" value=\"Table\" />" +
+    "<input type=\"hidden\" name=\"minUpTo\" value=\"\" />" +
+    "<input type=\"hidden\" name=\"rate\" value=\"" + escapeHtml(String(primaryRate)) + "\" />" +
+    tariffWeightRateTableHtml({ ...record, weightRatesJson }, { editable: true }) +
+  "</div>";
+}
+
+function bindTariffWeightRates() {
+  const builder = dialogBody.querySelector("[data-tariff-weight-builder]");
+  if (!builder) return;
+  const hidden = builder.querySelector("input[name='weightRatesJson']");
+  const rateField = builder.querySelector("input[name='rate']");
+  const inputs = [...builder.querySelectorAll("[data-tariff-weight-rate]")];
+  const sync = () => {
+    const rates = {};
+    inputs.forEach((input) => { rates[input.dataset.tariffWeightRate] = Number(input.value || 0); });
+    if (hidden) hidden.value = JSON.stringify(rates);
+    if (rateField) rateField.value = String(tariffPrimaryRate(rates));
+  };
+  inputs.forEach((input) => { input.addEventListener("input", sync); input.addEventListener("change", sync); });
+  sync();
+}
+
+function tariffDialogBody(record = {}) {
+  const tariffItem = buildTariffRecord(record, record);
+  const tariffNo = tariffItem.tariffNo || nextNumber("TAR", state.tariffs, "tariffNo");
+  return "" +
+    input("tariffNo", "Tariff Number", tariffNo, Boolean(record.tariffNo)) +
+    selectFrom("customer", "Consignee", state.customers.map((row) => row.name), tariffItem.customer) +
+    input("origin", "Origin", tariffItem.origin || "Kuwait City") +
+    input("destination", "Destination", tariffItem.destination || "Riyadh") +
+    selectEditable("mainSection", "Main Section", "mainSection", ["FTL", "LTL"], tariffItem.mainSection || "FTL") +
+    formSection("Weight Section", tariffWeightRatesBuilder(tariffItem), true, true) +
+    selectEditable("currency", "Currency", "currency", currencyOptions(), tariffItem.currency || "KD") +
+    input("minCharge", "Minimum Charge", numericInputValue(tariffItem.minCharge || 0), false, "number") +
+    tariffAdditionalChargesBuilder(tariffItem.additionalChargesJson || "[]");
+}
+
+function tariffPreviewRateSummary(tariffItem, selectedWeight) {
+  const pricing = tariffPricingForWeight(tariffItem, selectedWeight || 0);
+  return [
+    summaryPair("Selected Band", pricing.band.label),
+    summaryPair("Selected Rate", money(pricing.rate)),
+    summaryPair("Minimum Charge", money(tariffItem.minCharge || 0)),
+    summaryPair("Additional Charges", money(tariffItem.additionalChargesTotal || 0))
+  ].join("");
 }
 
 function documentRow(documentNo, linkedNo, type, status, date, owner, fileName = "", createdBy = currentUserName()) {
@@ -550,17 +737,17 @@ function invoiceDialogBody(record = {}) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === record.shipmentNo) || null;
   const tariffItem = assignedTariffForShipment(shipmentItem) || state.tariffs.find((row) => row.tariffNo === record.tariffNo) || null;
   const customerName = record.customer || shipmentItem?.customer || record.customerName || shipmentItem?.customerName || '';
-  const lines = parseInvoiceLineItems(record.invoiceLinesJson || JSON.stringify(invoiceLinesFromTariff(shipmentItem, tariffItem)));
   let snapshot = {};
   try { snapshot = JSON.parse(record.invoiceSnapshotJson || '{}'); } catch {}
   const taxPercent = Number(record.taxPercent ?? snapshot.taxPercent ?? 0);
   const chargeableWeight = Number(record.chargeableWeight ?? snapshot.chargeableWeight ?? effectiveChargeableWeightForShipment(shipmentItem));
   const grossWeight = Number(record.grossWeight ?? snapshot.grossWeight ?? shipmentItem?.actualKg ?? 0);
   const volumeWeight = Number(record.volumeWeight ?? snapshot.volumeWeight ?? shipmentItem?.cbm ?? 0);
+  const lines = parseInvoiceLineItems(record.invoiceLinesJson || JSON.stringify(invoiceLinesFromTariff(shipmentItem, tariffItem, chargeableWeight)));
   const tariffName = record.tariffName || snapshot.tariffName || tariffItem?.customer || '';
-  const revenue = Number(record.revenue ?? snapshot.revenue ?? invoiceTotals(lines, taxPercent).revenue);
-  const supplierCost = Number(record.supplierCost ?? record.totalCost ?? snapshot.cost ?? invoiceTotals(lines, taxPercent).cost);
   const totals = invoiceTotals(lines, taxPercent);
+  const revenue = Number(record.revenue ?? snapshot.revenue ?? totals.revenue);
+  const supplierCost = Number(record.supplierCost ?? record.totalCost ?? snapshot.cost ?? totals.cost);
   return (
     selectFrom('customer', 'Customer', invoiceCustomerOptions(), customerName) +
     selectFrom('shipmentNo', 'Shipment No', invoiceShipmentOptionsForCustomer(customerName), record.shipmentNo || shipmentItem?.jobNo || '') +
@@ -579,7 +766,7 @@ function invoiceDialogBody(record = {}) {
     input('grossProfit', 'Gross Profit', totals.grossProfit, true, 'number') +
     input('profitPercent', 'Profit %', totals.profitPercent, true, 'number') +
     input('grandTotal', 'Grand Total', totals.grandTotal, true, 'number') +
-    select('status', 'Status', ['Draft', 'Approved', 'Sent', 'Paid', 'Overdue']) +
+    select('status', 'Status', ['Draft', 'Approved', 'Sent', 'Paid', 'Overdue'], record.status || 'Draft') +
     input('date', 'Date', record.date || today(), false, 'date') +
     '<input type="hidden" name="invoiceLinesJson" value="' + escapeHtml(record.invoiceLinesJson || JSON.stringify(lines)) + '" />' +
     '<input type="hidden" name="tariffSnapshotJson" value="' + escapeHtml(record.tariffSnapshotJson || JSON.stringify(tariffItem || {})) + '" />' +
@@ -1563,26 +1750,7 @@ function apiSupplier(row) {
 }
 
 function apiTariff(row) {
-  const item = tariff(
-    row.tariff_no,
-    row.customer,
-    row.origin,
-    row.destination,
-    row.main_section,
-    row.weight_section,
-    row.min_up_to || "",
-    Number(row.rate || 0),
-    Number(row.min_charge || 0),
-    row.additional_charges_json || "[]",
-    Number(row.additional_charges_total || 0),
-    Number(row.grand_total || 0),
-    row.created_by || "admin"
-  );
-  item.volumetricDivisor = Number(row.volumetric_divisor || 5000);
-  item.effectiveFrom = String(row.effective_from || today()).slice(0, 10);
-  item.effectiveTo = String(row.effective_to || today()).slice(0, 10);
-  item.status = row.status || "Active";
-  return item;
+  return buildTariffRecord(row, { createdBy: row.created_by || "admin" });
 }
 
 function apiDocument(row) {
@@ -1616,7 +1784,22 @@ function apiAdditionalCharge(row) {
 }
 
 function apiInvoice(row) {
-  return invoice(row.invoice_no, row.customer, row.shipment_no, Number(row.revenue || 0), Number(row.supplier_cost || 0), row.status, String(row.date || today()).slice(0, 10), row.created_by || "admin");
+  const item = invoice(row.invoice_no, row.customer, row.shipment_no, Number(row.revenue || 0), Number(row.supplier_cost || 0), row.status, String(row.date || today()).slice(0, 10), row.created_by || "admin");
+  item.customerCode = row.customer_code || "";
+  item.tariffNo = row.tariff_no || "";
+  item.tariffName = row.tariff_name || "";
+  item.chargeableWeight = Number(row.chargeable_weight || 0);
+  item.totalCost = Number(row.total_cost || row.supplier_cost || 0);
+  item.taxPercent = Number(row.tax_percent || 0);
+  item.taxAmount = Number(row.tax_amount || 0);
+  item.grandTotal = Number(row.grand_total || row.revenue || 0);
+  item.profitPercent = Number(row.profit_percent || 0);
+  item.invoiceLinesJson = row.invoice_lines_json || "[]";
+  item.tariffSnapshotJson = row.tariff_snapshot_json || "{}";
+  item.invoiceSnapshotJson = row.invoice_snapshot_json || "{}";
+  item.dueDate = row.due_date || "";
+  item.notes = row.notes || "";
+  return item;
 }
 
 function apiUser(row) {
@@ -2342,8 +2525,9 @@ function shipmentOptions() {
 
 function tariffOptionsForCustomer(customer) {
   const name = String(customer || "").trim().toLowerCase();
+  if (!name) return [];
   return visibleRows(state.tariffs)
-    .filter((row) => !name || String(row.customer || "").trim().toLowerCase() === name)
+    .filter((row) => String(row.customer || "").trim().toLowerCase() === name)
     .map((row) => ({ value: row.tariffNo, label: `${row.tariffNo} | ${row.customer} | ${row.origin} to ${row.destination}` }));
 }
 
@@ -2896,7 +3080,7 @@ function defaultColumnLayouts() {
     load: [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]],
     customers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
     suppliers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
-    tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["weightSection", "Weight Section"], ["minUpTo", "Minimum Up To"], ["rate", "Rate"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"]],
+    tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["currency", "Currency"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"]],
     document: [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]],
     invoice: [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"]],
     charge: [["refNo", "Ref No"], ["shipmentNo", "Shipment No"], ["chargeType", "Charge Type"], ["supplier", "Supplier"], ["amount", "Amount"], ["taxAmount", "Tax"], ["totalAmount", "Total"], ["status", "Status"]],
@@ -3203,6 +3387,32 @@ function openRecord(type, id) {
     return;
   }
 
+  if (type === "tariff") {
+    editing = { type, id, record };
+    dialogState = null;
+    openDialog({
+      title: `Tariff - ${id}`,
+      typeLabel: "Tariff",
+      saveLabel: "Save Changes",
+      body: tariffDialogBody(record),
+      onSave: async () => {
+        const data = collectFormValues(dialogBody.closest("form"));
+        rememberDropdownOptions(data);
+        const updatedRecord = buildTariffRecord(data, record);
+        state.tariffs = state.tariffs.map((row) => rowId("tariff", row) === id ? updatedRecord : row);
+        await persistRecord("tariff", updatedRecord);
+        saveState();
+        recordDialog.close();
+        render();
+      },
+      afterOpen: () => {
+        bindTariffWeightRates();
+        bindTariffAdditionalCharges(record.additionalChargesJson || "[]");
+      }
+    });
+    return;
+  }
+
   if (type === "invoice") {
     editing = { type, id, record };
     dialogState = null;
@@ -3324,10 +3534,10 @@ function detailFieldControl(type, key, value, record) {
     return "";
   }
   if (type === "shipment" && key === "cargoItemsJson") {
-    return cargoItemsBuilder(value || record.palletDimensionsJson || "[]");
+    return cargoItemsBuilder(value || record.palletDimensionsJson || "[]", record.tariffNo, record.customer);
   }
   if (type === "shipment" && key === "palletDimensionsJson") {
-    return record.cargoItemsJson ? "" : cargoItemsBuilder(value || "[]");
+    return record.cargoItemsJson ? "" : cargoItemsBuilder(value || "[]", record.tariffNo, record.customer);
   }
   if (type === "shipment" && key === "tcnNumber") {
     return `${input(key, labelize(key), value ?? "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>`;
@@ -3717,21 +3927,12 @@ function dialogConfigFor(type, mode = "") {
       title: "New Tariff",
       typeLabel: "Tariff",
       saveLabel: "Create Tariff",
-      body: `
-        ${input("tariffNo", "Tariff Number", nextNumber("TAR", state.tariffs, "tariffNo"), false)}
-        ${selectFrom("customer", "Consignee", state.customers.map((row) => row.name))}
-        ${input("origin", "Origin", "Kuwait City")}
-        ${input("destination", "Destination", "Riyadh")}
-        ${selectEditable("mainSection", "Main Section", "mainSection", ["FTL", "LTL"])}
-        ${selectEditable("weightSection", "Weight Section", "weightSection", ["Minimum", "Up to 100 KG", "300 KG", "500 KG", "1000 KG", "More"])}
-        ${selectEditable("minUpTo", "Minimum Up To", "minUpTo", ["Minimum", "100 KG", "300 KG", "500 KG", "1000 KG", "More"])}
-        ${selectEditable("currency", "Currency", "currency", currencyOptions(), "KD")}
-        ${input("rate", "Rate", "0.420", false, "number")}
-        ${input("minCharge", "Minimum Charge", "35.000", false, "number")}
-        ${tariffAdditionalChargesBuilder()}
-      `,
+      body: tariffDialogBody(),
       onSave: createTariff,
-      afterOpen: () => bindTariffAdditionalCharges()
+      afterOpen: () => {
+        bindTariffWeightRates();
+        bindTariffAdditionalCharges();
+      }
     },
     document: {
       title: "New Document Tag",
@@ -3872,7 +4073,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("billingParty1Email", "Email Address", fieldValue("billingParty1Email"), false, "email")}
       ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"], fieldValue("billingParty1CreditTerms"))}
     `, true, sectionOpen)}
-    ${cargoItemsBuilder(fieldValue("cargoItemsJson", record?.palletDimensionsJson || "[]"))}
+    ${cargoItemsBuilder(fieldValue("cargoItemsJson", record?.palletDimensionsJson || "[]"), fieldValue("tariffNo"), defaultCustomer)}
     <input type="hidden" name="transportMode" value="" />
     <input type="hidden" name="tcnNumber" value="${escapeHtml(fieldValue("tcnNumber"))}" />
     <input type="hidden" name="transitDays" value="${escapeHtml(fieldValue("transitDays", "3"))}" />
@@ -3902,7 +4103,7 @@ function palletDimensionBuilder(initialValue = "[]") {
   </section>`;
 }
 
-function cargoItemsBuilder(initialValue = "[]") {
+function cargoItemsBuilder(initialValue = "[]", appliedTariffNo = "", customerName = "") {
   return `<section class="form-section pallet-builder" data-pallet-builder>
     <h3>Cargo Details</h3>
     <input type="hidden" name="cargoItemsJson" value="${escapeHtml(initialValue || "[]")}" />
@@ -3935,6 +4136,7 @@ function cargoItemsBuilder(initialValue = "[]") {
     </div>
     <div class="form-section-grid cargo-description-row">
       ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
+      ${selectFrom("tariffNo", "Apply Tariff", tariffOptionsForCustomer(customerName), appliedTariffNo)}
     </div>
   </section>`;
 }
@@ -4265,18 +4467,20 @@ function bindTransporterAutofill() {
 function bindTariffFinancialAutofill() {
   const tariffField = dialogBody.querySelector("input[name='tariffNo']");
   if (!tariffField) return;
+  const chargeableField = dialogBody.querySelector("input[name='chargeableKg'], input[name='chargeableWeight']");
   const fill = () => {
     const tariff = state.tariffs.find((row) => String(row.tariffNo || "").trim().toLowerCase() === String(tariffField.value || "").trim().toLowerCase());
     if (!tariff) return;
+    const pricing = tariffPricingForWeight(tariff, Number(chargeableField?.value || 0));
     setDialogValue("currency", tariff.currency || dialogValue("currency"));
-    setDialogValue("freightAmount", tariff.rate || tariff.minimumCharge || 0);
+    setDialogValue("freightAmount", pricing.freight || pricing.rate || tariff.rate || tariff.minimumCharge || 0);
     setDialogValue("otherChargesAmount", tariff.additionalChargesTotal || 0);
-    const freight = Number(tariff.rate || tariff.minimumCharge || 0);
-    const other = Number(tariff.additionalChargesTotal || 0);
-    setDialogValue("totalAmount", Number((freight + other).toFixed(3)));
+    setDialogValue("totalAmount", pricing.revenue || Number((Number(pricing.freight || tariff.rate || tariff.minimumCharge || 0) + Number(tariff.additionalChargesTotal || 0)).toFixed(3)));
   };
   tariffField.addEventListener("input", fill);
   tariffField.addEventListener("change", fill);
+  chargeableField?.addEventListener("input", fill);
+  chargeableField?.addEventListener("change", fill);
   fill();
 }
 
@@ -4720,16 +4924,18 @@ function invoiceTariffOptionsForCustomer(customerName) {
 
 function invoiceTariffsForCustomer(customerName) {
   const lookup = normalizeLookupText(customerName);
+  if (!lookup) return [];
   const rows = visibleRows(state.tariffs);
   const tokens = customerSearchTokens(customerName);
-  return lookup ? rows.filter((row) => rowMatchesLookup(row, [row.customer, row.consigneeName, row.customerName, row.customerCode, row.tariffNo], tokens)) : rows;
+  return rows.filter((row) => rowMatchesLookup(row, [row.customer, row.consigneeName, row.customerName, row.customerCode, row.tariffNo], tokens));
 }
 
 function invoiceShipmentsForCustomer(customerName) {
   const lookup = normalizeLookupText(customerName);
+  if (!lookup) return [];
   const rows = visibleRows(state.shipments);
   const tokens = customerSearchTokens(customerName);
-  return lookup ? rows.filter((row) => rowMatchesLookup(row, [row.customer, row.customerName, row.billTo1, row.shipperName, row.consigneeName, row.customerCode], tokens)) : rows;
+  return rows.filter((row) => rowMatchesLookup(row, [row.customer, row.customerName, row.billTo1, row.shipperName, row.consigneeName, row.customerCode], tokens));
 }
 
 function parseInvoiceLineItems(value) {
@@ -4792,38 +4998,37 @@ function effectiveChargeableWeightForShipment(shipmentItem) {
   return Number(shipmentItem?.chargeableKg || 0);
 }
 
-function invoiceLinesFromTariff(shipmentItem, tariffItem) {
+function invoiceLinesFromTariff(shipmentItem, tariffItem, chargeableWeight = effectiveChargeableWeightForShipment(shipmentItem)) {
   if (!tariffItem) return [];
-  var chargeableWeight = effectiveChargeableWeightForShipment(shipmentItem);
-  var baseRate = Number(tariffItem?.rate || 0);
-  var baseAmount = Math.max(Number(tariffItem?.minCharge || 0), chargeableWeight * baseRate);
-  var lines = [{
-    id: 'tariff-base',
-    source: 'tariff-base',
-    description: tariffItem?.customer || 'Freight Charge',
-    unit: 'KG',
+  const pricing = tariffPricingForWeight(tariffItem, chargeableWeight);
+  const weightLabel = pricing.band?.label ? " (" + pricing.band.label + ")" : "";
+  const lines = [{
+    id: "tariff-base",
+    source: "tariff-base",
+    description: (tariffItem.customer || "Freight Charge") + weightLabel,
+    unit: "KG",
     qty: chargeableWeight || 1,
-    rate: baseRate,
-    amount: baseAmount,
-    cost: Number(tariffItem?.supplierCost || 0),
-    remarks: '',
-    chargeableWeight: chargeableWeight,
-    tariffNo: tariffItem?.tariffNo || '',
-    tariffName: tariffItem?.customer || ''
+    rate: pricing.rate,
+    amount: pricing.freight,
+    cost: Number(tariffItem.supplierCost || 0),
+    remarks: pricing.band?.label || "",
+    chargeableWeight,
+    tariffNo: tariffItem.tariffNo || "",
+    tariffName: tariffItem.customer || ""
   }];
-  var extras = parseTariffChargeLines(tariffItem?.additionalChargesJson || '[]').map((line, index) => ({
-    id: 'tariff-extra-' + (index + 1),
-    source: 'tariff-extra',
-    description: line.description || '',
-    unit: 'Unit',
+  const extras = parseTariffChargeLines(tariffItem.additionalChargesJson || "[]").map((line, index) => ({
+    id: "tariff-extra-" + (index + 1),
+    source: "tariff-extra",
+    description: line.description || "",
+    unit: "Unit",
     qty: Number(line.units || 1),
     rate: Number(line.quotation || 0),
     amount: Number(line.total || Number(line.quotation || 0) * Number(line.units || 0)),
     cost: Number(line.cost || 0),
-    remarks: String(line.remarks || ''),
-    chargeableWeight: chargeableWeight,
-    tariffNo: tariffItem?.tariffNo || '',
-    tariffName: tariffItem?.customer || ''
+    remarks: String(line.remarks || ""),
+    chargeableWeight,
+    tariffNo: tariffItem.tariffNo || "",
+    tariffName: tariffItem.customer || ""
   }));
   return lines.concat(extras);
 }
@@ -4888,21 +5093,22 @@ function invoicePreviewMeta(shipmentItem, tariffItem) {
 }
 
 function invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, canEditCost) {
+  const selectedWeight = shipmentItem ? effectiveChargeableWeightForShipment(shipmentItem) : null;
   var summary = invoiceTotals(lines, taxPercent);
   return '<section class="invoice-preview-shell">' +
     invoicePreviewMeta(shipmentItem, tariffItem) +
-    (tariffItem ? tariffPreviewHtml([tariffItem], 'Select a tariff to view full details.') : '<p class="empty-state">Select a tariff to view full details.</p>') +
+    (tariffItem ? tariffPreviewHtml([tariffItem], 'Select a tariff to view full details.', selectedWeight) : '<p class="empty-state">Select a tariff to view full details.</p>') +
     invoicePreviewSummary(summary) +
     invoiceLineTable(lines, canEditCost) +
     '<div class="action-row"><button type="button" class="secondary-button" data-add-invoice-line>Add Charge</button></div>' +
   '</section>';
 }
 
-function tariffSelectionOptions() {
-
-  return visibleRows(state.tariffs).map((row) => ({
+function tariffSelectionOptions(customerName = "") {
+  const rows = customerName ? invoiceTariffsForCustomer(customerName) : visibleRows(state.tariffs);
+  return rows.map((row) => ({
     value: row.tariffNo,
-    label: `${row.tariffNo} | ${row.customer} | ${row.origin} to ${row.destination}`
+    label: row.tariffNo + " | " + row.customer + " | " + row.origin + " to " + row.destination
   }));
 }
 
@@ -4914,7 +5120,7 @@ function summaryPair(label, value) {
   return `<p><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? "")}</strong></p>`;
 }
 
-function tariffPreviewHtml(tariffs, emptyText = "Select a tariff to view full details.") {
+function tariffPreviewHtml(tariffs, emptyText = "Select a tariff to view full details.", selectedWeight = null) {
   const uniqueTariffs = [];
   const seen = new Set();
   tariffs.filter(Boolean).forEach((tariffItem) => {
@@ -4923,33 +5129,23 @@ function tariffPreviewHtml(tariffs, emptyText = "Select a tariff to view full de
     seen.add(key);
     uniqueTariffs.push(tariffItem);
   });
-
-  if (!uniqueTariffs.length) {
-    return `<p class="empty-state">${escapeHtml(emptyText)}</p>`;
-  }
-
+  if (!uniqueTariffs.length) return "<p class=\"empty-state\">" + escapeHtml(emptyText) + "</p>";
   return uniqueTariffs.map((tariffItem) => {
     const charges = parseTariffChargeLines(tariffItem.additionalChargesJson || "[]");
-    return `<article class="tariff-preview-card">
-      <div class="tariff-preview-heading">
-        <div>
-          <p class="eyebrow">Tariff Details</p>
-          <h3>${escapeHtml(tariffItem.tariffNo)}</h3>
-        </div>
-        <strong>${escapeHtml(tariffItem.currency || "KD")} ${money(tariffItem.grandTotal || tariffItem.minCharge || 0)}</strong>
-      </div>
-      <div class="tariff-preview-grid">
-        ${summaryPair("Consignee", tariffItem.customer)}
-        ${summaryPair("Origin", tariffItem.origin)}
-        ${summaryPair("Destination", tariffItem.destination)}
-        ${summaryPair("Main Section", tariffItem.mainSection)}
-        ${summaryPair("Weight Section", tariffItem.weightSection)}
-        ${summaryPair("Minimum Up To", tariffItem.minUpTo)}
-        ${summaryPair("Rate", money(tariffItem.rate || 0))}
-        ${summaryPair("Minimum Charge", money(tariffItem.minCharge || 0))}
-      </div>
-      ${tariffChargeTable(charges, Number(tariffItem.additionalChargesTotal || 0), Number(tariffItem.grandTotal || 0), false)}
-    </article>`;
+    const pricing = tariffPricingForWeight(tariffItem, selectedWeight || 0);
+    const headlineTotal = selectedWeight ? pricing.revenue : Number(tariffItem.grandTotal || tariffItem.minCharge || 0);
+    return "<article class=\"tariff-preview-card\">" +
+      "<div class=\"tariff-preview-heading\"><div><p class=\"eyebrow\">Tariff Details</p><h3>" + escapeHtml(tariffItem.tariffNo) + "</h3></div><strong>" + escapeHtml(tariffItem.currency || "KD") + " " + money(headlineTotal) + "</strong></div>" +
+      "<div class=\"tariff-preview-grid\">" +
+        summaryPair("Consignee", tariffItem.customer) +
+        summaryPair("Origin", tariffItem.origin) +
+        summaryPair("Destination", tariffItem.destination) +
+        summaryPair("Main Section", tariffItem.mainSection) +
+        tariffPreviewRateSummary(tariffItem, selectedWeight || 0) +
+      "</div>" +
+      tariffWeightRateTableHtml(tariffItem, { selectedWeight }) +
+      tariffChargeTable(charges, Number(tariffItem.additionalChargesTotal || 0), Number(tariffItem.grandTotal || 0), false) +
+    "</article>";
   }).join("");
 }
 
@@ -5123,7 +5319,7 @@ function bindInvoiceShipmentTariff() {
     if (grossWeightField) grossWeightField.value = shipmentItem ? Number(shipmentItem.actualKg || 0) : currentGross;
     if (volumeWeightField) volumeWeightField.value = shipmentItem ? Number(shipmentItem.cbm || 0) : currentVolume;
     if (tariffNameField) tariffNameField.value = tariffItem ? tariffItem.customer || '' : '';
-    if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
+    if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem, Number(chargeableWeightField?.value || effectiveChargeableWeightForShipment(shipmentItem) || 0));
     const summary = invoiceTotals(lines, taxPercent);
     if (revenueField) revenueField.value = summary.revenue;
     if (supplierCostField) supplierCostField.value = summary.cost;
@@ -5149,7 +5345,7 @@ function bindInvoiceShipmentTariff() {
     if (shipmentItem && !customerField.value) customerField.value = shipmentItem.customer || shipmentItem.customerName || '';
     if (shipmentItem && tariffField && !tariffField.value && tariffItem) tariffField.value = tariffItem.tariffNo || '';
     lines = parseInvoiceLineItems(invoiceLinesField?.value || '[]');
-    if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem);
+    if (!lines.length && tariffItem) lines = invoiceLinesFromTariff(shipmentItem, tariffItem, Number(chargeableWeightField?.value || effectiveChargeableWeightForShipment(shipmentItem) || 0));
     syncDatalist();
     syncInvoice(true);
   };
@@ -5172,7 +5368,7 @@ function bindInvoiceShipmentTariff() {
       if (target === customerField) {
         lines = shipmentItem && tariffItem ? parseInvoiceLineItems(invoiceLinesField?.value || '[]') : [];
       } else if (target === tariffField || target === shipmentField) {
-        lines = tariffItem ? invoiceLinesFromTariff(shipmentItem, tariffItem) : [];
+        lines = tariffItem ? invoiceLinesFromTariff(shipmentItem, tariffItem, Number(chargeableWeightField?.value || effectiveChargeableWeightForShipment(shipmentItem) || 0)) : [];
       } else {
         lines = shipmentItem && tariffItem ? parseInvoiceLineItems(invoiceLinesField?.value || '[]') : [];
       }
@@ -5715,8 +5911,16 @@ function invoiceDocumentHtml(record) {
 }
 
 function invoiceChargeLines(record, shipmentItem, tariffItem) {
-  const tariffLines = parseTariffChargeLines(tariffItem?.additionalChargesJson || "[]")
-    .map((line) => ({ activity: line.description, qty: line.units || 1, rate: line.quotation || line.total || 0, amount: line.total || 0 }));
+  const savedLines = parseInvoiceLineItems(record.invoiceLinesJson || "[]").map((line) => ({
+    activity: line.description || line.activity || "Charges",
+    qty: Number(line.qty || 1),
+    rate: Number(line.rate || 0),
+    amount: Number(line.amount || invoiceLineAmount(line) || 0)
+  }));
+  if (savedLines.length) return savedLines;
+  const chargeableWeight = Number(record.chargeableWeight || effectiveChargeableWeightForShipment(shipmentItem) || 0);
+  const tariffLines = invoiceLinesFromTariff(shipmentItem, tariffItem, chargeableWeight)
+    .map((line) => ({ activity: line.description || "Charges", qty: Number(line.qty || 1), rate: Number(line.rate || 0), amount: Number(line.amount || invoiceLineAmount(line) || 0) }));
   const approvedCharges = state.additionalCharges
     .filter((row) => row.shipmentNo === record.shipmentNo && row.status !== "Rejected")
     .map((row) => ({ activity: row.chargeType || "Charges", qty: 1, rate: row.totalAmount || row.amount || 0, amount: row.totalAmount || row.amount || 0 }));
@@ -5777,7 +5981,10 @@ function tariffDocumentHtml(record) {
         <p><strong>Origin</strong><span>${escapeHtml(record.origin)}</span></p>
         <p><strong>Destination</strong><span>${escapeHtml(record.destination)}</span></p>
         <p><strong>Main Section</strong><span>${escapeHtml(record.mainSection)}</span></p>
+        <p><strong>Currency</strong><span>${escapeHtml(record.currency || "KD")}</span></p>
       </section>
+      <h2>Weight Section</h2>
+      ${tariffWeightRateTableHtml(record)}
       <h2>Charges</h2>
       ${tariffChargeTable(charges, Number(record.additionalChargesTotal || 0), Number(record.grandTotal || 0), false, { showTotalRow: false })}
     `
@@ -6376,275 +6583,21 @@ async function createShipment(data) {
       return false;
     }
   }
-  const tariffItem = state.tariffs.find((row) => row.tariffNo === data.tariffNo);
+  const tariffItem = state.tariffs.find((row) => row.tariffNo === data.tariffNo) || assignedTariffForShipment({ customer: data.customer, origin: data.origin, destination: data.destination, tariffNo: data.tariffNo });
+  const chargeableWeight = Number(data.chargeableKg || 0);
+  const pricing = tariffPricingForWeight(tariffItem, chargeableWeight);
   const record = shipment(
-    data.jobNo,
-    data.branch,
-    data.customer,
-    data.origin,
-    data.destination,
-    data.status || "Booked",
-    Number(data.pieces),
-    Number(data.actualKg),
-    Number(data.cbm),
-    Number(data.chargeableKg),
-    Number(tariffItem?.grandTotal || tariffItem?.minCharge || 0),
-    0,
-    "Pending",
-    "Unbilled",
-    data.bookingDate || today(),
-    data.airwayBillNo || data.jobNo?.replace("AFS", "AWB"),
-    data.tariffNo || "TAR-1001",
-    Number(data.transitDays || 0),
-    data.shipmentDirection || "Export",
-    data.shipmentService || "AE",
-    data.shipmentServiceOther || "",
-    data.volumeCategory || "Land",
-    Number(data.chargeableDivisor || volumeDivisorFor(data.volumeCategory || "Land") || 0),
-    currentUserName(),
-    shipmentMetaNotes(data)
+    data.jobNo, data.branch, data.customer, data.origin, data.destination, data.status || "Booked",
+    Number(data.pieces), Number(data.actualKg), Number(data.cbm), Number(data.chargeableKg), pricing.revenue, 0,
+    "Pending", "Unbilled", data.bookingDate || today(), data.airwayBillNo || data.jobNo?.replace("AFS", "AWB"),
+    data.tariffNo || "", Number(data.transitDays || 0), data.shipmentDirection || "Export", data.shipmentService || "AE",
+    data.shipmentServiceOther || "", data.volumeCategory || "Land", Number(data.chargeableDivisor || volumeDivisorFor(data.volumeCategory || "Land") || 0),
+    currentUserName(), shipmentMetaNotes(data)
   );
   state.shipments.unshift(record);
   await postRecord("shipment", record);
   addHistory("Created shipment", data.jobNo);
-  notifySuccess("Shipment created", `${data.jobNo} was saved successfully.`);
-  return true;
-}
-
-async function createLoad(data) {
-  if (duplicateRecordExists("load", data.loadNo)) {
-    notifyDuplicate(data.loadNo);
-    return false;
-  }
-  const jobs = normalizeConsolidationJobs(data.jobNumbers);
-  if (!jobs.length) {
-    notifyDenied("Consolidation not created", "Add at least one unassigned shipment with service type Consolidation.");
-    return false;
-  }
-  const item = load(data.loadNo, data.tripDate, data.route, data.transporter, data.vehicleNo, data.status, jobs.join(", "), data.manifestStatus || "Not Generated", data.lastManifestRequestNo || "", currentUserName(), loadMetaNotes(data));
-  recalculateLoad(item);
-  state.loads.unshift(item);
-  await postRecord("load", item);
-  addHistory("Created consolidation", data.loadNo);
-  notifySuccess("Consolidation created", `${data.loadNo} was saved successfully.`);
-  return true;
-}
-
-async function createParty(key, data) {
-  if (duplicateRecordExists(key, data.code)) {
-    notifyDuplicate(data.code);
-    return false;
-  }
-  const record = party(data.code, data.name, data.locationOrLane, data.email, data.terms, data.status, false, data.branch, currentUserName(), data.fullAddress || "", data.mobile || "");
-  state[key].unshift(record);
-  await postRecord(key, record);
-  addHistory(`Created ${key}`, data.code);
-  notifySuccess("Record created", `${data.code} was saved successfully.`);
-  return true;
-}
-
-async function createUser(data) {
-  const userName = String(data.userName || "").trim();
-  const password = String(data.password || "");
-  const email = String(data.email || "").trim();
-
-  if (!userName || !password || !email) {
-    window.alert("User name, password, and email are required.");
-    return false;
-  }
-
-  if (state.users.some((record) => record.userName.toLowerCase() === userName.toLowerCase())) {
-    window.alert("User name already used or duplicate entry.");
-    return false;
-  }
-
-  if (state.users.some((record) => record.email.toLowerCase() === email.toLowerCase())) {
-    window.alert("Email already used or duplicate entry.");
-    return false;
-  }
-
-  const record = user(
-    userName,
-    email,
-    data.role,
-    data.accountStatus,
-    data.branchAccess,
-    data.branchViewScope || "Assigned Branch Only",
-    normalizeSectionAccess(data.sectionAccess || "All"),
-    isChecked(data.canViewAllEntry),
-    isChecked(data.canViewOnlySelfEntry),
-    isChecked(data.canEditAllEntry),
-    isChecked(data.canViewUpdatedHistory),
-    password,
-    data.notes || "Created from admin panel"
-  );
-
-  state.users.unshift(record);
-  const apiSaved = await postRecord("user", record);
-  addHistory("Created user account", `${userName} - ${data.branchAccess}`);
-  notifySuccess("User created", `${userName} was saved successfully.`);
-  if (apiSaved) setTimeout(() => syncFromApi(), 300);
-  return true;
-}
-
-async function changeCurrentPassword(data) {
-  const userName = currentUserName();
-  const currentPassword = String(data.currentPassword || "");
-  const newPassword = String(data.newPassword || "");
-  const confirmPassword = String(data.confirmPassword || "");
-  const session = currentSession();
-  const userRecord = state.users.find((record) => String(record.userName || "").toLowerCase() === userName.toLowerCase());
-  const storedPassword = String(session?.password || userRecord?.password || "");
-
-  if (!userRecord) {
-    notifyFailed("Password change failed", "Current user account was not found.");
-    return false;
-  }
-  if (!currentPassword || !newPassword || !confirmPassword) {
-    notifyDenied("Password change failed", "Fill in current password, new password, and confirmation.");
-    return false;
-  }
-  if (currentPassword !== storedPassword) {
-    notifyDenied("Password change failed", "Current password is incorrect.");
-    return false;
-  }
-  if (newPassword.length < 4) {
-    notifyDenied("Password change failed", "Use at least 4 characters for the new password.");
-    return false;
-  }
-  if (newPassword !== confirmPassword) {
-    notifyDenied("Password change failed", "New password and confirmation do not match.");
-    return false;
-  }
-
-  const updatedUser = { ...userRecord, password: newPassword };
-  const apiSaved = await persistRecord("user", updatedUser);
-  if (!apiSaved && state.api?.mode === "database") {
-    notifyFailed("Password change failed", "Could not save the password to the server.");
-    return false;
-  }
-
-  Object.assign(userRecord, updatedUser);
-  rememberSession({ ...session, password: newPassword });
-  saveState();
-  addHistory("Changed password", userName);
-  notifySuccess("Password updated", "Your password was changed successfully.");
-  return true;
-}
-
-async function createTariff(data) {
-  if (duplicateRecordExists("tariff", data.tariffNo)) {
-    notifyDuplicate(data.tariffNo);
-    return false;
-  }
-  const record = tariff(
-    data.tariffNo,
-    data.customer,
-    data.origin,
-    data.destination,
-    data.mainSection,
-    data.weightSection,
-    data.minUpTo,
-    Number(data.rate),
-    Number(data.minCharge),
-    data.additionalChargesJson || "[]",
-    Number(data.additionalChargesTotal || 0),
-    Number(data.grandTotal || 0)
-  );
-  state.tariffs.unshift(record);
-  await postRecord("tariff", record);
-  addHistory("Created tariff", data.tariffNo);
-  notifySuccess("Tariff created", `${data.tariffNo} was saved successfully.`);
-  return true;
-}
-
-async function createDocument(data) {
-  if (duplicateRecordExists("document", data.documentNo)) {
-    notifyDuplicate(data.documentNo);
-    return false;
-  }
-  const uploadedName = data.fileUpload && typeof data.fileUpload === "object" ? data.fileUpload.name || "" : "";
-  const record = documentRow(data.documentNo, data.linkedNo, data.type, data.status, data.date, data.owner || currentUserName(), uploadedName, currentUserName());
-  state.documents.unshift(record);
-  await postRecord("document", record);
-  addHistory("Tagged document", data.documentNo);
-  notifySuccess("Document saved", `${data.documentNo} was saved successfully.`);
-  return true;
-}
-
-async function createCharge(data) {
-  if (duplicateRecordExists("charge", data.refNo)) {
-    notifyDuplicate(data.refNo);
-    return false;
-  }
-  const sessionUser = currentSession()?.userName || "operations";
-  const isAdmin = isAdminSession();
-  const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
-  if (!shipmentItem) {
-    notifyFailed("Charge failed", "Select a valid shipment first.");
-    return false;
-  }
-  const existingCharges = state.additionalCharges.filter((row) => row.shipmentNo === data.shipmentNo);
-  const existingInvoiceNo = existingCharges.find((row) => row.invoiceNo)?.invoiceNo || "";
-  if (existingInvoiceNo && data.invoiceNo && data.invoiceNo !== existingInvoiceNo) {
-    notifyDenied("Charge denied", `Shipment ${data.shipmentNo} already uses invoice ${existingInvoiceNo}.`);
-    return false;
-  }
-  const invoiceNo = existingInvoiceNo || data.invoiceNo || "";
-  const chargeLines = parseChargeLines(data);
-  if (!chargeLines.length) {
-    notifyDenied("Charge denied", "Add at least one charge line before saving.");
-    return false;
-  }
-  const taxPercent = Number(data.taxPercent || 0);
-  const newTotal = chargeLines.reduce((sum, line) => {
-    const amount = Number(line.amount || 0);
-    return sum + amount + amount * (taxPercent / 100);
-  }, 0);
-  const existingTotal = existingCharges.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
-  const projectedProfit = Number(shipmentItem.sell || 0) - Number(shipmentItem.buyCost || 0) - existingTotal - newTotal;
-  if (projectedProfit < 0) {
-    notifyDenied("Charge denied", `This charge puts shipment ${data.shipmentNo} in loss (${money(projectedProfit)}).`);
-    return false;
-  }
-  const receiptNo = data.referenceNo || data.refNo;
-  const request = !isAdmin
-    ? await submitAdminRequest(
-        "Additional Charges",
-        data.refNo,
-        "New additional charge submitted for approval.",
-        `receipt: -> ${receiptNo} | lines: -> ${chargeLines.map((line) => `${line.chargeType} ${line.amount}`).join(", ")} | taxPercent: -> ${data.taxPercent} | shipmentNo: -> ${data.shipmentNo}`,
-        "Additional Charge Approval"
-      )
-    : null;
-
-  const records = chargeLines.map((line, index) =>
-    additionalCharge(
-      chargeLineRef(data.refNo, index, chargeLines.length),
-      data.shipmentNo,
-      data.chargeDate || today(),
-      line.chargeType,
-      line.chargeBasis || "Per Shipment",
-      data.supplier,
-      receiptNo,
-      invoiceNo,
-      Number(line.amount || 0),
-      taxPercent,
-      data.currency || "KWD",
-      data.remarks || "",
-      data.attachmentName || "",
-      isAdmin ? data.status || "Approved" : "Pending Approval",
-      sessionUser,
-      isAdmin ? sessionUser : "",
-      request?.requestNo || "",
-      sessionUser
-    )
-  );
-
-  state.additionalCharges.unshift(...records);
-  await Promise.all(records.map((record) => postRecord("charge", record)));
-  addHistory(isAdmin ? "Created additional charge" : "Submitted additional charge", data.refNo);
-  notifySuccess(isAdmin ? "Charge receipt saved" : "Charge receipt submitted", `${data.refNo} saved with ${records.length} line(s).`);
+  notifySuccess("Shipment created", data.jobNo + " was saved successfully.");
   return true;
 }
 
@@ -6674,67 +6627,31 @@ async function createInvoice(data) {
     return false;
   }
   const shipmentItem = state.shipments.find((row) => row.jobNo === data.shipmentNo);
-  const tariffItem = assignedTariffForShipment(shipmentItem);
+  const tariffItem = state.tariffs.find((row) => row.tariffNo === data.tariffNo) || assignedTariffForShipment(shipmentItem);
+  const chargeableWeight = Number(data.chargeableWeight || effectiveChargeableWeightForShipment(shipmentItem) || 0);
+  const lines = parseInvoiceLineItems(data.invoiceLinesJson || JSON.stringify(invoiceLinesFromTariff(shipmentItem, tariffItem, chargeableWeight)));
+  const totals = invoiceTotals(lines, Number(data.taxPercent || 0));
   const customer = shipmentItem?.customer || data.customer;
-  const revenue = Number(data.revenue || tariffItem?.grandTotal || shipmentItem?.sell || 0);
-  const supplierCost = Number(data.supplierCost || shipmentItem?.buyCost || 0);
-  const record = invoice(data.invoiceNo, customer, data.shipmentNo, revenue, supplierCost, data.status, data.date);
+  const record = invoice(data.invoiceNo, customer, data.shipmentNo, Number(data.revenue || totals.revenue || 0), Number(data.supplierCost || data.totalCost || totals.cost || 0), data.status || "Draft", data.date || today());
+  Object.assign(record, {
+    customerCode: shipmentItem?.customerCode || data.customerCode || "",
+    tariffNo: data.tariffNo || tariffItem?.tariffNo || "",
+    tariffName: data.tariffName || tariffItem?.customer || "",
+    chargeableWeight,
+    totalCost: Number(data.totalCost || data.supplierCost || totals.cost || 0),
+    taxPercent: Number(data.taxPercent || 0),
+    taxAmount: Number(data.taxAmount || totals.taxAmount || 0),
+    grandTotal: Number(data.grandTotal || totals.grandTotal || 0),
+    profitPercent: Number(data.profitPercent || totals.profitPercent || 0),
+    invoiceLinesJson: data.invoiceLinesJson || JSON.stringify(lines),
+    tariffSnapshotJson: data.tariffSnapshotJson || JSON.stringify(tariffItem || {}),
+    invoiceSnapshotJson: data.invoiceSnapshotJson || JSON.stringify(invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, Number(data.taxPercent || 0)))
+  });
   state.invoices.unshift(record);
   await postRecord("invoice", record);
   if (shipmentItem) shipmentItem.invoiceStatus = data.invoiceNo;
   addHistory("Generated invoice", data.invoiceNo);
-  notifySuccess("Invoice saved", `${data.invoiceNo} was saved successfully.`);
-  return true;
-}
-
-async function updatePod(data) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === data.jobNo);
-  if (!shipmentItem) return false;
-  Object.assign(shipmentItem, {
-    deliveryNoteNo: data.deliveryNoteNo || shipmentItem.deliveryNoteNo,
-    ginNo: data.ginNo || shipmentItem.ginNo,
-    customerReference: data.customerReference || shipmentItem.customerReference,
-    deliveryRemarks: data.deliveryRemarks || shipmentItem.deliveryRemarks,
-    pocName: data.pocName || shipmentItem.pocName,
-    pocMobile: data.pocMobile || shipmentItem.pocMobile,
-    additionalContact: data.additionalContact || shipmentItem.additionalContact,
-    preparedBy: data.preparedBy || shipmentItem.preparedBy,
-    deliveredBy: data.deliveredBy || shipmentItem.deliveredBy,
-    receivedBy: data.receivedBy || shipmentItem.receivedBy,
-    receiverPhone: data.receiverPhone || shipmentItem.receiverPhone,
-    receiverSignature: data.receiverSignature || shipmentItem.receiverSignature,
-    deliveryDatetime: data.deliveryDatetime || shipmentItem.deliveryDatetime
-  });
-  shipmentItem.status = "Delivered";
-  shipmentItem.podStatus = "Uploaded";
-  shipmentItem.notes = shipmentMetaNotes(shipmentItem);
-  await persistRecord("shipment", shipmentItem);
-  const documentRecord = documentRow(nextNumber("DOC", state.documents, "documentNo"), data.jobNo, "POD", "Uploaded", today(), "delivery");
-  state.documents.unshift(documentRecord);
-  await postRecord("document", documentRecord);
-  addHistory("Marked delivered and uploaded POD", `${data.jobNo} - ${data.receivedBy || data.receiver || ""}`);
-  notifySuccess("POD updated", `${data.jobNo} was marked delivered.`);
-  return true;
-}
-
-async function updateStatus(data) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === data.jobNo);
-  if (!shipmentItem) return false;
-  shipmentItem.status = data.status;
-  shipmentItem.podStatus = data.podStatus;
-  shipmentItem.invoiceStatus = data.invoiceStatus;
-  await persistRecord("shipment", shipmentItem);
-  addHistory("Updated shipment status", `${data.jobNo} - ${data.notes}`);
-  notifySuccess("Status updated", `${data.jobNo} was saved successfully.`);
-  return true;
-}
-
-async function updateSettings(data) {
-  state.settings = { ...state.settings, ...data, settingsKey: state.settings.settingsKey || "default" };
-  const apiSaved = await persistRecord("settings", state.settings);
-  addHistory("Saved company settings", data.companyName);
-  notifySuccess("Settings saved", "Company settings were updated successfully.");
-  if (apiSaved) setTimeout(() => syncFromApi(), 300);
+  notifySuccess("Invoice saved", data.invoiceNo + " was saved successfully.");
   return true;
 }
 

@@ -297,6 +297,30 @@ label {
   display: grid;
   gap: 14px;
 }
+.login-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.login-mode-button {
+  border: 1px solid var(--line-strong);
+  background: var(--blue-soft);
+  color: var(--ink);
+}
+
+.login-mode-button.is-active {
+  background: var(--nav);
+  color: #fff;
+}
+
+.login-mode-help {
+  margin: -6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 
 .password-input-wrap {
   display: grid;
@@ -896,7 +920,8 @@ label {
 }
 
 .cargo-description-row {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
 }
 
 .pallet-builder .tariff-charges-table {
@@ -928,6 +953,44 @@ label {
 .pallet-builder .tariff-charges-table td {
   min-width: 0;
   white-space: nowrap;
+}
+
+.tariff-weight-builder {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.tariff-weight-wrap {
+  grid-column: 1 / -1;
+  width: 100%;
+  overflow-x: auto;
+}
+
+.tariff-weight-table {
+  min-width: 620px;
+  table-layout: fixed;
+  border: 1px solid var(--line);
+}
+
+.tariff-weight-table th,
+.tariff-weight-table td {
+  border: 1px solid var(--line);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.tariff-weight-table th:first-child {
+  width: 90px;
+}
+
+.tariff-weight-table input {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.tariff-weight-cell.is-selected {
+  background: #fff3e8;
 }
 
 .dialog-body label:has([name="volumeCategory"]),
@@ -1740,6 +1803,10 @@ th {
 
   .tariff-charge-entry,
   .password-input-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .cargo-description-row {
     grid-template-columns: 1fr;
   }
 
