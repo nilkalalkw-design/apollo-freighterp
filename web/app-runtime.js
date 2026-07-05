@@ -6567,6 +6567,190 @@ async function handleModuleSubmit(event) {
   render();
 }
 
+async function createTariff(data) {
+  const tariffNo = String(data.tariffNo || nextNumber("TAR", state.tariffs, "tariffNo")).trim();
+  if (duplicateRecordExists("tariff", tariffNo)) {
+    notifyDuplicate(tariffNo);
+    return false;
+  }
+  const record = buildTariffRecord({ ...data, tariffNo });
+  state.tariffs.unshift(record);
+  await postRecord("tariff", record);
+  addHistory("Created tariff", record.tariffNo);
+  notifySuccess("Tariff created", record.tariffNo + " was saved successfully.");
+  return true;
+}
+
+async function createLoad(data) {
+  const loadNo = String(data.loadNo || nextConsolidationNumber()).trim();
+  if (duplicateRecordExists("load", loadNo)) {
+    notifyDuplicate(loadNo);
+    return false;
+  }
+  const jobs = normalizeConsolidationJobs(data.jobNumbers || "");
+  if (!jobs.length) {
+    notifyDenied("Manifest not created", "Add at least one consolidation shipment.");
+    return false;
+  }
+  const record = load(
+    loadNo,
+    data.tripDate || today(),
+    data.route || "",
+    data.transporter || "",
+    data.vehicleNo || "",
+    data.status || "Planned",
+    jobs.join(", "),
+    data.manifestStatus || "Not Generated",
+    data.lastManifestRequestNo || "",
+    currentUserName(),
+    loadMetaNotes(data)
+  );
+  recalculateLoad(record);
+  state.loads.unshift(record);
+  await postRecord("load", record);
+  addHistory("Created consolidation", loadNo);
+  notifySuccess("Manifest created", loadNo + " was saved successfully.");
+  return true;
+}
+
+async function createParty(key, data) {
+  const isCustomer = key === "customers";
+  const code = String(data.code || (isCustomer ? nextCustomerNumber() : nextSupplierNumber())).trim();
+  const name = String(data.name || "").trim();
+  if (!name) {
+    notifyDenied("Record not created", "Enter a name first.");
+    return false;
+  }
+  if (duplicateRecordExists(key, code)) {
+    notifyDuplicate(code);
+    return false;
+  }
+  const record = party(
+    code,
+    name,
+    String(data.locationOrLane || "").trim(),
+    String(data.email || "").trim(),
+    String(data.terms || "").trim(),
+    String(data.status || "Active").trim(),
+    false,
+    String(data.branch || defaultUserBranch()).trim(),
+    currentUserName(),
+    isCustomer ? String(data.fullAddress || "").trim() : "",
+    String(data.mobile || "").trim()
+  );
+  state[key].unshift(record);
+  await postRecord(key, record);
+  addHistory("Created " + (isCustomer ? "customer" : "supplier"), code);
+  notifySuccess((isCustomer ? "Customer" : "Supplier") + " created", code + " was saved successfully.");
+  return true;
+}
+
+async function createDocument(data) {
+  const documentNo = String(data.documentNo || nextNumber("DOC", state.documents, "documentNo")).trim();
+  if (duplicateRecordExists("document", documentNo)) {
+    notifyDuplicate(documentNo);
+    return false;
+  }
+  const upload = data.fileUpload;
+  const fileName = upload && typeof upload === "object" && upload.name ? upload.name : String(data.fileName || data.attachmentName || "").trim();
+  const record = documentRow(
+    documentNo,
+    String(data.linkedNo || "").trim(),
+    String(data.type || "Waybill").trim(),
+    String(data.status || "Uploaded").trim(),
+    data.date || today(),
+    String(data.owner || currentUserName()).trim(),
+    fileName,
+    currentUserName()
+  );
+  record.notes = String(data.notes || "").trim();
+  record.storageUrl = String(data.storageUrl || "").trim();
+  state.documents.unshift(record);
+  await postRecord("document", record);
+  addHistory("Created document", documentNo);
+  notifySuccess("Document saved", documentNo + " was saved successfully.");
+  return true;
+}
+
+async function createCharge(data) {
+  const baseRef = String(data.refNo || nextAdditionalChargeNumber()).trim();
+  if (duplicateRecordExists("charge", baseRef)) {
+    notifyDuplicate(baseRef);
+    return false;
+  }
+  const lines = parseChargeLines(data);
+  const normalizedLines = lines.length ? lines : ((String(data.lineChargeType || "").trim() && Number(data.lineAmount || 0) > 0)
+    ? [{ chargeType: String(data.lineChargeType || "").trim(), amount: Number(data.lineAmount || 0), chargeBasis: "Per Shipment" }]
+    : []);
+  if (!normalizedLines.length) {
+    notifyDenied("Charge not created", "Add at least one charge line.");
+    return false;
+  }
+  const records = normalizedLines.map((line, index) => additionalCharge(
+    chargeLineRef(baseRef, index, normalizedLines.length),
+    String(data.shipmentNo || "").trim(),
+    data.chargeDate || today(),
+    String(line.chargeType || data.chargeType || "Charges").trim(),
+    String(line.chargeBasis || data.chargeBasis || "Per Shipment").trim(),
+    String(data.supplier || "").trim(),
+    String(data.referenceNo || "").trim(),
+    String(data.invoiceNo || "").trim(),
+    Number(line.amount || data.amount || 0),
+    Number(data.taxPercent || 0),
+    String(data.currency || "KD").trim(),
+    String(data.remarks || "").trim(),
+    String(data.attachmentName || "").trim(),
+    String(data.status || (isAdminSession() ? "Approved" : "Pending Approval")).trim(),
+    currentUserName(),
+    String(data.approvedBy || "").trim(),
+    String(data.approvalNotes || "").trim(),
+    currentUserName()
+  ));
+  state.additionalCharges.unshift(...records);
+  await Promise.all(records.map((record) => postRecord("charge", record)));
+  addHistory("Created additional charge", baseRef);
+  notifySuccess("Additional charge created", baseRef + " was saved successfully.");
+  return true;
+}
+
+async function createUser(data) {
+  const userName = String(data.userName || "").trim();
+  if (!userName) {
+    notifyDenied("User not created", "Enter a user name first.");
+    return false;
+  }
+  if (duplicateRecordExists("user", userName)) {
+    notifyDuplicate(userName);
+    return false;
+  }
+  const password = String(data.password || "");
+  if (!password) {
+    notifyDenied("User not created", "Enter a password first.");
+    return false;
+  }
+  const record = user(
+    userName,
+    String(data.email || "").trim(),
+    String(data.role || "Operations").trim(),
+    String(data.accountStatus || "Active").trim(),
+    String(data.branchAccess || defaultUserBranch()).trim(),
+    String(data.branchViewScope || "Assigned Branch Only").trim(),
+    String(data.sectionAccess || "Dashboard").trim(),
+    data.canViewAllEntry,
+    data.canViewOnlySelfEntry,
+    data.canEditAllEntry,
+    data.canViewUpdatedHistory,
+    password,
+    String(data.notes || "").trim(),
+    data.createdDate || today()
+  );
+  state.users.unshift(record);
+  await postRecord("user", record);
+  addHistory("Created user", userName);
+  notifySuccess("User created", userName + " was saved successfully.");
+  return true;
+}
+
 async function createShipment(data) {
   if (duplicateRecordExists("shipment", data.jobNo)) {
     notifyDuplicate(data.jobNo);
