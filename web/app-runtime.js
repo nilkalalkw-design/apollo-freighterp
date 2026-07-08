@@ -5156,7 +5156,7 @@ function updateTariffPreview(scope, tariffs, emptyText) {
   if (scope === 'invoice') {
     const invoiceLinesField = dialogBody.querySelector('input[name="invoiceLinesJson"]');
     const taxPercentField = dialogBody.querySelector('input[name="taxPercent"]');
-    container.innerHTML = invoicePreviewMarkup(null, tariffs[0] || null, parseInvoiceLineItems(invoiceLinesField?.value || '[]'), Number(taxPercentField?.value || 0), isAdminSession());
+    container.innerHTML = invoicePreviewMarkup(null, tariffs[0] || null, parseInvoiceLineItems(invoiceLinesField?.value || '[]'), Number(taxPercentField?.value || 0), true);
     return;
   }
   container.innerHTML = tariffPreviewHtml(tariffs, emptyText);
@@ -5281,7 +5281,7 @@ function bindInvoiceShipmentTariff() {
   };
 
   const renderInvoicePreview = (shipmentItem, tariffItem, taxPercent) => {
-    if (previewContainer) previewContainer.innerHTML = invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, isAdminSession());
+    if (previewContainer) previewContainer.innerHTML = invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, true);
   };
 
   const updateInvoicePreviewSummary = (summary) => {
