@@ -1122,7 +1122,7 @@ function boot() {
   resetPasswordButton.addEventListener("click", handlePasswordReset);
   loginForm.querySelector("[data-toggle-password]")?.addEventListener("click", toggleLoginPassword);
   moduleContent.addEventListener("click", handleModuleClick);
-  moduleContent.addEventListener("dblclick", handleModuleDoubleClick);
+  moduleContent.addEventListener("click", handleModuleDoubleClick);
   moduleContent.addEventListener("keydown", handleModuleKeydown);
   moduleContent.addEventListener("submit", handleModuleSubmit);
   dialogSecondary.addEventListener("click", () => dialogState?.onSecondary?.());
