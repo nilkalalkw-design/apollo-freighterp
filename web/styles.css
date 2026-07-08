@@ -706,7 +706,7 @@ label {
 }
 
 .wide-left {
-  grid-template-columns: minmax(0, 1.8fr) minmax(320px, 0.9fr);
+  grid-template-columns: minmax(0, 1.8fr) minmax(200px, 0.9fr);
 }
 
 .single-panel {
