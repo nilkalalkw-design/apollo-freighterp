@@ -1995,9 +1995,10 @@ function renderDashboard() {
       ${kpi("Month Revenue", money(rows.reduce((sum, row) => sum + Number(row.sell || 0), 0)), "Sell total", "month-revenue")}
       ${kpi("Gross Profit", money(rows.reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0) - state.additionalCharges.reduce((sum, charge) => sum + Number(charge.totalAmount || 0), 0)), "Sell minus supplier and extra cost", "gross-profit")}
     </section>
-    <section class="split-grid">
+    <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, shipmentColumns())}</article>
-      <article class="panel">${panelHeader("Exception Alerts", "Controls")}
+      <details class="panel collapsible-section dashboard-alert-panel">
+        <summary>${panelHeader("Exception Alerts")}<span class="dashboard-alert-toggle" aria-hidden="true"></span></summary>
         <div class="alert-list">
           ${alert("Jobs missing tariff/rate", "AFS-2605005 needs tariff selection before invoice.")}
           ${alert("Delivered but not invoiced", "AFS-2605003 is delivered and waiting for billing.")}
@@ -2005,7 +2006,7 @@ function renderDashboard() {
           ${alert("Admin requests waiting", `${pendingRequests} pending request(s) need admin approval. Open User Management / Settings to review.`)}
           ${alert("Additional charges waiting", `${pendingCharges} additional charge entry/changes are waiting for approval.`)}
         </div>
-      </article>
+      </details>
     </section>`;
 }
 
@@ -4076,11 +4077,16 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     `, true, sectionOpen)}
     ${cargoItemsBuilder(fieldValue("cargoItemsJson", record?.palletDimensionsJson || "[]"), fieldValue("tariffNo"), defaultCustomer)}
     <input type="hidden" name="transportMode" value="" />
+    <input type="hidden" name="deliveryNoteNo" value="${escapeHtml(fieldValue("deliveryNoteNo"))}" />
     <input type="hidden" name="tcnNumber" value="${escapeHtml(fieldValue("tcnNumber"))}" />
     <input type="hidden" name="transitDays" value="${escapeHtml(fieldValue("transitDays", "3"))}" />
     <input type="hidden" name="shipmentServiceOther" value="${escapeHtml(fieldValue("shipmentServiceOther"))}" />
     ${checkbox("printOnlyCargoDetails", "Cargo Summary", fieldValue("printOnlyCargoDetails", false))}
-    <div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN</button></div>
+    <div class="action-row">
+      <button type="button" class="secondary-button" data-dialog-action="generate-pod">Generate Delivery Note / POD</button>
+      <button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN</button>
+      <button type="button" class="secondary-button" data-dialog-action="view-tcn">View TCN</button>
+    </div>
   `;
 }
 
@@ -4549,6 +4555,7 @@ function bindPalletDimensionBuilder() {
   const piecesField = dialogBody.querySelector("input[name='pieces']");
   const actualWeightField = dialogBody.querySelector("input[name='actualKg']");
   const manualChargeableField = dialogBody.querySelector("input[name='manualChargeableKg']");
+  const deliveryNoteField = dialogBody.querySelector("input[name='deliveryNoteNo']");
   const tcnField = dialogBody.querySelector("input[name='tcnNumber']");
   const airwayBillField = dialogBody.querySelector("input[name='airwayBillNo']");
   if (!builder || !hiddenField) return;
@@ -4591,6 +4598,30 @@ function bindPalletDimensionBuilder() {
         <span>Total Gross Weight: ${money(totalWeightKg)}</span>
       `;
     }
+  };
+
+  const currentShipmentData = () => collectFormValues(dialogBody.closest("form"));
+
+  const printPod = () => {
+    const data = currentShipmentData();
+    const deliveryNo = data.deliveryNoteNo || nextDeliveryNoteNumber();
+    const deliveryDatetime = data.deliveryDatetime || (data.deliveryDate ? `${data.deliveryDate}${data.deliveryTime ? `T${data.deliveryTime}` : ""}` : "");
+    if (deliveryNoteField) deliveryNoteField.value = deliveryNo;
+    openPrintableDocument(podDocumentHtml({
+      ...data,
+      deliveryNoteNo: deliveryNo,
+      deliveryDatetime: deliveryDatetime || today()
+    }));
+  };
+
+  const printTcn = (persistNumber = true) => {
+    const data = currentShipmentData();
+    const tcn = data.tcnNumber || data.airwayBillNo || nextTcnNumber();
+    if (persistNumber) {
+      if (tcnField) tcnField.value = tcn;
+      if (airwayBillField) airwayBillField.value = tcn;
+    }
+    openPrintableDocument(tcnDocumentHtml({ ...data, airwayBillNo: tcn, tcnNumber: tcn, palletDimensionsJson: hiddenField.value }));
   };
 
   const sync = () => {
@@ -4685,13 +4716,9 @@ function bindPalletDimensionBuilder() {
     }
   });
 
-  dialogBody.querySelector("[data-dialog-action='generate-tcn']")?.addEventListener("click", () => {
-    const data = collectFormValues(dialogBody.closest("form"));
-    const tcn = data.tcnNumber || data.airwayBillNo || nextTcnNumber();
-    if (tcnField) tcnField.value = tcn;
-    if (airwayBillField) airwayBillField.value = tcn;
-    openPrintableDocument(tcnDocumentHtml({ ...data, airwayBillNo: tcn, tcnNumber: tcn, palletDimensionsJson: hiddenField.value }));
-  });
+  dialogBody.querySelector("[data-dialog-action='generate-pod']")?.addEventListener("click", printPod);
+  dialogBody.querySelector("[data-dialog-action='generate-tcn']")?.addEventListener("click", () => printTcn(true));
+  dialogBody.querySelector("[data-dialog-action='view-tcn']")?.addEventListener("click", () => printTcn(false));
 
   dialogBody.querySelector("[name='volumeCategory']")?.addEventListener("change", sync);
   chargeableField?.addEventListener("input", () => {
@@ -5093,7 +5120,7 @@ function invoicePreviewMeta(shipmentItem, tariffItem) {
   '</div>';
 }
 
-function invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, canEditCost) {
+function invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, canEditCost = true) {
   const selectedWeight = shipmentItem ? effectiveChargeableWeightForShipment(shipmentItem) : null;
   var summary = invoiceTotals(lines, taxPercent);
   return '<section class="invoice-preview-shell">' +

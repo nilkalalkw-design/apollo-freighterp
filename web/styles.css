@@ -843,6 +843,52 @@ label {
   gap: 0;
 }
 
+.dashboard-alert-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboard-alert-panel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  list-style: none;
+}
+
+.dashboard-alert-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dashboard-alert-panel > summary .panel-header {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.dashboard-alert-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 84px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f3f7fb;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.dashboard-alert-toggle::before {
+  content: "Expand";
+}
+
+.dashboard-alert-panel[open] .dashboard-alert-toggle::before {
+  content: "Collapse";
+}
+
 .form-section-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
