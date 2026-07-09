@@ -1995,8 +1995,10 @@ function renderDashboard() {
       ${kpi("Month Revenue", money(rows.reduce((sum, row) => sum + Number(row.sell || 0), 0)), "Sell total", "month-revenue")}
       ${kpi("Gross Profit", money(rows.reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0) - state.additionalCharges.reduce((sum, charge) => sum + Number(charge.totalAmount || 0), 0)), "Sell minus supplier and extra cost", "gross-profit")}
     </section>
-    <section class="split-grid wide-left">
+    <section class="split-grid single-panel dashboard-shipment-register">
       <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, shipmentColumns())}</article>
+    </section>
+    <section class="split-grid single-panel dashboard-alert-row">
       <details class="panel collapsible-section dashboard-alert-panel">
         <summary>${panelHeader("Exception Alerts")}<span class="dashboard-alert-toggle" aria-hidden="true"></span></summary>
         <div class="alert-list">
@@ -4083,9 +4085,9 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     <input type="hidden" name="shipmentServiceOther" value="${escapeHtml(fieldValue("shipmentServiceOther"))}" />
     ${checkbox("printOnlyCargoDetails", "Cargo Summary", fieldValue("printOnlyCargoDetails", false))}
     <div class="action-row">
-      <button type="button" class="secondary-button" data-dialog-action="generate-pod">Generate Delivery Note / POD</button>
       <button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="view-tcn">View TCN</button>
+      <button type="button" class="secondary-button" data-dialog-action="generate-pod">Generate Delivery Note / POD</button>
     </div>
   `;
 }
