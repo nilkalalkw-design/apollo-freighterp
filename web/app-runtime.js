@@ -4135,7 +4135,7 @@ function cargoItemsBuilder(initialValue = "[]", appliedTariffNo = "", customerNa
     </div>
     <div class="tariff-charge-table" data-pallet-lines-list></div>
     <div class="form-section-grid cargo-totals">
-      ${select("volumeCategory", "", volumeCategoryOptions(), fieldValue("volumeCategory", "1 CBM = 250 KG")}
+      ${select("volumeCategory", "", volumeCategoryOptions(), "1 CBM = 250 KG")}
       ${input("cbm", "Grand Total CBM", "0", true, "number")}
       ${input("actualKg", "Total Actual Weight", "0", true, "number")}
       ${input("chargeableKg", "Chargeable Weight", "0", false, "number")}
@@ -4144,7 +4144,7 @@ function cargoItemsBuilder(initialValue = "[]", appliedTariffNo = "", customerNa
       <input type="hidden" name="manualChargeableKg" value="0" />
     </div>
     <div class="form-section-grid cargo-description-row">
-      ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", fieldValue("natureofGoods","", false, 3)}
+      ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
       ${selectFrom("tariffNo", "Apply Tariff", tariffOptionsForCustomer(customerName), appliedTariffNo)}
     </div>
   </section>`;
