@@ -3543,7 +3543,13 @@ function detailFieldControl(type, key, value, record) {
     return cargoItemsBuilder(value || record.palletDimensionsJson || "[]", record.tariffNo, record.customer);
   }
   if (type === "shipment" && key === "palletDimensionsJson") {
-    return record.cargoItemsJson ? "" : cargoItemsBuilder(value || "[]", record.tariffNo, record.customer);
+    return record.cargoItemsJson ? "" : cargoItemsBuilder(
+  value || "[]",
+  record.tariffNo,
+  record.customer,
+  record.natureOfGoods,
+  record.volumeCategory
+)
   }
   if (type === "shipment" && key === "tcnNumber") {
     return `${input(key, labelize(key), value ?? "", true)}<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN Number</button></div>`;
