@@ -437,6 +437,7 @@ function shipment(
     billingParty2Email: meta.billingParty2Email || "",
     billingParty2Percentage: meta.billingParty2Percentage || "",
     manualChargeableKg: Number(meta.manualChargeableKg || 0),
+    volumeCategory: meta.volumeCategory || volumeCategory,
     natureOfGoods: meta.natureOfGoods || "",
     cargoItemsJson: meta.cargoItemsJson || meta.palletDimensionsJson || "[]",
     transitPoint: meta.transitPoint || "",
@@ -4113,7 +4114,13 @@ function palletDimensionBuilder(initialValue = "[]") {
   </section>`;
 }
 
-function cargoItemsBuilder(initialValue = "[]", appliedTariffNo = "", customerName = "") {
+function cargoItemsBuilder(
+  initialValue = "[]",
+  appliedTariffNo = "",
+  customerName = "",
+  natureOfGoods = "",
+  volumeCategory = "1 CBM = 250 KG"
+) {
   return `<section class="form-section pallet-builder" data-pallet-builder>
     <h3>Cargo Details</h3>
     <input type="hidden" name="cargoItemsJson" value="${escapeHtml(initialValue || "[]")}" />
@@ -4136,7 +4143,7 @@ function cargoItemsBuilder(initialValue = "[]", appliedTariffNo = "", customerNa
     </div>
     <div class="tariff-charge-table" data-pallet-lines-list></div>
     <div class="form-section-grid cargo-totals">
-      ${select("volumeCategory", "", volumeCategoryOptions(), "1 CBM = 250 KG")}
+      ${select("volumeCategory", "", volumeCategoryOptions(), volumeCategory)}
       ${input("cbm", "Grand Total CBM", "0", true, "number")}
       ${input("actualKg", "Total Actual Weight", "0", true, "number")}
       ${input("chargeableKg", "Chargeable Weight", "0", false, "number")}
@@ -4145,7 +4152,7 @@ function cargoItemsBuilder(initialValue = "[]", appliedTariffNo = "", customerNa
       <input type="hidden" name="manualChargeableKg" value="0" />
     </div>
     <div class="form-section-grid cargo-description-row">
-      ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", "", false, 3)}
+      ${textarea("natureOfGoods", "Nature of Goods / Description of Goods", natureOfGoods, false, 3)}
       ${selectFrom("tariffNo", "Apply Tariff", tariffOptionsForCustomer(customerName), appliedTariffNo)}
     </div>
   </section>`;
