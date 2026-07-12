@@ -193,7 +193,7 @@ function seedState() {
       additionalChargeNumberFormat: "CHG-YY###",
       supplierNumberFormat: "TRN-###",
       columnLayoutJson: "{}",
-      defaultVolumetricDivisor: "5000",
+      defaulttricDivisor: "5000",
       requirePodBeforeInvoice: "Yes",
       branches: "Kuwait HO, Dubai",
       dropdownOptionsJson: "{}"
@@ -279,6 +279,7 @@ function shipmentMetaNotes(data) {
     billingParty2Percentage: String(data.billingParty2Percentage || "").trim(),
     printOnlyCargoDetails: isChecked(data.printOnlyCargoDetails),
     manualChargeableKg: Number(data.manualChargeableKg || 0),
+    volumeCategory: String(data.volumeCategory || "1 CBM = 250 KG").trim(),
     natureOfGoods: String(data.natureOfGoods || "").trim(),
     cargoItemsJson: data.cargoItemsJson || data.palletDimensionsJson || "[]",
     transitPoint: String(data.transitPoint || "").trim(),
