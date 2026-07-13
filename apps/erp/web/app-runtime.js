@@ -1124,7 +1124,7 @@ function boot() {
   resetPasswordButton.addEventListener("click", handlePasswordReset);
   loginForm.querySelector("[data-toggle-password]")?.addEventListener("click", toggleLoginPassword);
   moduleContent.addEventListener("click", handleModuleClick);
-  moduleContent.addEventListener("click", handleModuleDoubleClick);
+  moduleContent.addEventListener("click", handleModuleLinkClick);
   moduleContent.addEventListener("keydown", handleModuleKeydown);
   moduleContent.addEventListener("submit", handleModuleSubmit);
   dialogSecondary.addEventListener("click", () => dialogState?.onSecondary?.());
@@ -1956,7 +1956,7 @@ function updateDateFilterStatus() {
 
 function portalRows(name) { return Array.isArray(customerPortalData?.[name]) ? customerPortalData[name] : []; }
 function portalStatus(value) { return String(value || "").toUpperCase().replace(/\s+/g, "_"); }
-function renderCustomerDashboard() { const requests = portalRows("shipmentRequests"); const shipments = portalRows("shipments"); const notifications = portalRows("notifications"); const activity = portalRows("activityLogs"); const pending = requests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))).length; const approved = requests.filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))).length; const rejected = requests.filter((row) => portalStatus(row.status) === "REJECTED").length; return "<section class=\"kpi-grid\">" + kpi("Total Shipments", shipments.length + requests.length, "Your shipment records") + kpi("Pending Requests", pending, "Waiting company review") + kpi("Approved Requests", approved, "Approved or auto approved") + kpi("Rejected Requests", rejected, "Rejected requests") + kpi("Notifications", notifications.length, "Portal messages") + "</section><section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Recent Requests", "Customer Portal") + table("customerRequest", requests.slice(0, 8), customerRequestColumns()) + "</article><article class=\"panel\">" + panelHeader("Recent Activity", "Customer Portal") + table("customerActivity", activity.slice(0, 8), customerActivityColumns()) + "</article></section>"; }
+function renderCustomerDashboard() { const requests = portalRows("shipmentRequests"); const shipments = portalRows("shipments"); const notifications = portalRows("notifications"); const activity = portalRows("activityLogs"); const pending = requests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))).length; const approved = requests.filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))).length; const rejected = requests.filter((row) => portalStatus(row.status) === "REJECTED").length; return "<section class=\"kpi-grid\">" + kpi("Total Shipments", shipments.length + requests.length, "Your shipment records") + kpi("Pending Requests", pending, "Waiting company review") + kpi("Approved Requests", approved, "Approved or auto approved") + kpi("Rejected Requests", rejected, "Rejected requests") + kpi("Notifications", notifications.length, "Portal messages") + "</section><section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Recent Requests", "Customer Portal") + table("customerRequest", requests.slice(0, 8), customerRequestColumns(), undefined, "customerRequest:dashboard") + "</article><article class=\"panel\">" + panelHeader("Recent Activity", "Customer Portal") + table("customerActivity", activity.slice(0, 8), customerActivityColumns(), undefined, "customerActivity:dashboard") + "</article></section>"; }
 function renderCustomerNewShipment() { const hsOptions = portalRows("hsCodeMaster").map((row) => ({ value: row.item_name || row.itemName || "", label: [row.hs_code || row.hsCode, row.item_code || row.itemCode, row.alternate_name || row.alternateName].filter(Boolean).join(" | ") })); return "<section class=\"panel\">" + panelHeader("New Shipment Request", "Customer Portal") + "<form class=\"stack-form\" data-form=\"customer-shipment-request\">" + select("shipmentType", "Shipment Type", ["Export", "Import", "Cross Trade", "Local Delivery"], "Export") + input("origin", "Origin", "") + input("destination", "Destination", "") + input("consignee", "Consignee", currentSession()?.customerName || "") + selectFrom("itemName", "Item Name", hsOptions, "") + input("hsCode", "HS Code", "") + input("itemCode", "Item Code", "") + input("quantity", "Quantity", "1", false, "number") + input("weight", "Weight", "0", false, "number") + input("invoiceValue", "Invoice Value", "0", false, "number") + textarea("remarks", "Remarks", "", false, 3) + "<label>Attachments<input name=\"attachments\" type=\"file\" multiple accept=\".pdf,.jpg,.jpeg,.png,.docx,.xlsx\" /></label><button type=\"submit\">Submit Request</button></form></section>"; }
 function renderCustomerShipments() { return "<section class=\"split-grid wide-left\"><article class=\"panel\">" + panelHeader("Shipment Requests", "History") + table("customerRequest", portalRows("shipmentRequests"), customerRequestColumns()) + "</article><article class=\"panel\">" + panelHeader("Company Shipments", "Tracking") + table("customerShipment", portalRows("shipments"), customerShipmentColumns()) + "</article></section>"; }
 function renderCustomerTracking() { return "<section class=\"panel\">" + panelHeader("Tracking", "Customer Portal") + table("customerShipment", portalRows("shipments"), customerShipmentColumns()) + "</section>"; }
@@ -1984,7 +1984,7 @@ function renderDashboard() {
         ${kpi("Unbilled", unbilled, "Your jobs ready for billing", "unbilled")}
         ${kpi("Pending Requests", pendingRequests, "Your pending approvals", "pending-requests")}
       </section>
-      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${table("shipment", rows, shipmentColumns())}</section>`;
+      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:myShipments")}</section>`;
   }
   return `
     <section class="kpi-grid">
@@ -1998,7 +1998,7 @@ function renderDashboard() {
       ${kpi("Gross Profit", money(rows.reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0) - state.additionalCharges.reduce((sum, charge) => sum + Number(charge.totalAmount || 0), 0)), "Sell minus supplier and extra cost", "gross-profit")}
     </section>
     <section class="split-grid single-panel dashboard-shipment-register">
-      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, shipmentColumns())}</article>
+      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:dashboard")}</article>
     </section>
     <section class="split-grid single-panel dashboard-alert-row">
       <details class="panel collapsible-section dashboard-alert-panel">
@@ -2104,7 +2104,7 @@ function openDashboardMetricDialog(metric) {
             </div>
             <span class="status-badge neutral">${escapeHtml(String(config.rows.length))}</span>
           </div>
-          ${config.rows.length ? table(metric === "pending-requests" ? "userRequest" : "shipment", config.rows, config.columns, false) : `<p class="empty-state">No matching records found.</p>`}
+          ${config.rows.length ? table(metric === "pending-requests" ? "userRequest" : "shipment", config.rows, config.columns, false, `metric:${metric}`, false) : `<p class="empty-state">No matching records found.</p>`}
         </div>
       </div>
       </div>
@@ -2162,7 +2162,7 @@ function renderShipments() {
       <article class="panel">${panelHeader("Shipment Register", "Editable records")} ${table("shipment", rows, shipmentColumns())}</article>
       ${moduleActionPanel("Shipment Actions", "shipment", "Use separate desktop-style windows for new shipment entry and load/edit shipment details.", actionChecklist([
         "New button opens the shipment popup window.",
-        "Double-click a shipment number or AWB number to open the record.",
+        "Click a shipment number or AWB number to open the record.",
         "Shipment type controls service options: Import, Export, WHC, and Consolidation service."
       ]) + documentActionControls("shipment", "Shipment") + blockRequestControls("shipment", "Shipment"))}
     </section>
@@ -2268,7 +2268,7 @@ function renderPod() {
   const rows = filteredRows(visibleRows(state.shipments).filter((row) => row.podStatus !== "Uploaded" || row.status !== "Closed"));
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("POD Pending / Delivery Board", "Delivery")} ${table("shipment", rows, shipmentColumns())}</article>
+      <article class="panel">${panelHeader("POD Pending / Delivery Board", "Delivery")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:pod")}</article>
       ${moduleActionPanel("POD Actions", "pod", "Load a shipment into a separate POD window or create a new delivery update popup.", documentActionControls("pod", "Delivery Note / POD"))}
     </section>
     ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for POD-related shipment cleanup.")}`;
@@ -2304,7 +2304,7 @@ function renderShipmentStatus() {
   const rows = filteredRows(visibleRows(state.shipments));
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Shipment Status Register", "Status board")} ${table("shipment", rows, shipmentColumns())}</article>
+      <article class="panel">${panelHeader("Shipment Status Register", "Status board")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:status")}</article>
       <article class="panel">${panelHeader("Status Actions", "Update / Email")}
         <div class="action-stack">
           <p class="empty-state">Select a shipment, load its status window, or send the latest update through Outlook to the related customer.</p>
@@ -2649,7 +2649,7 @@ function reportPreviewPanel(preview) {
         <h3>${escapeHtml(preview.reportType)}</h3>
         <p>${escapeHtml(preview.summary)}</p>
       </div>
-      ${table("shipment", preview.rows, shipmentColumns(), false)}
+      ${table("shipment", preview.rows, shipmentColumns(), false, "shipment:reportPreview", false)}
     </div>
   </div>`;
 }
@@ -2671,13 +2671,51 @@ function empty(text) {
   return `<p class="empty-state">${escapeHtml(text)}</p>`;
 }
 
-function table(type, rows, columns, showLoad = type !== "shipment") {
+function table(type, rows, columns, showLoad = type !== "shipment", scope = type, sortable = true) {
+  const sortedRows = sortable ? applySort(scope, rows) : rows;
   const header = showLoad ? `<th>Load</th>` : "";
   const colSpan = columns.length + (showLoad ? 1 : 0);
-  const body = rows.length
-    ? rows.map((row, index) => tableRow(type, row, index, columns, showLoad)).join("")
+  const body = sortedRows.length
+    ? sortedRows.map((row, index) => tableRow(type, row, index, columns, showLoad)).join("")
     : `<tr><td colspan="${colSpan}">${empty("No records found.")}</td></tr>`;
-  return `<div class="table-wrap"><table><thead><tr>${columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("")}${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const headCells = columns.map(([key, label]) => sortable ? sortableHeaderCell(type, scope, key, label) : `<th>${escapeHtml(label)}</th>`).join("");
+  return `<div class="table-wrap"><table><thead><tr>${headCells}${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function sortableHeaderCell(type, scope, key, label) {
+  const sortState = (state.ui.sort || {})[scope];
+  const isActive = !!(sortState && sortState.key === key);
+  const arrow = isActive ? (sortState.direction === "asc" ? " ▲" : " ▼") : "";
+  return `<th><button type="button" class="sort-header-button${isActive ? " is-active" : ""}" data-action="sort-column" data-type="${escapeHtml(type)}" data-scope="${escapeHtml(scope)}" data-key="${escapeHtml(key)}">${escapeHtml(label)}${arrow}</button></th>`;
+}
+
+function applySort(scope, rows) {
+  const sortState = (state.ui.sort || {})[scope];
+  if (!sortState || !sortState.key) return rows;
+  const key = sortState.key;
+  const factor = sortState.direction === "asc" ? 1 : -1;
+  return [...rows].sort((left, right) => factor * compareCellValues(left?.[key], right?.[key]));
+}
+
+function compareCellValues(left, right) {
+  const leftValue = left === undefined || left === null ? "" : left;
+  const rightValue = right === undefined || right === null ? "" : right;
+  const leftNum = Number(leftValue);
+  const rightNum = Number(rightValue);
+  const bothNumeric = leftValue !== "" && rightValue !== "" && !Number.isNaN(leftNum) && !Number.isNaN(rightNum);
+  if (bothNumeric) return leftNum - rightNum;
+  return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: "base" });
+}
+
+function guessDefaultSortDirection(type, key) {
+  const rows = allCollectionFor(type) || [];
+  const sample = rows.map((row) => row?.[key]).find((value) => value !== undefined && value !== null && String(value).trim() !== "");
+  if (sample === undefined) return "desc";
+  const text = String(sample).trim();
+  const isDateLike = /^\d{4}-\d{2}-\d{2}/.test(text) || /^\d{2}[-/]\d{2}[-/]\d{4}/.test(text);
+  const isNumericLike = text !== "" && !Number.isNaN(Number(text));
+  const isCodeLike = /[A-Za-z]/.test(text) && /\d{3,}/.test(text);
+  return (isDateLike || isNumericLike || isCodeLike) ? "desc" : "asc";
 }
 
 function safeTable(type, rows, columns, fallbackText) {
@@ -2693,6 +2731,7 @@ function tableRow(type, row, index, columns, showLoad = true) {
   const actionCell = showLoad ? `<td>${tableActionButton(type, id)}</td>` : "";
   return `<tr>${columns.map(([key]) => `<td>${cellHtml(type, key, row, index)}</td>`).join("")}${actionCell}</tr>`;
 }
+
 
 function tableActionButton(type, id) {
   if (type === "load") {
@@ -3197,6 +3236,20 @@ async function handleModuleClick(event) {
   if (!button) return;
   const { action, type, id, mode } = button.dataset;
 
+  if (action === "sort-column") {
+    const key = button.dataset.key;
+    const scope = button.dataset.scope || type;
+    state.ui.sort = state.ui.sort || {};
+    const current = state.ui.sort[scope];
+    const direction = current && current.key === key
+      ? (current.direction === "asc" ? "desc" : "asc")
+      : guessDefaultSortDirection(type, key);
+    state.ui.sort[scope] = { key, direction };
+    saveState();
+    render();
+    return;
+  }
+
   if (action === "open") {
     openRecord(type, id);
     return;
@@ -3303,7 +3356,7 @@ async function handleModuleClick(event) {
   }
 }
 
-function handleModuleDoubleClick(event) {
+function handleModuleLinkClick(event) {
   const shipmentButton = event.target.closest("[data-shipment-open]");
   if (shipmentButton) {
     const shipmentId = shipmentButton.dataset.shipmentId || "";
@@ -3540,7 +3593,13 @@ function detailFieldControl(type, key, value, record) {
     return "";
   }
   if (type === "shipment" && key === "cargoItemsJson") {
-    return cargoItemsBuilder(value || record.palletDimensionsJson || "[]", record.tariffNo, record.customer);
+    return cargoItemsBuilder(
+      value || record.palletDimensionsJson || "[]",
+      record.tariffNo,
+      record.customer,
+      record.natureOfGoods,
+      record.volumeCategory
+    );
   }
   if (type === "shipment" && key === "palletDimensionsJson") {
     return record.cargoItemsJson ? "" : cargoItemsBuilder(
@@ -5560,7 +5619,7 @@ function exportReport() {
     return;
   }
 
-  const tableHtml = table("shipment", preview.rows, shipmentColumns(), false);
+  const tableHtml = table("shipment", preview.rows, shipmentColumns(), false, "shipment:printPreview", false);
   printWindow.document.write(`
     <html>
       <head>
@@ -7198,3 +7257,4 @@ function sendShipmentStatusEmail(jobNo) {
 }
 
 boot();
+
