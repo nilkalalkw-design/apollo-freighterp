@@ -4144,7 +4144,13 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("billingParty1Email", "Email Address", fieldValue("billingParty1Email"), false, "email")}
       ${selectEditable("billingParty1CreditTerms", "Credit Terms", "creditTerms", ["Cash", "15 days", "30 days", "45 days"], fieldValue("billingParty1CreditTerms"))}
     `, true, sectionOpen)}
-    ${cargoItemsBuilder(fieldValue("cargoItemsJson", record?.palletDimensionsJson || "[]"), fieldValue("tariffNo"), defaultCustomer)}
+    ${cargoItemsBuilder(
+      fieldValue("cargoItemsJson", record?.palletDimensionsJson || "[]"),
+      fieldValue("tariffNo"),
+      defaultCustomer,
+      fieldValue("natureOfGoods"),
+      fieldValue("volumeCategory", "1 CBM = 250 KG")
+    )}
     <input type="hidden" name="transportMode" value="" />
     <input type="hidden" name="deliveryNoteNo" value="${escapeHtml(fieldValue("deliveryNoteNo"))}" />
     <input type="hidden" name="tcnNumber" value="${escapeHtml(fieldValue("tcnNumber"))}" />
