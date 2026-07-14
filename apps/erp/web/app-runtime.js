@@ -2405,7 +2405,7 @@ function renderSettings() {
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${select("branches", "Branches", branchOptions(), normalizeBranchName(state.settings.branches || branchOptions()[0]))}
-          ${select("allowGlobalShipmentQuickSearch", "Allow 'Open by Number' to search all branches", ["No", "Yes"], state.settings.allowGlobalShipmentQuickSearch || "Yes")}
+          ${select("allowGlobalShipmentQuickSearch", "Allow 'Open by Number' to search all branches", ["No", "Yes"], state.settings.allowGlobalShipmentQuickSearch || "No")}
           <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
