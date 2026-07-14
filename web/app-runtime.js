@@ -1125,6 +1125,7 @@ function boot() {
   loginForm.querySelector("[data-toggle-password]")?.addEventListener("click", toggleLoginPassword);
   moduleContent.addEventListener("click", handleModuleClick);
   moduleContent.addEventListener("click", handleModuleLinkClick);
+  moduleContent.addEventListener("mousedown", handleColumnResizeStart);
   moduleContent.addEventListener("keydown", handleModuleKeydown);
   moduleContent.addEventListener("submit", handleModuleSubmit);
   dialogSecondary.addEventListener("click", () => dialogState?.onSecondary?.());
@@ -2160,13 +2161,25 @@ function renderShipments() {
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Shipment Register", "Editable records")} ${table("shipment", rows, shipmentColumns())}</article>
-      ${moduleActionPanel("Shipment Actions", "shipment", "Use separate desktop-style windows for new shipment entry and load/edit shipment details.", actionChecklist([
+      ${moduleActionPanel("Shipment Actions", "shipment", "Use separate desktop-style windows for new shipment entry and load/edit shipment details.", quickOpenShipmentMarkup() + actionChecklist([
         "New button opens the shipment popup window.",
         "Click a shipment number or AWB number to open the record.",
+        "Use 'Open Shipment' above to jump straight to a shipment by Job No, AWB No, or TCN No.",
         "Shipment type controls service options: Import, Export, WHC, and Consolidation service."
       ]) + documentActionControls("shipment", "Shipment") + blockRequestControls("shipment", "Shipment"))}
     </section>
     ${adminDeletePanel("shipment", "Shipment", "Deleting a shipment also removes linked consolidation references, documents, invoices, and additional charges.")}`;
+}
+
+function quickOpenShipmentMarkup() {
+  return `<div class="action-stack">
+    <label>Open by Job No / AWB No / TCN No
+      <input type="text" id="quickOpenShipmentInput" placeholder="Enter number and click Open" />
+    </label>
+    <div class="action-row">
+      <button type="button" class="secondary-button" data-action="quick-open-shipment">Open Shipment</button>
+    </div>
+  </div>`;
 }
 
 function renderConsolidation() {
@@ -2259,9 +2272,20 @@ function renderInvoices() {
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Invoice Register", "Billing")} ${table("invoice", rows, invoiceColumns())}</article>
-      ${moduleActionPanel("Invoice Actions", "invoice", "Keep invoice creation and load/update in separate popup windows.", documentActionControls("invoice", "Bill"))}
+      ${moduleActionPanel("Invoice Actions", "invoice", "Keep invoice creation and load/update in separate popup windows.", quickOpenInvoiceMarkup() + documentActionControls("invoice", "Bill"))}
     </section>
     ${adminDeletePanel("invoice", "Invoice")}`;
+}
+
+function quickOpenInvoiceMarkup() {
+  return `<div class="action-stack">
+    <label>Open by Invoice No / Shipment No
+      <input type="text" id="quickOpenInvoiceInput" placeholder="Enter number and click Open" />
+    </label>
+    <div class="action-row">
+      <button type="button" class="secondary-button" data-action="quick-open-invoice">Open Invoice</button>
+    </div>
+  </div>`;
 }
 
 function renderPod() {
@@ -2381,6 +2405,7 @@ function renderSettings() {
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${select("branches", "Branches", branchOptions(), normalizeBranchName(state.settings.branches || branchOptions()[0]))}
+          ${select("allowGlobalShipmentQuickSearch", "Allow 'Open by Number' to search all branches", ["No", "Yes"], state.settings.allowGlobalShipmentQuickSearch || "No")}
           <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
@@ -2678,15 +2703,32 @@ function table(type, rows, columns, showLoad = type !== "shipment", scope = type
   const body = sortedRows.length
     ? sortedRows.map((row, index) => tableRow(type, row, index, columns, showLoad)).join("")
     : `<tr><td colspan="${colSpan}">${empty("No records found.")}</td></tr>`;
-  const headCells = columns.map(([key, label]) => sortable ? sortableHeaderCell(type, scope, key, label) : `<th>${escapeHtml(label)}</th>`).join("");
-  return `<div class="table-wrap"><table><thead><tr>${headCells}${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const locked = isColumnWidthLocked(scope);
+  const headCells = columns.map(([key, label]) => sortable ? sortableHeaderCell(type, scope, key, label, locked) : `<th>${escapeHtml(label)}</th>`).join("");
+  const widths = (state.ui.columnWidths || {})[scope];
+  const tableStyle = widths && Object.keys(widths).length ? ` style="table-layout:fixed"` : "";
+  const lockToggle = sortable ? columnLockToggleMarkup(scope, locked) : "";
+  return `${lockToggle}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}${header}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
-function sortableHeaderCell(type, scope, key, label) {
+function isColumnWidthLocked(scope) {
+  return Boolean((state.ui.columnWidthsLocked || {})[scope]);
+}
+
+function columnLockToggleMarkup(scope, locked) {
+  return `<div class="column-lock-row">
+    <button type="button" class="icon-toggle-button" data-action="toggle-column-lock" data-scope="${escapeHtml(scope)}" title="${locked ? "Column widths are locked. Click to unlock and resize." : "Column widths are unlocked. Drag a column edge to resize, then click to lock."}">${locked ? "🔒 Locked" : "🔓 Unlocked"}</button>
+  </div>`;
+}
+
+function sortableHeaderCell(type, scope, key, label, locked = false) {
   const sortState = (state.ui.sort || {})[scope];
   const isActive = !!(sortState && sortState.key === key);
   const arrow = isActive ? (sortState.direction === "asc" ? " ▲" : " ▼") : "";
-  return `<th><button type="button" class="sort-header-button${isActive ? " is-active" : ""}" data-action="sort-column" data-type="${escapeHtml(type)}" data-scope="${escapeHtml(scope)}" data-key="${escapeHtml(key)}">${escapeHtml(label)}${arrow}</button></th>`;
+  const width = (state.ui.columnWidths || {})[scope]?.[key];
+  const widthStyle = width ? ` style="width:${width}px"` : "";
+  const resizeHandle = locked ? "" : `<span class="col-resize-handle" data-resize-scope="${escapeHtml(scope)}" data-resize-key="${escapeHtml(key)}"></span>`;
+  return `<th${widthStyle}><button type="button" class="sort-header-button${isActive ? " is-active" : ""}" data-action="sort-column" data-type="${escapeHtml(type)}" data-scope="${escapeHtml(scope)}" data-key="${escapeHtml(key)}">${escapeHtml(label)}${arrow}</button>${resizeHandle}</th>`;
 }
 
 function applySort(scope, rows) {
@@ -3127,7 +3169,7 @@ function defaultColumnLayouts() {
     suppliers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
     tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["currency", "Currency"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"]],
     document: [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]],
-    invoice: [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"]],
+    invoice: [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"], ["createdBy", "USERNAME"]],
     charge: [["refNo", "Ref No"], ["shipmentNo", "Shipment No"], ["chargeType", "Charge Type"], ["supplier", "Supplier"], ["amount", "Amount"], ["taxAmount", "Tax"], ["totalAmount", "Total"], ["status", "Status"]],
     user: [["userName", "User"], ["email", "Email"], ["role", "Role"], ["accountStatus", "Status"], ["branchAccess", "Branch"]]
   };
@@ -3186,6 +3228,54 @@ function auditColumns() {
   return [["dateTime", "Date Time"], ["user", "User"], ["action", "Action"], ["reference", "Reference"]];
 }
 
+function openInvoiceByNumber(rawQuery) {
+  const query = String(rawQuery || "").trim().toLowerCase();
+  if (!query) {
+    window.alert("Enter an Invoice No or Shipment No first.");
+    return;
+  }
+
+  const match = visibleRows(state.invoices).find((row) => {
+    const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
+    const shipmentNo = String(row.shipmentNo || "").trim().toLowerCase();
+    return invoiceNo === query || shipmentNo === query;
+  });
+
+  if (!match) {
+    window.alert(`No invoice found matching "${rawQuery}". You may not have access to view this record.`);
+    return;
+  }
+
+  openRecord("invoice", rowId("invoice", match));
+}
+
+function openShipmentByNumber(rawQuery) {
+  const query = String(rawQuery || "").trim().toLowerCase();
+  if (!query) {
+    window.alert("Enter a Job No, AWB No, or TCN No first.");
+    return;
+  }
+
+  const searchAllBranches = String(state.settings.allowGlobalShipmentQuickSearch || "No").toLowerCase() === "yes";
+  const searchPool = searchAllBranches ? state.shipments : visibleRows(state.shipments);
+
+  const match = searchPool.find((row) => {
+    const jobNo = String(row.jobNo || "").trim().toLowerCase();
+    const tcnNumber = String(row.tcnNumber || "").trim().toLowerCase();
+    return jobNo === query || tcnNumber === query;
+  });
+
+  if (!match) {
+    const message = searchAllBranches
+      ? `No shipment found matching "${rawQuery}".`
+      : `No shipment found matching "${rawQuery}". You may not have access to view this record.`;
+    window.alert(message);
+    return;
+  }
+
+  openRecord("shipment", rowId("shipment", match));
+}
+
 function rowId(type, row) {
   const keys = {
     shipment: "jobNo",
@@ -3235,6 +3325,25 @@ async function handleModuleClick(event) {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const { action, type, id, mode } = button.dataset;
+
+  if (action === "toggle-column-lock") {
+    const scope = button.dataset.scope;
+    state.ui.columnWidthsLocked = state.ui.columnWidthsLocked || {};
+    state.ui.columnWidthsLocked[scope] = !state.ui.columnWidthsLocked[scope];
+    saveState();
+    render();
+    return;
+  }
+
+  if (action === "quick-open-invoice") {
+    openInvoiceByNumber(document.querySelector("#quickOpenInvoiceInput")?.value || "");
+    return;
+  }
+
+  if (action === "quick-open-shipment") {
+    openShipmentByNumber(document.querySelector("#quickOpenShipmentInput")?.value || "");
+    return;
+  }
 
   if (action === "sort-column") {
     const key = button.dataset.key;
@@ -3356,6 +3465,53 @@ async function handleModuleClick(event) {
   }
 }
 
+function handleColumnResizeStart(event) {
+  const handle = event.target.closest(".col-resize-handle");
+  if (!handle) return;
+  event.preventDefault();
+
+  const scope = handle.dataset.resizeScope;
+  const key = handle.dataset.resizeKey;
+  if (isColumnWidthLocked(scope)) return;
+  const th = handle.closest("th");
+  const headerRow = th.parentElement;
+  const allThs = Array.from(headerRow.querySelectorAll("th"));
+
+  state.ui.columnWidths = state.ui.columnWidths || {};
+  if (!state.ui.columnWidths[scope]) {
+    state.ui.columnWidths[scope] = {};
+    allThs.forEach((cell) => {
+      const cellHandle = cell.querySelector(".col-resize-handle");
+      const cellKey = cellHandle?.dataset.resizeKey;
+      if (cellKey) {
+        const currentWidth = Math.round(cell.getBoundingClientRect().width);
+        state.ui.columnWidths[scope][cellKey] = currentWidth;
+        cell.style.width = `${currentWidth}px`;
+      }
+    });
+    th.closest("table").style.tableLayout = "fixed";
+  }
+
+  const startX = event.clientX;
+  const startWidth = th.getBoundingClientRect().width;
+  const MIN_WIDTH = 40;
+
+  function onMouseMove(moveEvent) {
+    const newWidth = Math.max(MIN_WIDTH, Math.round(startWidth + (moveEvent.clientX - startX)));
+    th.style.width = `${newWidth}px`;
+    state.ui.columnWidths[scope][key] = newWidth;
+  }
+
+  function onMouseUp() {
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+    saveState();
+  }
+
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
+}
+
 function handleModuleLinkClick(event) {
   const shipmentButton = event.target.closest("[data-shipment-open]");
   if (shipmentButton) {
@@ -3373,6 +3529,16 @@ function handleModuleLinkClick(event) {
 }
 
 function handleModuleKeydown(event) {
+  if (event.key === "Enter" && event.target.id === "quickOpenInvoiceInput") {
+    event.preventDefault();
+    openInvoiceByNumber(event.target.value);
+    return;
+  }
+  if (event.key === "Enter" && event.target.id === "quickOpenShipmentInput") {
+    event.preventDefault();
+    openShipmentByNumber(event.target.value);
+    return;
+  }
   if (event.key !== "Enter" && event.key !== " ") return;
   const metricCard = event.target.closest("[data-dashboard-metric]");
   if (!metricCard) return;
@@ -6674,6 +6840,17 @@ async function handleModuleSubmit(event) {
   }
   saveState();
   render();
+}
+
+async function updateSettings(data) {
+  state.settings = { ...state.settings, ...data, settingsKey: state.settings.settingsKey || "default" };
+  const saved = await persistRecord("settings", state.settings);
+  if (saved) {
+    notifySuccess("Settings saved", "Company settings were updated successfully.");
+  } else {
+    notifyDenied("Saved locally only", "Could not reach the server, so this may not sync for other users yet.");
+  }
+  return true;
 }
 
 async function createTariff(data) {
