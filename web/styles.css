@@ -330,6 +330,17 @@ label {
   align-items: center;
 }
 
+.inline-input-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.inline-input-button input {
+  min-width: 0;
+}
+
 .password-input-wrap input {
   min-width: 0;
 }
