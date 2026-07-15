@@ -807,6 +807,7 @@ const resources = {
       field("supplier_number_format", ["supplierNumberFormat", "supplier_number_format"]),
       field("default_volumetric_divisor", ["defaultVolumetricDivisor", "default_volumetric_divisor"]),
       field("require_pod_before_invoice", ["requirePodBeforeInvoice", "require_pod_before_invoice"]),
+      field("allow_global_shipment_quick_search", ["allowGlobalShipmentQuickSearch", "allow_global_shipment_quick_search"]),
       field("enable_auto_approval", ["enableAutoApproval", "enable_auto_approval"]),
       field("branches"),
       field("column_layout_json", ["columnLayoutJson", "column_layout_json"]),
