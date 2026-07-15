@@ -195,6 +195,7 @@ function seedState() {
       columnLayoutJson: "{}",
       defaulttricDivisor: "5000",
       requirePodBeforeInvoice: "Yes",
+      allowGlobalShipmentQuickSearch: "No",
       branches: "Kuwait HO, Dubai",
       dropdownOptionsJson: "{}"
     },
@@ -1884,6 +1885,7 @@ function apiSettings(row) {
     supplierNumberFormat: row.supplier_number_format || state.settings.supplierNumberFormat,
     defaultVolumetricDivisor: row.default_volumetric_divisor || state.settings.defaultVolumetricDivisor,
     requirePodBeforeInvoice: row.require_pod_before_invoice || state.settings.requirePodBeforeInvoice,
+    allowGlobalShipmentQuickSearch: row.allow_global_shipment_quick_search || state.settings.allowGlobalShipmentQuickSearch || "No",
     branches: row.branches || state.settings.branches,
     columnLayoutJson: row.column_layout_json || state.settings.columnLayoutJson || "{}",
     dropdownOptionsJson: row.dropdown_options || state.settings.dropdownOptionsJson || "{}"
@@ -3703,6 +3705,7 @@ function openRecord(type, id) {
   if (type === "shipment") bindTariffFinancialAutofill();
   if (type === "shipment") bindVolumeCalculator();
   if (type === "shipment") bindPalletDimensionBuilder();
+  if (type === "shipment") bindAwbFetchButton();
   if (type === "tariff") bindTariffAdditionalCharges(record.additionalChargesJson || "[]");
   if (type === "load") bindConsolidationJobPicker();
   if (type === "invoice") bindInvoiceShipmentTariff();
@@ -4132,6 +4135,7 @@ function dialogConfigFor(type, mode = "") {
         bindTariffFinancialAutofill();
         bindVolumeCalculator();
         bindPalletDimensionBuilder();
+        bindAwbFetchButton();
       }
     },
     load: {
@@ -4255,7 +4259,12 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("customerReference", "Customer Reference", fieldValue("customerReference"))}
       ${select("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
       ${input("salesPerson", "Sales Person", fieldValue("salesPerson", currentUserName()))}
-      ${input("airwayBillNo", "Airway Bill / Bill of Lading", fieldValue("airwayBillNo", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo")), false)}
+      <label>Airway Bill / Bill of Lading
+        <span class="inline-input-button">
+          <input name="airwayBillNo" type="text" value="${escapeHtml(fieldValue("airwayBillNo", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo")))}" />
+          <button type="button" class="secondary-button" data-dialog-action="fetch-awb-data">Fetch</button>
+        </span>
+      </label>
     `, true, sectionOpen)}
     ${formSection("Customer Information", `
       ${selectFrom("customer", "Customer Name", state.customers.map((row) => row.name), defaultCustomer)}
@@ -4608,6 +4617,58 @@ function bindShipmentCustomerTariffs() {
   customerField.addEventListener("input", syncTariffs);
   customerField.addEventListener("change", syncTariffs);
   syncTariffs();
+}
+
+function bindAwbFetchButton() {
+  const fetchButton = dialogBody.querySelector("[data-dialog-action='fetch-awb-data']");
+  fetchButton?.addEventListener("click", fetchAwbAndRefillForm);
+}
+
+function fetchAwbAndRefillForm() {
+  const typedValue = dialogValue("airwayBillNo");
+  const query = String(typedValue || "").trim().toLowerCase();
+  if (!query) {
+    window.alert("Enter an Airway Bill / Bill of Lading number first.");
+    return;
+  }
+
+  const match = state.shipments.find((row) =>
+    String(row.airwayBillNo || "").trim().toLowerCase() === query ||
+    String(row.jobNo || "").trim().toLowerCase() === query
+  );
+
+  if (!match) {
+    window.alert(`No shipment found matching Airway Bill "${typedValue}" in any branch.`);
+    return;
+  }
+
+  const currentBranch = dialogValue("branch");
+  const prefillRecord = { ...match };
+  delete prefillRecord.jobNo;
+  prefillRecord.airwayBillNo = typedValue;
+  prefillRecord.branch = normalizeBranchName(currentBranch || defaultUserBranch());
+
+  editing = null;
+  dialogState = null;
+  openDialog({
+    title: "New Shipment (from Airway Bill)",
+    typeLabel: "Shipment",
+    saveLabel: "Create Shipment",
+    body: shipmentDialogBody("shipment", prefillRecord),
+    onSave: createShipment,
+    afterOpen: () => {
+      bindShipmentDirectionDialog();
+      bindShipmentCustomerTariffs();
+      bindShipmentCustomerAutofill();
+      bindShipmentCopySections();
+      bindTransporterAutofill();
+      bindTariffFinancialAutofill();
+      bindVolumeCalculator();
+      bindPalletDimensionBuilder();
+      bindAwbFetchButton();
+    }
+  });
+  notifySuccess("Data fetched", `Form filled from Airway Bill ${typedValue}.`);
 }
 
 function bindShipmentCustomerAutofill() {
