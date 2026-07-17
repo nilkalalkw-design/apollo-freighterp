@@ -414,22 +414,6 @@ label {
   color: #fff;
 }
 
-.row-action-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.row-action-group .ghost-button {
-  padding: 3px 8px;
-  font-size: 11px;
-}
-
-.danger-text {
-  color: var(--red-text);
-  border-color: var(--red-text);
-}
-
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
