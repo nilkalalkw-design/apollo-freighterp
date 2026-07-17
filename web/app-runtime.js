@@ -2663,7 +2663,7 @@ function shipmentOptions() {
 function tariffOptionsForCustomer(customer) {
   const name = String(customer || "").trim().toLowerCase();
   if (!name) return [];
-  return visibleRows(state.tariffs)
+  return state.tariffs
     .filter((row) => String(row.customer || "").trim().toLowerCase() === name)
     .map((row) => ({ value: row.tariffNo, label: `${row.tariffNo} | ${row.customer} | ${row.origin} to ${row.destination}` }));
 }
@@ -4515,7 +4515,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("salesPerson", "Sales Person", fieldValue("salesPerson", currentUserName()))}
       <label>Airway Bill / Bill of Lading
         <span class="inline-input-button">
-          <input name="airwayBillNo" type="text" value="${escapeHtml(fieldValue("airwayBillNo", ""))}" />
+          <input name="airwayBillNo" type="text" value="${escapeHtml(fieldValue("airwayBillNo", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo")))}" />
           <button type="button" class="secondary-button" data-dialog-action="fetch-awb-data">Fetch</button>
         </span>
       </label>
