@@ -20,12 +20,10 @@ const modules = [
   ["Tariffs / Rate Master", "Customer, lane, service, vehicle, and surcharge rates"],
   ["Documents", "Document tags, shipment attachments, and missing file checks"],
   ["Billing / Invoices", "Invoice shipments, monitor unbilled jobs, and check margins"],
-  ["Quotation", "Create customer quotations and convert them into shipments"],
   ["POD / Delivery", "Delivery status, POD uploads, disputes, and pending lists"],
   ["Shipment Status", "Dedicated shipment status updates and history controls"],
   ["Reports", "Operational, billing, POD, and margin reports"],
   ["User Management / Settings", "Users, permissions, branches, and company settings"],
-  ["Customer Portal Access", "Create and manage customer login accounts for the customer portal"],
   ["Audit Log", "Entry create and update history"]
 ];
 
@@ -172,13 +170,11 @@ function seedState() {
       invoice("INV-260001", "Gulf Retail Trading", "AFS-2605004", 95, 70, "Sent", "2026-05-02"),
       invoice("DRAFT-260006", "Al Noor Projects", "AFS-2605003", 780, 590, "Draft", "2026-05-05")
     ],
-    quotations: [],
     users: [
       user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All Branches", "All", true, true, true, true, "admin123", "System temporary admin"),
       user("ops-kuwait", "operations.kuwait@apollofreightsolution.com", "Operations", "Active", "Kuwait HO", "Assigned Branch Only", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Kuwait HO shipments"),
       user("billing-dubai", "billing.dubai@apollofreightsolution.com", "Billing", "Active", "Dubai", "Assigned Branch Only", "Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports", true, false, true, true, "billing123", "Invoice and finance access for Dubai")
     ],
-    customerUsers: [],
     unblockRequests: [],
     adminRequests: [],
     audit: [],
@@ -196,7 +192,6 @@ function seedState() {
       customerNumberFormat: "CUS-###",
       additionalChargeNumberFormat: "CHG-YY###",
       supplierNumberFormat: "TRN-###",
-      quotationNumberFormat: "QUO-YY###",
       columnLayoutJson: "{}",
       defaulttricDivisor: "5000",
       requirePodBeforeInvoice: "Yes",
@@ -788,27 +783,6 @@ function invoice(invoiceNo, customer, shipmentNo, revenue, supplierCost, status,
   return { invoiceNo, customer, shipmentNo, revenue, supplierCost, status, date, grossProfit: revenue - supplierCost, createdBy };
 }
 
-function quotation(quotationNo, customerName, status = "Draft", date = today(), createdBy = currentUserName()) {
-  return {
-    quotationNo,
-    branch: defaultUserBranch(),
-    date,
-    customerName,
-    customerContactPerson: "",
-    customerMobile: "",
-    customerEmail: "",
-    cargoItemsJson: "[]",
-    natureOfGoods: "",
-    volumeCategory: "1 CBM = 250 KG",
-    cbm: 0,
-    actualKg: 0,
-    status,
-    convertedJobNo: "",
-    notes: "",
-    createdBy
-  };
-}
-
 function user(
   userName,
   email,
@@ -891,9 +865,7 @@ function normalizeState(stored) {
     documents: Array.isArray(stored.documents) ? stored.documents : defaults.documents,
     additionalCharges: Array.isArray(stored.additionalCharges) ? stored.additionalCharges : defaults.additionalCharges,
     invoices: Array.isArray(stored.invoices) ? stored.invoices : defaults.invoices,
-    quotations: Array.isArray(stored.quotations) ? stored.quotations : defaults.quotations,
     users: normalizeUsers(Array.isArray(stored.users) && stored.users.length ? stored.users : defaults.users),
-    customerUsers: Array.isArray(stored.customerUsers) ? stored.customerUsers : defaults.customerUsers,
     unblockRequests: Array.isArray(stored.unblockRequests) ? stored.unblockRequests : defaults.unblockRequests,
     adminRequests: Array.isArray(stored.adminRequests) ? stored.adminRequests : defaults.adminRequests,
     audit: Array.isArray(stored.audit) ? stored.audit : defaults.audit,
@@ -1023,10 +995,6 @@ function nextShipmentNumber() {
 
 function nextInvoiceNumber() {
   return configuredNumber(state.settings.invoiceNumberFormat, state.invoices, "invoiceNo", "INV");
-}
-
-function nextQuotationNumber() {
-  return configuredNumber(state.settings.quotationNumberFormat, state.quotations, "quotationNo", "QUO");
 }
 
 function nextConsolidationNumber() {
@@ -1648,9 +1616,7 @@ async function syncFromApi() {
       documents,
       additionalCharges,
       invoices,
-      quotations,
       users,
-      customerUsers,
       unblockRequests,
       adminRequests,
       auditLog,
@@ -1665,9 +1631,7 @@ async function syncFromApi() {
       fetchJson("/api/documents"),
       fetchJson("/api/additional-charges"),
       fetchJson("/api/invoices"),
-      fetchJson("/api/quotations"),
       fetchJson("/api/users"),
-      fetchJson("/api/customer-users"),
       fetchJson("/api/unblock-requests"),
       fetchJson("/api/admin-requests"),
       fetchJson("/api/audit"),
@@ -1691,9 +1655,7 @@ async function syncFromApi() {
       state.documents = (documents.rows || []).map(apiDocument);
       state.additionalCharges = (additionalCharges.rows || []).map(apiAdditionalCharge);
       state.invoices = (invoices.rows || []).map(apiInvoice);
-      state.quotations = (quotations.rows || []).map(apiQuotation);
       state.users = normalizeUsers((users.rows || []).map(apiUser));
-      state.customerUsers = (customerUsers.rows || []).map(apiCustomerUser);
       state.unblockRequests = (unblockRequests.rows || []).map(apiUnblockRequest);
       state.adminRequests = (adminRequests.rows || []).map(apiAdminRequest);
       state.audit = (auditLog.rows || []).map(apiAudit);
@@ -1826,22 +1788,6 @@ function apiAdditionalCharge(row) {
   );
 }
 
-function apiQuotation(row) {
-  const item = quotation(row.quotation_no, row.customer_name, row.status || "Draft", String(row.date || today()).slice(0, 10), row.created_by || "admin");
-  item.branch = row.branch || item.branch;
-  item.customerContactPerson = row.customer_contact_person || "";
-  item.customerMobile = row.customer_mobile || "";
-  item.customerEmail = row.customer_email || "";
-  item.cargoItemsJson = row.cargo_items_json || "[]";
-  item.natureOfGoods = row.nature_of_goods || "";
-  item.volumeCategory = row.volume_category || "1 CBM = 250 KG";
-  item.cbm = Number(row.cbm || 0);
-  item.actualKg = Number(row.actual_kg || 0);
-  item.convertedJobNo = row.converted_job_no || "";
-  item.notes = row.notes || "";
-  return item;
-}
-
 function apiInvoice(row) {
   const item = invoice(row.invoice_no, row.customer, row.shipment_no, Number(row.revenue || 0), Number(row.supplier_cost || 0), row.status, String(row.date || today()).slice(0, 10), row.created_by || "admin");
   item.customerCode = row.customer_code || "";
@@ -1859,17 +1805,6 @@ function apiInvoice(row) {
   item.dueDate = row.due_date || "";
   item.notes = row.notes || "";
   return item;
-}
-
-function apiCustomerUser(row) {
-  return {
-    customerCode: row.customer_code || "",
-    username: row.username,
-    email: row.email || "",
-    status: row.status || "ACTIVE",
-    lastLogin: row.last_login ? String(row.last_login).slice(0, 16).replace("T", " ") : "",
-    createdAt: String(row.created_at || today()).slice(0, 10)
-  };
 }
 
 function apiUser(row) {
@@ -1948,7 +1883,6 @@ function apiSettings(row) {
     customerNumberFormat: row.customer_number_format || state.settings.customerNumberFormat,
     additionalChargeNumberFormat: row.additional_charge_number_format || state.settings.additionalChargeNumberFormat,
     supplierNumberFormat: row.supplier_number_format || state.settings.supplierNumberFormat,
-    quotationNumberFormat: row.quotation_number_format || state.settings.quotationNumberFormat,
     defaultVolumetricDivisor: row.default_volumetric_divisor || state.settings.defaultVolumetricDivisor,
     requirePodBeforeInvoice: row.require_pod_before_invoice || state.settings.requirePodBeforeInvoice,
     allowGlobalShipmentQuickSearch: row.allow_global_shipment_quick_search || state.settings.allowGlobalShipmentQuickSearch || "No",
@@ -1987,12 +1921,10 @@ function render() {
     "Tariffs / Rate Master": renderTariffs,
     Documents: renderDocuments,
     "Billing / Invoices": renderInvoices,
-    Quotation: renderQuotations,
     "POD / Delivery": renderPod,
     "Shipment Status": renderShipmentStatus,
     Reports: renderReports,
     "User Management / Settings": renderSettings,
-    "Customer Portal Access": renderCustomerUserAccess,
     "Audit Log": renderAudit,
     "Customer Dashboard": renderCustomerDashboard,
     "Customer New Shipment": renderCustomerNewShipment,
@@ -2337,27 +2269,6 @@ function renderAdditionalCharges() {
     ${adminDeletePanel("charge", "Additional Charge")}`;
 }
 
-function renderQuotations() {
-  const rows = filteredRows(visibleRows(state.quotations));
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Quotation Register", "Sales")} ${table("quotation", rows, quotationColumns())}</article>
-      ${moduleActionPanel("Quotation Actions", "quotation", "Create a quotation, then convert it to a shipment once confirmed.", quickOpenQuotationMarkup())}
-    </section>
-    ${adminDeletePanel("quotation", "Quotation")}`;
-}
-
-function quickOpenQuotationMarkup() {
-  return `<div class="action-stack">
-    <label>Open by Quotation No
-      <input type="text" id="quickOpenQuotationInput" placeholder="Enter number and click Open" />
-    </label>
-    <div class="action-row">
-      <button type="button" class="secondary-button" data-action="quick-open-quotation">Open Quotation</button>
-    </div>
-  </div>`;
-}
-
 function renderInvoices() {
   const rows = filteredRows(visibleRows(state.invoices));
   return `
@@ -2462,18 +2373,6 @@ function renderReports() {
     </section>`;
 }
 
-function renderCustomerUserAccess() {
-  if (!isAdminSession()) {
-    return `<section class="panel">${panelHeader("Access Denied", "Admin")}<p class="empty-state">Only admin users can manage customer portal accounts.</p></section>`;
-  }
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Customer Portal Accounts", "Access Control")} ${table("customerUser", filteredRows(state.customerUsers), customerUserColumns())}</article>
-      ${moduleActionPanel("Customer Portal Actions", "customerUser", "Create a login for a customer so they can access the Customer Portal. Resetting the password here immediately replaces their old one.")}
-    </section>
-    ${adminDeletePanel("customerUser", "Customer Portal Account", "Deleting a customer portal account immediately blocks that login from the customer portal.")}`;
-}
-
 function renderSettings() {
   if (!isAdminSession()) {
     return `<section class="panel">${panelHeader("Access Denied", "Admin")}<p class="empty-state">Only admin users can access user management and settings.</p></section>`;
@@ -2505,12 +2404,11 @@ function renderSettings() {
           ${input("customerNumberFormat", "New Customer Number Format", state.settings.customerNumberFormat)}
           ${input("additionalChargeNumberFormat", "Additional Charges Number Format", state.settings.additionalChargeNumberFormat)}
           ${input("supplierNumberFormat", "Supplier / Transporter Number Format", state.settings.supplierNumberFormat)}
-          ${input("quotationNumberFormat", "Quotation Number Format", state.settings.quotationNumberFormat)}
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${select("branches", "Branches", branchOptions(), normalizeBranchName(state.settings.branches || branchOptions()[0]))}
           ${select("allowGlobalShipmentQuickSearch", "Allow 'Open by Number' to search all branches", ["No", "Yes"], state.settings.allowGlobalShipmentQuickSearch || "No")}
-          <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())} | quotation: ${escapeHtml(nextQuotationNumber())}</p>
+          <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
       </article>
@@ -2597,8 +2495,6 @@ function newRecordOptions(type) {
     document: "New Document Tag",
     charge: "New Additional Charge",
     invoice: "New Invoice",
-    quotation: "New Quotation",
-    customerUser: "New Customer Portal Account",
     pod: "New POD / Delivery",
     status: "New Shipment Status",
     user: "New User Account"
@@ -2890,15 +2786,6 @@ function tableActionButton(type, id) {
     return `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Review</button>`;
   }
 
-  if (type === "quotation") {
-    return `<div class="row-action-group">
-      <button class="ghost-button" data-action="open" data-type="quotation" data-id="${escapeHtml(id)}">Open</button>
-      <button class="ghost-button" data-action="print-quotation" data-id="${escapeHtml(id)}">Print</button>
-      <button class="ghost-button" data-action="convert-quotation" data-id="${escapeHtml(id)}">Convert</button>
-      <button class="ghost-button danger-text" data-action="delete-record-direct" data-type="quotation" data-id="${escapeHtml(id)}">Delete</button>
-    </div>`;
-  }
-
   return `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Load</button>`;
 }
 
@@ -3119,7 +3006,7 @@ function textarea(name, label, value = "", readonly = false, rows = 4) {
 }
 
 function checkbox(name, label, checked = false, value = "on") {
-  return `<div class="checkbox-field"><input id="checkbox-${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox" value="${escapeHtml(value)}" ${checked ? "checked" : ""} /><span>${escapeHtml(label)}</span></div>`;
+  return `<label class="checkbox-field"><input name="${escapeHtml(name)}" type="checkbox" value="${escapeHtml(value)}" ${checked ? "checked" : ""} /><span>${escapeHtml(label)}</span></label>`;
 }
 
 function select(name, label, options, selected = options[0]) {
@@ -3285,8 +3172,6 @@ function defaultColumnLayouts() {
     tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["currency", "Currency"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"]],
     document: [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]],
     invoice: [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"], ["createdBy", "USERNAME"]],
-    quotation: [["quotationNo", "Quotation"], ["date", "Date"], ["customerName", "Customer"], ["customerMobile", "Mobile"], ["customerEmail", "Email"], ["cbm", "CBM"], ["status", "Status"], ["createdBy", "USERNAME"]],
-    customerUser: [["customerCode", "Customer Code"], ["username", "Portal Username"], ["email", "Email"], ["status", "Status"], ["lastLogin", "Last Login"], ["createdAt", "Created"]],
     charge: [["refNo", "Ref No"], ["shipmentNo", "Shipment No"], ["chargeType", "Charge Type"], ["supplier", "Supplier"], ["amount", "Amount"], ["taxAmount", "Tax"], ["totalAmount", "Total"], ["status", "Status"]],
     user: [["userName", "User"], ["email", "Email"], ["role", "Role"], ["accountStatus", "Status"], ["branchAccess", "Branch"]]
   };
@@ -3316,14 +3201,6 @@ function invoiceColumns() {
   return configurableColumns("invoice", defaultColumnLayouts().invoice);
 }
 
-function quotationColumns() {
-  return configurableColumns("quotation", defaultColumnLayouts().quotation);
-}
-
-function customerUserColumns() {
-  return configurableColumns("customerUser", defaultColumnLayouts().customerUser);
-}
-
 function additionalChargeColumns() {
   return configurableColumns("charge", defaultColumnLayouts().charge);
 }
@@ -3351,23 +3228,6 @@ function userRequestColumns() {
 
 function auditColumns() {
   return [["dateTime", "Date Time"], ["user", "User"], ["action", "Action"], ["reference", "Reference"]];
-}
-
-function openQuotationByNumber(rawQuery) {
-  const query = String(rawQuery || "").trim().toLowerCase();
-  if (!query) {
-    window.alert("Enter a Quotation No first.");
-    return;
-  }
-
-  const match = visibleRows(state.quotations).find((row) => String(row.quotationNo || "").trim().toLowerCase() === query);
-
-  if (!match) {
-    window.alert(`No quotation found matching "${rawQuery}". You may not have access to view this record.`);
-    return;
-  }
-
-  openRecord("quotation", rowId("quotation", match));
 }
 
 function openInvoiceByNumber(rawQuery) {
@@ -3430,9 +3290,7 @@ function rowId(type, row) {
     document: "documentNo",
     charge: "refNo",
     invoice: "invoiceNo",
-    quotation: "quotationNo",
     user: "userName",
-    customerUser: "username",
     settings: "settingsKey",
     unblock: "requestNo",
     adminRequest: "requestNo",
@@ -3455,9 +3313,8 @@ function collectionFor(type) {
     document: visibleRows(state.documents),
     charge: visibleRows(state.additionalCharges),
     invoice: visibleRows(state.invoices),
-    quotation: visibleRows(state.quotations),
     user: state.users,
-    customerUser: state.customerUsers,
+    settings: [state.settings],
     unblock: state.unblockRequests,
     adminRequest: state.adminRequests,
     userRequest: allUserRequests(),
@@ -3477,21 +3334,6 @@ async function handleModuleClick(event) {
     state.ui.columnWidthsLocked[scope] = !state.ui.columnWidthsLocked[scope];
     saveState();
     render();
-    return;
-  }
-
-  if (action === "print-quotation") {
-    printQuotation(id);
-    return;
-  }
-
-  if (action === "convert-quotation") {
-    convertQuotationToShipment(id);
-    return;
-  }
-
-  if (action === "quick-open-quotation") {
-    openQuotationByNumber(document.querySelector("#quickOpenQuotationInput")?.value || "");
     return;
   }
 
@@ -3689,11 +3531,6 @@ function handleModuleLinkClick(event) {
 }
 
 function handleModuleKeydown(event) {
-  if (event.key === "Enter" && event.target.id === "quickOpenQuotationInput") {
-    event.preventDefault();
-    openQuotationByNumber(event.target.value);
-    return;
-  }
   if (event.key === "Enter" && event.target.id === "quickOpenInvoiceInput") {
     event.preventDefault();
     openInvoiceByNumber(event.target.value);
@@ -3803,78 +3640,6 @@ function openRecord(type, id) {
     return;
   }
 
-  if (type === "quotation") {
-    editing = { type, id, record };
-    dialogState = null;
-    openDialog({
-      title: `Quotation - ${id}`,
-      typeLabel: "Quotation",
-      saveLabel: "Save Changes",
-      body: quotationDialogBody(record),
-      onSave: async () => {
-        const data = collectFormValues(dialogBody.closest("form"));
-        rememberDropdownOptions(data);
-        const updatedRecord = {
-          ...record,
-          date: data.date || record.date || today(),
-          status: data.status || record.status || "Draft",
-          branch: normalizeBranchName(data.branch || record.branch || defaultUserBranch()),
-          customerName: data.customerName || record.customerName || "",
-          customerContactPerson: data.customerContactPerson || record.customerContactPerson || "",
-          customerMobile: data.customerMobile || record.customerMobile || "",
-          customerEmail: data.customerEmail || record.customerEmail || "",
-          cargoItemsJson: data.cargoItemsJson || record.cargoItemsJson || "[]",
-          natureOfGoods: data.natureOfGoods || record.natureOfGoods || "",
-          volumeCategory: data.volumeCategory || record.volumeCategory || "1 CBM = 250 KG",
-          cbm: Number(data.cbm || record.cbm || 0),
-          actualKg: Number(data.actualKg || record.actualKg || 0),
-          notes: data.notes || record.notes || "",
-          convertedJobNo: data.convertedJobNo || record.convertedJobNo || ""
-        };
-        state.quotations = state.quotations.map((row) => rowId("quotation", row) === id ? updatedRecord : row);
-        await persistRecord("quotation", updatedRecord);
-        saveState();
-        recordDialog.close();
-        render();
-      },
-      afterOpen: () => {
-        bindPalletDimensionBuilder();
-      }
-    });
-    return;
-  }
-
-  if (type === "customerUser") {
-    editing = { type, id, record };
-    dialogState = null;
-    openDialog({
-      title: `Customer Portal Account - ${id}`,
-      typeLabel: "Customer Portal Account",
-      saveLabel: "Save Changes",
-      body: customerUserDialogBody(record),
-      onSave: async () => {
-        const data = collectFormValues(dialogBody.closest("form"));
-        const updatedRecord = {
-          ...record,
-          customerCode: data.customerCode || record.customerCode || "",
-          email: data.email || record.email || "",
-          status: data.status || record.status || "ACTIVE"
-        };
-        const payload = { ...updatedRecord };
-        if (String(data.password || "").trim()) {
-          payload.password = data.password;
-        }
-        state.customerUsers = state.customerUsers.map((row) => rowId("customerUser", row) === id ? updatedRecord : row);
-        await persistRecord("customerUser", payload);
-        saveState();
-        recordDialog.close();
-        render();
-        notifySuccess("Account updated", `${id} was updated successfully.`);
-      }
-    });
-    return;
-  }
-
   if (type === "invoice") {
     editing = { type, id, record };
     dialogState = null;
@@ -3964,9 +3729,7 @@ function allCollectionFor(type) {
     document: state.documents,
     charge: state.additionalCharges,
     invoice: state.invoices,
-    quotation: state.quotations,
     user: state.users,
-    customerUser: state.customerUsers,
     unblock: state.unblockRequests,
     adminRequest: state.adminRequests
   };
@@ -4375,16 +4138,6 @@ function dialogConfigFor(type, mode = "") {
         bindAwbFetchButton();
       }
     },
-    quotation: {
-      title: "New Quotation",
-      typeLabel: "Quotation",
-      saveLabel: "Save Quotation",
-      body: quotationDialogBody(),
-      onSave: createQuotation,
-      afterOpen: () => {
-        bindPalletDimensionBuilder();
-      }
-    },
     load: {
       title: "New Manifest",
       typeLabel: "Manifest",
@@ -4459,13 +4212,6 @@ function dialogConfigFor(type, mode = "") {
       saveLabel: "Create User",
       body: userDialogBody(),
       onSave: createUser
-    },
-    customerUser: {
-      title: "New Customer Portal Account",
-      typeLabel: "Customer Portal Account",
-      saveLabel: "Create Account",
-      body: customerUserDialogBody(),
-      onSave: createCustomerUserAccount
     }
   };
 
@@ -4505,9 +4251,9 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("jobNo", isAirway ? "Airway Bill Number" : "Shipment Number", fieldValue("jobNo", isAirway ? nextNumber("AWB", state.shipments, "jobNo") : nextShipmentNumber()), loaded)}
       ${input("bookingDate", "Booking Date", fieldValue("bookingDate", today()), false, "date")}
       ${input("shipmentDate", "Shipment Date", fieldValue("shipmentDate", today()), false, "date")}
-      ${select("status", "Status", statusOptions(), fieldValue("status", ""))}
-      ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", ""))}
-      ${select("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "")), fieldValue("shipmentService", ""))}
+      ${select("status", "Status", statusOptions(), fieldValue("status", "Booked"))}
+      ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", "Export"))}
+      ${select("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "Export")), fieldValue("shipmentService", "SE"))}
       ${selectEditable("origin", "Origin", "origin", ["Kuwait City"], fieldValue("origin"))}
       ${selectEditable("destination", "Destination", "destination", ["Riyadh"], fieldValue("destination"))}
       ${input("customerReference", "Customer Reference", fieldValue("customerReference"))}
@@ -4515,7 +4261,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("salesPerson", "Sales Person", fieldValue("salesPerson", currentUserName()))}
       <label>Airway Bill / Bill of Lading
         <span class="inline-input-button">
-          <input name="airwayBillNo" type="text" value="${escapeHtml(fieldValue("airwayBillNo", ""))}" />
+          <input name="airwayBillNo" type="text" value="${escapeHtml(fieldValue("airwayBillNo", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo")))}" />
           <button type="button" class="secondary-button" data-dialog-action="fetch-awb-data">Fetch</button>
         </span>
       </label>
@@ -4536,7 +4282,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("shipperMobile", "Mobile Number", fieldValue("shipperMobile"))}
       ${input("shipperEmail", "Email Address", fieldValue("shipperEmail"), false, "email")}
       ${input("shipperVatTrn", "VAT / TRN Number", fieldValue("shipperVatTrn"))}
-      ${input("shipperCountry", "Country", fieldValue("shipperCountry", ""))}
+      ${input("shipperCountry", "Country", fieldValue("shipperCountry", "Kuwait"))}
     `, true, sectionOpen)}
     ${formSection("Consignee Information", `
       ${checkbox("copyCustomerToConsignee", "Same as customer information")}
@@ -4578,7 +4324,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       fieldValue("tariffNo"),
       defaultCustomer,
       fieldValue("natureOfGoods"),
-      fieldValue("volumeCategory", "")
+      fieldValue("volumeCategory", "1 CBM = 250 KG")
     )}
     <input type="hidden" name="transportMode" value="" />
     <input type="hidden" name="deliveryNoteNo" value="${escapeHtml(fieldValue("deliveryNoteNo"))}" />
@@ -4612,26 +4358,6 @@ function palletDimensionBuilder(initialValue = "[]") {
     </div>
     <div class="tariff-charge-table" data-pallet-lines-list></div>
   </section>`;
-}
-
-function quotationDialogBody(record) {
-  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
-  const loaded = Boolean(record);
-  return `
-    ${input("quotationNo", "Quotation No", fieldValue("quotationNo", nextQuotationNumber()), loaded)}
-    ${input("date", "Date", fieldValue("date", today()), false, "date")}
-    ${select("status", "Status", ["Draft", "Sent", "Converted"], fieldValue("status", "Draft"))}
-    ${select("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
-    ${formSection("Customer Information", `
-      ${selectFrom("customerName", "Customer Name", state.customers.map((row) => row.name), fieldValue("customerName"))}
-      ${input("customerContactPerson", "Contact Person", fieldValue("customerContactPerson"))}
-      ${input("customerMobile", "Mobile Number", fieldValue("customerMobile"))}
-      ${input("customerEmail", "Email Address", fieldValue("customerEmail"), false, "email")}
-    `)}
-    ${cargoItemsBuilder(fieldValue("cargoItemsJson", "[]"), "", fieldValue("customerName"), fieldValue("natureOfGoods"), fieldValue("volumeCategory", "1 CBM = 250 KG"))}
-    ${textarea("notes", "Notes", fieldValue("notes"), false, 3)}
-    <input type="hidden" name="convertedJobNo" value="${escapeHtml(fieldValue("convertedJobNo"))}" />
-  `;
 }
 
 function cargoItemsBuilder(
@@ -4668,7 +4394,7 @@ function cargoItemsBuilder(
       ${input("actualKg", "Total Actual Weight", "0", true, "number")}
       ${input("chargeableKg", "Chargeable Weight", "0", false, "number")}
       <input type="hidden" name="pieces" value="0" />
-      <input type="hidden" name="chargeableDivisor" value="${volumeDivisorFor(volumeCategory) || ""}" />
+      <input type="hidden" name="chargeableDivisor" value="250" />
       <input type="hidden" name="manualChargeableKg" value="0" />
     </div>
     <div class="form-section-grid cargo-description-row">
@@ -4676,19 +4402,6 @@ function cargoItemsBuilder(
       ${selectFrom("tariffNo", "Apply Tariff", tariffOptionsForCustomer(customerName), appliedTariffNo)}
     </div>
   </section>`;
-}
-
-function customerUserDialogBody(record) {
-  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
-  const loaded = Boolean(record);
-  const customerOptions = state.customers.map((row) => ({ value: row.code, label: `${row.name} (${row.code})` }));
-  return `
-    ${selectFrom("customerCode", "Customer", customerOptions, fieldValue("customerCode"))}
-    ${input("username", "Portal Username", fieldValue("username"), loaded)}
-    ${input("email", "Email", fieldValue("email"), false, "email")}
-    ${passwordField("password", loaded ? "Reset Password (leave blank to keep current)" : "Password", "")}
-    ${select("status", "Status", ["ACTIVE", "SUSPENDED"], fieldValue("status", "ACTIVE"))}
-  `;
 }
 
 function userDialogBody() {
@@ -4882,12 +4595,7 @@ function bindShipmentDirectionDialog() {
   };
 
   directionSelect.addEventListener("change", syncOptions);
-  if (directionSelect.value || serviceSelect.value) {
-    syncOptions();
-  } else if (serviceList) {
-    const options = shipmentServiceOptions("");
-    serviceList.innerHTML = options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("");
-  }
+  syncOptions();
 }
 
 function bindShipmentCustomerTariffs() {
@@ -4990,6 +4698,7 @@ function bindShipmentCustomerAutofill() {
     setDialogValue("billingParty1Address", customer.fullAddress || customer.locationOrLane);
     setDialogValue("billingParty1Email", customer.email);
     setDialogValue("billingParty1CreditTerms", customer.terms);
+    setDialogValue("branch", customer.branch || defaultUserBranch());
   };
 
   customerField?.addEventListener("input", () => fill(customerField));
@@ -6930,81 +6639,6 @@ function companyNameMarkup(name) {
     .join(" ");
 }
 
-function printQuotation(id) {
-  const record = state.quotations.find((row) => rowId("quotation", row) === id);
-  if (!record) {
-    window.alert("Quotation not found.");
-    return;
-  }
-  const lines = parsePalletDimensions(record.cargoItemsJson || "[]");
-  const body = `
-    <div class="document-summary">
-      <div><span>Customer</span><strong>${escapeHtml(record.customerName || "-")}</strong><small>${escapeHtml(record.customerContactPerson || "")}</small></div>
-      <div><span>Contact</span><strong>${escapeHtml(record.customerMobile || "-")}</strong><small>${escapeHtml(record.customerEmail || "")}</small></div>
-    </div>
-    ${palletDimensionPrintTable(lines, record.cbm)}
-    <h2>Nature of Goods</h2>
-    <p>${escapeHtml(record.natureOfGoods || "-")}</p>
-    <h2>Volume Category</h2>
-    <p>${escapeHtml(record.volumeCategory || "-")}</p>
-    ${record.notes ? `<h2>Notes</h2><p>${escapeHtml(record.notes)}</p>` : ""}
-  `;
-  const html = documentShell(`Quotation ${record.quotationNo}`, "Quotation", record.quotationNo, record.date || today(), body);
-  openPrintableDocument(html);
-}
-
-function convertQuotationToShipment(id) {
-  const record = state.quotations.find((row) => rowId("quotation", row) === id);
-  if (!record) {
-    window.alert("Quotation not found.");
-    return;
-  }
-  editing = null;
-  dialogState = null;
-  const prefillRecord = {
-    customer: record.customerName || "",
-    customerContactPerson: record.customerContactPerson || "",
-    customerMobile: record.customerMobile || "",
-    customerEmail: record.customerEmail || "",
-    cargoItemsJson: record.cargoItemsJson || "[]",
-    natureOfGoods: record.natureOfGoods || "",
-    volumeCategory: record.volumeCategory || "1 CBM = 250 KG",
-    cbm: record.cbm || 0,
-    actualKg: record.actualKg || 0,
-    branch: record.branch || defaultUserBranch()
-  };
-  openDialog({
-    title: `New Shipment (from ${record.quotationNo})`,
-    typeLabel: "Shipment",
-    saveLabel: "Create Shipment",
-    body: shipmentDialogBody("shipment", prefillRecord),
-    onSave: async () => {
-      const data = collectFormValues(dialogBody.closest("form"));
-      rememberDropdownOptions(data);
-      const saved = await createShipment(data);
-      if (saved === false) return;
-      record.status = "Converted";
-      record.convertedJobNo = data.jobNo || "";
-      state.quotations = state.quotations.map((row) => rowId("quotation", row) === id ? record : row);
-      await persistRecord("quotation", record);
-      saveState();
-      recordDialog.close();
-      render();
-    },
-    afterOpen: () => {
-      bindShipmentDirectionDialog();
-      bindShipmentCustomerTariffs();
-      bindShipmentCustomerAutofill();
-      bindShipmentCopySections();
-      bindTransporterAutofill();
-      bindTariffFinancialAutofill();
-      bindVolumeCalculator();
-      bindPalletDimensionBuilder();
-      bindAwbFetchButton();
-    }
-  });
-}
-
 function openPrintableDocument(html) {
   const printWindow = window.open("", "_blank", "width=1000,height=800");
   if (!printWindow) {
@@ -7426,41 +7060,6 @@ async function createCharge(data) {
   return true;
 }
 
-async function createCustomerUserAccount(data) {
-  const username = String(data.username || "").trim();
-  if (!username) {
-    notifyDenied("Account not created", "Enter a portal username first.");
-    return false;
-  }
-  if (duplicateRecordExists("customerUser", username)) {
-    notifyDuplicate(username);
-    return false;
-  }
-  const customerCode = String(data.customerCode || "").trim();
-  if (!customerCode) {
-    notifyDenied("Account not created", "Select a customer first.");
-    return false;
-  }
-  const password = String(data.password || "");
-  if (!password) {
-    notifyDenied("Account not created", "Enter a password first.");
-    return false;
-  }
-  const record = {
-    customerCode,
-    username,
-    email: String(data.email || "").trim(),
-    status: String(data.status || "ACTIVE").trim(),
-    lastLogin: "",
-    createdAt: today()
-  };
-  state.customerUsers.unshift(record);
-  await postRecord("customerUser", { ...record, password });
-  addHistory("Created customer portal account", username);
-  notifySuccess("Account created", username + " can now log into the Customer Portal.");
-  return true;
-}
-
 async function createUser(data) {
   const userName = String(data.userName || "").trim();
   if (!userName) {
@@ -7553,32 +7152,6 @@ function chargeLineRef(baseRef, index, count) {
   return count <= 1 ? baseRef : `${baseRef}-${String(index + 1).padStart(2, "0")}`;
 }
 
-async function createQuotation(data) {
-  const quotationNo = String(data.quotationNo || nextQuotationNumber()).trim();
-  if (duplicateRecordExists("quotation", quotationNo)) {
-    notifyDuplicate(quotationNo);
-    return false;
-  }
-  const record = quotation(quotationNo, data.customerName || "", data.status || "Draft", data.date || today());
-  Object.assign(record, {
-    branch: normalizeBranchName(data.branch || defaultUserBranch()),
-    customerContactPerson: data.customerContactPerson || "",
-    customerMobile: data.customerMobile || "",
-    customerEmail: data.customerEmail || "",
-    cargoItemsJson: data.cargoItemsJson || "[]",
-    natureOfGoods: data.natureOfGoods || "",
-    volumeCategory: data.volumeCategory || "1 CBM = 250 KG",
-    cbm: Number(data.cbm || 0),
-    actualKg: Number(data.actualKg || 0),
-    notes: data.notes || ""
-  });
-  state.quotations.unshift(record);
-  await postRecord("quotation", record);
-  addHistory("Created quotation", quotationNo);
-  notifySuccess("Quotation saved", quotationNo + " was saved successfully.");
-  return true;
-}
-
 async function createInvoice(data) {
   const invoiceNo = String(data.invoiceNo || nextInvoiceNumber()).trim();
   if (duplicateRecordExists("invoice", invoiceNo)) {
@@ -7624,9 +7197,7 @@ function endpointFor(type) {
     document: "documents",
     charge: "additional-charges",
     invoice: "invoices",
-    quotation: "quotations",
     user: "users",
-    customerUser: "customer-users",
     unblock: "unblock-requests",
     adminRequest: "admin-requests",
     audit: "audit",
@@ -7709,9 +7280,7 @@ function typeLabel(type) {
     document: "document",
     charge: "additional charge",
     invoice: "invoice",
-    quotation: "quotation",
-    user: "user account",
-    customerUser: "customer portal account"
+    user: "user account"
   }[type] || type;
 }
 
@@ -7818,8 +7387,6 @@ function removeLocalRecord(type, id) {
     });
   }
   if (type === "user") state.users = state.users.filter(keep);
-  if (type === "customerUser") state.customerUsers = state.customerUsers.filter(keep);
-  if (type === "quotation") state.quotations = state.quotations.filter(keep);
 }
 
 async function deleteShipmentById(jobNo) {
