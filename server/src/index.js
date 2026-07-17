@@ -564,6 +564,29 @@ const resources = {
       field("created_by", ["createdBy", "created_by"])
     ]
   },
+  quotations: {
+    table: "quotations",
+    key: "quotation_no",
+    order: "created_at desc",
+    fields: [
+      field("quotation_no", ["quotationNo", "quotation_no"], true),
+      field("branch"),
+      field("date"),
+      field("customer_name", ["customerName", "customer_name"]),
+      field("customer_contact_person", ["customerContactPerson", "customer_contact_person"]),
+      field("customer_mobile", ["customerMobile", "customer_mobile"]),
+      field("customer_email", ["customerEmail", "customer_email"]),
+      field("cargo_items_json", ["cargoItemsJson", "cargo_items_json"]),
+      field("nature_of_goods", ["natureOfGoods", "nature_of_goods"]),
+      field("volume_category", ["volumeCategory", "volume_category"]),
+      field("cbm"),
+      field("actual_kg", ["actualKg", "actual_kg"]),
+      field("status"),
+      field("converted_job_no", ["convertedJobNo", "converted_job_no"]),
+      field("notes"),
+      field("created_by", ["createdBy", "created_by"])
+    ]
+  },
   invoices: {
     table: "invoices",
     key: "invoice_no",
@@ -805,6 +828,7 @@ const resources = {
       field("customer_number_format", ["customerNumberFormat", "customer_number_format"]),
       field("additional_charge_number_format", ["additionalChargeNumberFormat", "additional_charge_number_format"]),
       field("supplier_number_format", ["supplierNumberFormat", "supplier_number_format"]),
+      field("quotation_number_format", ["quotationNumberFormat", "quotation_number_format"]),
       field("default_volumetric_divisor", ["defaultVolumetricDivisor", "default_volumetric_divisor"]),
       field("require_pod_before_invoice", ["requirePodBeforeInvoice", "require_pod_before_invoice"]),
       field("allow_global_shipment_quick_search", ["allowGlobalShipmentQuickSearch", "allow_global_shipment_quick_search"]),
