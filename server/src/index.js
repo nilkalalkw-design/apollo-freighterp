@@ -325,7 +325,9 @@ async function getCustomerAccount(identifier) {
 async function loginCustomer(identifier, password) {
   const account = await getCustomerAccount(identifier);
   if (!account) return null;
-  if (!isPortalActive(account.status) || !isPortalActive(account.customer_status)) return null;
+  if (!isPortalActive(account.status)) return null;
+  const customerLinked = account.customer_status !== null && account.customer_status !== undefined;
+  if (customerLinked && !isPortalActive(account.customer_status)) return null;
   if (!verifyCustomerPassword(password, account.password_hash)) return null;
 
   await query(
