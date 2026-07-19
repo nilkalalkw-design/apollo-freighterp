@@ -1151,6 +1151,18 @@ function boot() {
   });
 
   loginForm.addEventListener("submit", handleLogin);
+  loginForm.querySelectorAll("[data-login-mode-option]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const isCustomer = button.dataset.loginModeOption === "customer";
+      const checkbox = loginForm.querySelector("#customerLoginMode");
+      if (checkbox) checkbox.checked = isCustomer;
+      loginForm.querySelectorAll("[data-login-mode-option]").forEach((option) => {
+        const active = option === button;
+        option.classList.toggle("is-active", active);
+        option.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    });
+  });
   logoutButton.addEventListener("click", () => {
     sessionStorage.removeItem(SESSION_KEY);
     showLogin();
@@ -4735,11 +4747,11 @@ function customerUserDialogBody(record) {
   const loaded = Boolean(record);
   const customerOptions = state.customers.map((row) => ({ value: row.code, label: `${row.name} (${row.code})` }));
   return `
-    ${selectFrom("customerCode", "Customer", customerOptions, fieldValue("customerCode"))}
+    ${strictSelect("customerCode", "Customer", customerOptions, fieldValue("customerCode"))}
     ${input("username", "Portal Username", fieldValue("username"), loaded)}
     ${input("email", "Email", fieldValue("email"), false, "email")}
     ${passwordField("password", loaded ? "Reset Password (leave blank to keep current)" : "Password", "")}
-    ${select("status", "Status", ["ACTIVE", "SUSPENDED"], fieldValue("status", "ACTIVE"))}
+    ${strictSelect("status", "Status", ["ACTIVE", "SUSPENDED"], fieldValue("status", "ACTIVE"))}
   `;
 }
 
@@ -6920,6 +6932,11 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
           th, td { padding: 5px; }
           .signature-grid { margin-top: 24px; gap: 12px; }
           .signature { min-height: 54px; }
+          .delivery-signatures { margin-top: 10px; gap: 8px; }
+          .delivery-signatures div { min-height: 76px; padding: 8px; }
+          .delivery-signatures span, .delivery-signatures small { margin-top: 4px; }
+          .acknowledgement { padding: 6px 8px; margin-top: 8px; font-size: 10px; }
+          .document-summary strong { font-size: 14px; }
           .footer-note { margin-top: 10px; padding-top: 8px; font-size: 10px; }
         }
       </style>
