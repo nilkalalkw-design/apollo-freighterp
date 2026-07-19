@@ -197,6 +197,7 @@ function seedState() {
       additionalChargeNumberFormat: "CHG-YY###",
       supplierNumberFormat: "TRN-###",
       quotationNumberFormat: "QUO-YY###",
+      awbNumberFormat: "AWB-YY###",
       columnLayoutJson: "{}",
       defaulttricDivisor: "5000",
       requirePodBeforeInvoice: "Yes",
@@ -632,8 +633,8 @@ function tariffWeightRateTableHtml(tariffItem = {}, options = {}) {
   const cells = bands.map((band) => {
     const selected = selectedBand && selectedBand.key === band.key ? " is-selected" : "";
     const value = Number(rates[band.key] || 0);
-    if (editable) return "<td class=\"tariff-weight-cell" + selected + "\"><input type=\"number\" step=\"0.001\" min=\"0\" data-tariff-weight-rate=\"" + escapeHtml(band.key) + "\" value=\"" + escapeHtml(numericInputValue(value)) + "\" /></td>";
-    return "<td class=\"tariff-weight-cell" + selected + "\"><strong>" + money(value) + "</strong></td>";
+    const readonlyAttr = editable ? "" : " readonly";
+    return "<td class=\"tariff-weight-cell" + selected + "\"><input type=\"number\" step=\"0.001\" min=\"0\" data-tariff-weight-rate=\"" + escapeHtml(band.key) + "\" value=\"" + escapeHtml(numericInputValue(value)) + "\"" + readonlyAttr + " /></td>";
   }).join("");
   return "<div class=\"table-wrap tariff-weight-wrap\"><table class=\"tariff-weight-table" + (editable ? " is-editable" : "") + "\"><thead><tr><th></th>" + header + "</tr></thead><tbody><tr><th>Rate</th>" + cells + "</tr></tbody></table></div>";
 }
@@ -641,12 +642,13 @@ function tariffWeightRateTableHtml(tariffItem = {}, options = {}) {
 function tariffWeightRatesBuilder(record = {}) {
   const weightRatesJson = record.weightRatesJson || record.weight_rates_json || JSON.stringify(normalizeTariffWeightRates({}, Number(record.rate || 0)));
   const primaryRate = tariffPrimaryRate(weightRatesJson);
+  const isEditable = String(record.mainSection || "FTL").toUpperCase() === "LTL";
   return "<div class=\"tariff-weight-builder\" data-tariff-weight-builder>" +
     "<input type=\"hidden\" name=\"weightRatesJson\" value=\"" + escapeHtml(weightRatesJson) + "\" />" +
     "<input type=\"hidden\" name=\"weightSection\" value=\"Table\" />" +
     "<input type=\"hidden\" name=\"minUpTo\" value=\"\" />" +
     "<input type=\"hidden\" name=\"rate\" value=\"" + escapeHtml(String(primaryRate)) + "\" />" +
-    tariffWeightRateTableHtml({ ...record, weightRatesJson }, { editable: true }) +
+    tariffWeightRateTableHtml({ ...record, weightRatesJson }, { editable: isEditable }) +
   "</div>";
 }
 
@@ -655,6 +657,7 @@ function bindTariffWeightRates() {
   if (!builder) return;
   const hidden = builder.querySelector("input[name='weightRatesJson']");
   const rateField = builder.querySelector("input[name='rate']");
+  const mainSectionField = dialogBody.querySelector("[name='mainSection']");
   const inputs = [...builder.querySelectorAll("[data-tariff-weight-rate]")];
   const sync = () => {
     const rates = {};
@@ -662,8 +665,15 @@ function bindTariffWeightRates() {
     if (hidden) hidden.value = JSON.stringify(rates);
     if (rateField) rateField.value = String(tariffPrimaryRate(rates));
   };
+  const syncEditability = () => {
+    const isLTL = String(mainSectionField?.value || "FTL").toUpperCase() === "LTL";
+    inputs.forEach((input) => { input.readOnly = !isLTL; });
+  };
   inputs.forEach((input) => { input.addEventListener("input", sync); input.addEventListener("change", sync); });
+  mainSectionField?.addEventListener("change", syncEditability);
+  mainSectionField?.addEventListener("input", syncEditability);
   sync();
+  syncEditability();
 }
 
 function tariffDialogBody(record = {}) {
@@ -1027,6 +1037,10 @@ function nextInvoiceNumber() {
 
 function nextQuotationNumber() {
   return configuredNumber(state.settings.quotationNumberFormat, state.quotations, "quotationNo", "QUO");
+}
+
+function nextAirwayBillNumber() {
+  return configuredNumber(state.settings.awbNumberFormat, state.shipments, "airwayBillNo", "AWB");
 }
 
 function nextConsolidationNumber() {
@@ -1949,6 +1963,7 @@ function apiSettings(row) {
     additionalChargeNumberFormat: row.additional_charge_number_format || state.settings.additionalChargeNumberFormat,
     supplierNumberFormat: row.supplier_number_format || state.settings.supplierNumberFormat,
     quotationNumberFormat: row.quotation_number_format || state.settings.quotationNumberFormat,
+    awbNumberFormat: row.awb_number_format || state.settings.awbNumberFormat,
     defaultVolumetricDivisor: row.default_volumetric_divisor || state.settings.defaultVolumetricDivisor,
     requirePodBeforeInvoice: row.require_pod_before_invoice || state.settings.requirePodBeforeInvoice,
     allowGlobalShipmentQuickSearch: row.allow_global_shipment_quick_search || state.settings.allowGlobalShipmentQuickSearch || "No",
@@ -2040,6 +2055,7 @@ function portalCustomerCount() {
 
 function renderDashboard() {
   const rows = filteredRows(visibleRows(state.shipments));
+  const invoiceRows = filteredRows(visibleRows(state.invoices));
   const open = rows.filter((row) => ["Draft", "Booked"].includes(row.status)).length;
   const transit = rows.filter((row) => row.status === "In-Transit").length;
   const pod = rows.filter((row) => row.podStatus !== "Uploaded").length;
@@ -2065,8 +2081,8 @@ function renderDashboard() {
       ${kpi("Unbilled", unbilled, "Ready for billing review", "unbilled")}
       ${kpi("Pending Requests", pendingRequests, "Need admin action", "pending-requests")}
       ${kpi("Customer Portal", portalCustomerCount(), "Customer users", "customer-portal")}
-      ${kpi("Month Revenue", money(rows.reduce((sum, row) => sum + Number(row.sell || 0), 0)), "Sell total", "month-revenue")}
-      ${kpi("Gross Profit", money(rows.reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0) - state.additionalCharges.reduce((sum, charge) => sum + Number(charge.totalAmount || 0), 0)), "Sell minus supplier and extra cost", "gross-profit")}
+      ${kpi("Month Revenue", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0), 0)), "Invoiced total", "month-revenue")}
+      ${kpi("Gross Profit", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0) - Number(row.supplierCost || 0), 0)), "Invoiced revenue minus cost", "gross-profit")}
     </section>
     <section class="split-grid single-panel dashboard-shipment-register">
       <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:dashboard")}</article>
@@ -2138,24 +2154,33 @@ function dashboardMetricConfig(metric) {
   }
 
   if (metric === "month-revenue" || metric === "gross-profit") {
-    const selected = rows.map((row) => ({
+    const invoiceRows = filteredRows(visibleRows(state.invoices));
+    const selected = invoiceRows.map((row) => ({
       ...row,
-      profit: Number(row.sell || 0) - Number(row.buyCost || 0)
+      profit: Number(row.revenue || 0) - Number(row.supplierCost || 0)
     }));
     return {
       title: metric === "month-revenue" ? "Month Revenue" : "Gross Profit",
-      summary: metric === "month-revenue" ? "Shipment revenue by record" : "Shipment profit by record",
+      summary: metric === "month-revenue" ? "Invoiced revenue by record" : "Invoiced profit by record",
       rows: selected,
       columns: [
-        ...dashboardShipmentColumns(),
-        ["sell", "SELL"],
-        ["buyCost", "COST"],
+        ["invoiceNo", "Invoice"],
+        ["customer", "Consignee"],
+        ["shipmentNo", "Shipment"],
+        ["revenue", "REVENUE"],
+        ["supplierCost", "COST"],
         ["profit", "PROFIT"]
       ]
     };
   }
 
   return null;
+}
+
+function dashboardMetricTableType(metric) {
+  if (metric === "pending-requests") return "userRequest";
+  if (metric === "month-revenue" || metric === "gross-profit") return "invoice";
+  return "shipment";
 }
 
 function openDashboardMetricDialog(metric) {
@@ -2175,7 +2200,7 @@ function openDashboardMetricDialog(metric) {
             </div>
             <span class="status-badge neutral">${escapeHtml(String(config.rows.length))}</span>
           </div>
-          ${config.rows.length ? table(metric === "pending-requests" ? "userRequest" : "shipment", config.rows, config.columns, false, `metric:${metric}`, false) : `<p class="empty-state">No matching records found.</p>`}
+          ${config.rows.length ? table(dashboardMetricTableType(metric), config.rows, config.columns, false, `metric:${metric}`, false) : `<p class="empty-state">No matching records found.</p>`}
         </div>
       </div>
       </div>
@@ -2506,6 +2531,7 @@ function renderSettings() {
           ${input("additionalChargeNumberFormat", "Additional Charges Number Format", state.settings.additionalChargeNumberFormat)}
           ${input("supplierNumberFormat", "Supplier / Transporter Number Format", state.settings.supplierNumberFormat)}
           ${input("quotationNumberFormat", "Quotation Number Format", state.settings.quotationNumberFormat)}
+          ${input("awbNumberFormat", "Airway Bill Number Format", state.settings.awbNumberFormat)}
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${select("branches", "Branches", branchOptions(), normalizeBranchName(state.settings.branches || branchOptions()[0]))}
@@ -2943,19 +2969,19 @@ function reportTypeOptions() {
 }
 
 function shipmentDirectionOptions() {
-  return dropdownOptions("shipmentDirection", ["Export", "Import", "Consolidation"]);
+  return ["Export", "Import", "Consolidation"];
 }
 
 function shipmentServiceOptions(direction) {
   if (direction === "Import") {
-    return dropdownOptions("shipmentService", ["SI", "AI", "LI", "FI", "WHC"]);
+    return ["SI", "AI", "LI", "FI", "WHC"];
   }
 
   if (direction === "Consolidation" || direction === "Consoladation") {
-    return dropdownOptions("shipmentService", ["Consolidation", "WHC"]);
+    return ["Consolidation"];
   }
 
-  return dropdownOptions("shipmentService", ["SE", "AE", "LE", "FE", "WHC"]);
+  return ["SE", "AE", "LE", "FE", "WHC"];
 }
 
 function isConsolidationShipment(row) {
@@ -3128,6 +3154,17 @@ function select(name, label, options, selected = options[0]) {
   return selectEditable(name, label, optionKey, options, selectedValue);
 }
 
+function strictSelect(name, label, options, selected = "") {
+  const selectedValue = optionValue(selected);
+  const optionTags = options.map((option) => {
+    const value = optionValue(option);
+    const isSelected = value === selectedValue;
+    return `<option value="${escapeHtml(value)}" ${isSelected ? "selected" : ""}>${escapeHtml(optionLabel(option))}</option>`;
+  }).join("");
+  const blankOption = selectedValue ? "" : `<option value="" selected disabled hidden></option>`;
+  return `<label>${escapeHtml(label)}<select name="${escapeHtml(name)}">${blankOption}${optionTags}</select></label>`;
+}
+
 function selectFrom(name, label, options, value = "") {
   const optionKey = dropdownKeyForField(name) || name;
   return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" list="${escapeHtml(name)}Options" value="${escapeHtml(optionValue(value))}" data-dropdown-key="${escapeHtml(optionKey)}" data-dropdown-input /><datalist id="${escapeHtml(name)}Options">${options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("")}</datalist></label>`;
@@ -3270,7 +3307,7 @@ function defaultColumnLayouts() {
       ["consigneeName", "CONSIGNEE"],
       ["pickupLocation", "PICK UP LOCATIONS"],
       ["deliveryLocation", "DELIVERY LOCATION"],
-      ["transportMode", "MODE"],
+      ["shipmentDirection", "MODE"],
       ["shipmentService", "MODE FULL"],
       ["pieces", "PKGS / CARTONS"],
       ["palletCount", "No# of Pallets"],
@@ -3946,6 +3983,7 @@ function openRecord(type, id) {
   if (type === "invoice") bindInvoiceShipmentTariff();
   bindDialogPasswordToggles();
   resetDialogChrome();
+  moveToastStackIntoDialog();
   recordDialog.showModal();
 }
 function duplicateRecordExists(type, id) {
@@ -4186,6 +4224,19 @@ function resetDialogShell() {
   dialogSave.textContent = "Save Changes";
   dialogBody.classList.remove("single-column");
   resetDialogChrome();
+  moveToastStackToBody();
+}
+
+function moveToastStackIntoDialog() {
+  if (toastStack && recordDialog && toastStack.parentElement !== recordDialog) {
+    recordDialog.appendChild(toastStack);
+  }
+}
+
+function moveToastStackToBody() {
+  if (toastStack && document.body && toastStack.parentElement !== document.body) {
+    document.body.appendChild(toastStack);
+  }
 }
 
 function resetDialogChrome() {
@@ -4221,6 +4272,7 @@ function openDialog({ title, typeLabel, body, saveLabel, secondaryLabel = "", on
     dialogSecondary.classList.remove("is-hidden");
   }
   recordDialog.showModal();
+  moveToastStackIntoDialog();
   afterOpen?.();
   bindDialogPasswordToggles();
 }
@@ -4506,8 +4558,8 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("bookingDate", "Booking Date", fieldValue("bookingDate", today()), false, "date")}
       ${input("shipmentDate", "Shipment Date", fieldValue("shipmentDate", today()), false, "date")}
       ${select("status", "Status", statusOptions(), fieldValue("status", ""))}
-      ${select("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", ""))}
-      ${select("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "")), fieldValue("shipmentService", ""))}
+      ${strictSelect("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", ""))}
+      ${strictSelect("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "")), fieldValue("shipmentService", ""))}
       ${selectEditable("origin", "Origin", "origin", ["Kuwait City"], fieldValue("origin"))}
       ${selectEditable("destination", "Destination", "destination", ["Riyadh"], fieldValue("destination"))}
       ${input("customerReference", "Customer Reference", fieldValue("customerReference"))}
@@ -4515,7 +4567,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("salesPerson", "Sales Person", fieldValue("salesPerson", currentUserName()))}
       <label>Airway Bill / Bill of Lading
         <span class="inline-input-button">
-          <input name="airwayBillNo" type="text" value="${escapeHtml(fieldValue("airwayBillNo", isAirway ? "" : nextNumber("AWB", state.shipments, "jobNo")))}" />
+          <input name="airwayBillNo" type="text" value="${escapeHtml(fieldValue("airwayBillNo", isAirway ? "" : nextAirwayBillNumber()))}" />
           <button type="button" class="secondary-button" data-dialog-action="fetch-awb-data">Fetch</button>
         </span>
       </label>
@@ -4862,32 +4914,17 @@ function consolidationShipmentPicker(initialJobs = "", currentLoadNo = "") {
 function bindShipmentDirectionDialog() {
   const directionSelect = dialogBody.querySelector("[name='shipmentDirection']");
   const serviceSelect = dialogBody.querySelector("[name='shipmentService']");
-  const otherField = dialogBody.querySelector("[name='shipmentServiceOther']");
   if (!directionSelect || !serviceSelect) return;
-  const serviceList = dialogBody.querySelector("#shipmentServiceOptions");
 
-  const syncOptions = () => {
-    const currentValue = serviceSelect.value;
+  const rebuildServiceOptions = (preserveValue) => {
     const options = shipmentServiceOptions(directionSelect.value);
-    if (serviceList) serviceList.innerHTML = options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("");
-    if (options.includes(currentValue)) {
-      serviceSelect.value = currentValue;
-    } else if (directionSelect.value === "Consolidation" || directionSelect.value === "Consoladation") {
-      serviceSelect.value = "Consolidation";
-      if (otherField) otherField.placeholder = "Manual consolidation remark";
-    } else {
-      serviceSelect.value = options[0];
-      if (otherField) otherField.placeholder = "Optional other service";
-    }
+    const keepValue = preserveValue && options.includes(preserveValue) ? preserveValue : "";
+    const blankOption = keepValue ? "" : `<option value="" selected disabled hidden></option>`;
+    serviceSelect.innerHTML = blankOption + options.map((option) => `<option value="${escapeHtml(option)}" ${option === keepValue ? "selected" : ""}>${escapeHtml(option)}</option>`).join("");
   };
 
-  directionSelect.addEventListener("change", syncOptions);
-  if (directionSelect.value || serviceSelect.value) {
-    syncOptions();
-  } else if (serviceList) {
-    const options = shipmentServiceOptions("");
-    serviceList.innerHTML = options.map((option) => `<option value="${escapeHtml(optionValue(option))}" label="${escapeHtml(optionLabel(option))}"></option>`).join("");
-  }
+  directionSelect.addEventListener("change", () => rebuildServiceOptions(null));
+  rebuildServiceOptions(serviceSelect.value);
 }
 
 function bindShipmentCustomerTariffs() {
@@ -5552,17 +5589,16 @@ function invoiceTariffOptionsForCustomer(customerName) {
 function invoiceTariffsForCustomer(customerName) {
   const lookup = normalizeLookupText(customerName);
   if (!lookup) return [];
-  const rows = visibleRows(state.tariffs);
-  const tokens = customerSearchTokens(customerName);
-  return rows.filter((row) => rowMatchesLookup(row, [row.customer, row.consigneeName, row.customerName, row.customerCode, row.tariffNo], tokens));
+  return state.tariffs.filter((row) => normalizeLookupText(row.customer || '') === lookup);
 }
 
 function invoiceShipmentsForCustomer(customerName) {
   const lookup = normalizeLookupText(customerName);
   if (!lookup) return [];
-  const rows = visibleRows(state.shipments);
-  const tokens = customerSearchTokens(customerName);
-  return rows.filter((row) => rowMatchesLookup(row, [row.customer, row.customerName, row.billTo1, row.shipperName, row.consigneeName, row.customerCode], tokens));
+  return state.shipments.filter((row) => {
+    const rowCustomer = normalizeLookupText(row.customer || row.customerName || row.billTo1 || '');
+    return rowCustomer === lookup;
+  });
 }
 
 function parseInvoiceLineItems(value) {
@@ -5632,7 +5668,7 @@ function invoiceLinesFromTariff(shipmentItem, tariffItem, chargeableWeight = eff
   const lines = [{
     id: "tariff-base",
     source: "tariff-base",
-    description: (tariffItem.customer || "Freight Charge") + weightLabel,
+    description: "Freight Charge" + weightLabel,
     unit: "KG",
     qty: chargeableWeight || 1,
     rate: pricing.rate,
