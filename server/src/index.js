@@ -829,6 +829,7 @@ const resources = {
       field("additional_charge_number_format", ["additionalChargeNumberFormat", "additional_charge_number_format"]),
       field("supplier_number_format", ["supplierNumberFormat", "supplier_number_format"]),
       field("quotation_number_format", ["quotationNumberFormat", "quotation_number_format"]),
+      field("awb_number_format", ["awbNumberFormat", "awb_number_format"]),
       field("default_volumetric_divisor", ["defaultVolumetricDivisor", "default_volumetric_divisor"]),
       field("require_pod_before_invoice", ["requirePodBeforeInvoice", "require_pod_before_invoice"]),
       field("allow_global_shipment_quick_search", ["allowGlobalShipmentQuickSearch", "allow_global_shipment_quick_search"]),
