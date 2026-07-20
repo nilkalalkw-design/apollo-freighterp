@@ -2054,12 +2054,12 @@ function updateDateFilterStatus() {
 
 function portalRows(name) { return Array.isArray(customerPortalData?.[name]) ? customerPortalData[name] : []; }
 function portalStatus(value) { return String(value || "").toUpperCase().replace(/\s+/g, "_"); }
-function renderCustomerDashboard() { const requests = portalRows("shipmentRequests"); const shipments = portalRows("shipments"); const notifications = portalRows("notifications"); const activity = portalRows("activityLogs"); const pending = requests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))).length; const approved = requests.filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))).length; const rejected = requests.filter((row) => portalStatus(row.status) === "REJECTED").length; return "<section class=\"kpi-grid\">" + kpi("Total Shipments", shipments.length + requests.length, "Your shipment records") + kpi("Pending Requests", pending, "Waiting company review") + kpi("Approved Requests", approved, "Approved or auto approved") + kpi("Rejected Requests", rejected, "Rejected requests") + kpi("Notifications", notifications.length, "Portal messages") + "</section><section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Recent Requests", "Customer Portal") + table("customerRequest", requests.slice(0, 8), customerRequestColumns(), undefined, "customerRequest:dashboard") + "</article><article class=\"panel\">" + panelHeader("Recent Activity", "Customer Portal") + table("customerActivity", activity.slice(0, 8), customerActivityColumns(), undefined, "customerActivity:dashboard") + "</article></section>"; }
+function renderCustomerDashboard() { const requests = portalRows("shipmentRequests"); const shipments = portalRows("shipments"); const notifications = portalRows("notifications"); const activity = portalRows("activityLogs"); const pending = requests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))).length; const approved = requests.filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))).length; const rejected = requests.filter((row) => portalStatus(row.status) === "REJECTED").length; return "<section class=\"kpi-grid\">" + kpi("Total Shipments", shipments.length + requests.length, "Your shipment records", "customer-total-shipments") + kpi("Pending Requests", pending, "Waiting company review", "customer-pending-requests") + kpi("Approved Requests", approved, "Approved or auto approved", "customer-approved-requests") + kpi("Rejected Requests", rejected, "Rejected requests", "customer-rejected-requests") + kpi("Notifications", notifications.length, "Portal messages", "customer-notifications") + "</section><section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Recent Requests", "Customer Portal") + table("customerRequest", requests.slice(0, 8), customerRequestColumns(), false, "customerRequest:dashboard") + "</article><article class=\"panel\">" + panelHeader("Recent Activity", "Customer Portal") + table("customerActivity", activity.slice(0, 8), customerActivityColumns(), false, "customerActivity:dashboard") + "</article></section>"; }
 function renderCustomerNewShipment() { const hsOptions = portalRows("hsCodeMaster").map((row) => ({ value: row.item_name || row.itemName || "", label: [row.hs_code || row.hsCode, row.item_code || row.itemCode, row.alternate_name || row.alternateName].filter(Boolean).join(" | ") })); return "<section class=\"panel\">" + panelHeader("New Shipment Request", "Customer Portal") + "<form class=\"stack-form\" data-form=\"customer-shipment-request\">" + select("shipmentType", "Shipment Type", ["Export", "Import", "Cross Trade", "Local Delivery"], "Export") + input("origin", "Origin", "") + input("destination", "Destination", "") + input("consignee", "Consignee", currentSession()?.customerName || "") + selectFrom("itemName", "Item Name", hsOptions, "") + input("hsCode", "HS Code", "") + input("itemCode", "Item Code", "") + input("quantity", "Quantity", "1", false, "number") + input("weight", "Weight", "0", false, "number") + input("invoiceValue", "Invoice Value", "0", false, "number") + textarea("remarks", "Remarks", "", false, 3) + "<label>Attachments<input name=\"attachments\" type=\"file\" multiple accept=\".pdf,.jpg,.jpeg,.png,.docx,.xlsx\" /></label><button type=\"submit\">Submit Request</button></form></section>"; }
-function renderCustomerShipments() { return "<section class=\"split-grid wide-left\"><article class=\"panel\">" + panelHeader("Shipment Requests", "History") + table("customerRequest", portalRows("shipmentRequests"), customerRequestColumns()) + "</article><article class=\"panel\">" + panelHeader("Company Shipments", "Tracking") + table("customerShipment", portalRows("shipments"), customerShipmentColumns()) + "</article></section>"; }
-function renderCustomerTracking() { return "<section class=\"panel\">" + panelHeader("Tracking", "Customer Portal") + table("customerShipment", portalRows("shipments"), customerShipmentColumns()) + "</section>"; }
+function renderCustomerShipments() { return "<section class=\"split-grid wide-left\"><article class=\"panel\">" + panelHeader("Shipment Requests", "History") + table("customerRequest", portalRows("shipmentRequests"), customerRequestColumns(), false) + "</article><article class=\"panel\">" + panelHeader("Company Shipments", "Tracking") + table("customerShipment", portalRows("shipments"), customerShipmentColumns(), false) + "</article></section>"; }
+function renderCustomerTracking() { return "<section class=\"panel\">" + panelHeader("Tracking", "Customer Portal") + table("customerShipment", portalRows("shipments"), customerShipmentColumns(), false) + "</section>"; }
 function renderCustomerProfile() { const session = currentSession() || {}; return "<section class=\"panel\">" + panelHeader("Profile", "Customer Portal") + "<form class=\"stack-form\" data-form=\"customer-profile\">" + input("customerCode", "Customer Code", session.customerCode || "", true) + input("customerName", "Customer Name", session.customerName || "", true) + input("email", "Email", session.email || "") + passwordField("password", "New Password", "") + "<button type=\"submit\">Save Profile</button></form></section>"; }
-function renderCustomerNotifications() { return "<section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Notifications", "Customer Portal") + table("customerNotification", portalRows("notifications"), customerNotificationColumns()) + "</article><article class=\"panel\">" + panelHeader("Activity Logs", "Customer Portal") + table("customerActivity", portalRows("activityLogs"), customerActivityColumns()) + "</article></section>"; }
+function renderCustomerNotifications() { return "<section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Notifications", "Customer Portal") + table("customerNotification", portalRows("notifications"), customerNotificationColumns(), false) + "</article><article class=\"panel\">" + panelHeader("Activity Logs", "Customer Portal") + table("customerActivity", portalRows("activityLogs"), customerActivityColumns(), false) + "</article></section>"; }
 
 function portalCustomerCount() {
   return Array.isArray(state.customerUsers) ? state.customerUsers.length : 0;
@@ -2114,6 +2114,51 @@ function renderDashboard() {
 }
 
 function dashboardMetricConfig(metric) {
+  if (metric === "customer-total-shipments") {
+    return {
+      title: "Total Shipments",
+      summary: "Your shipment records and submitted requests",
+      rows: [...portalRows("shipments"), ...portalRows("shipmentRequests")],
+      columns: customerShipmentColumns()
+    };
+  }
+
+  if (metric === "customer-pending-requests") {
+    return {
+      title: "Pending Requests",
+      summary: "Requests waiting on company review",
+      rows: portalRows("shipmentRequests").filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))),
+      columns: customerRequestColumns()
+    };
+  }
+
+  if (metric === "customer-approved-requests") {
+    return {
+      title: "Approved Requests",
+      summary: "Approved or auto-approved requests",
+      rows: portalRows("shipmentRequests").filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))),
+      columns: customerRequestColumns()
+    };
+  }
+
+  if (metric === "customer-rejected-requests") {
+    return {
+      title: "Rejected Requests",
+      summary: "Requests the company rejected",
+      rows: portalRows("shipmentRequests").filter((row) => portalStatus(row.status) === "REJECTED"),
+      columns: customerRequestColumns()
+    };
+  }
+
+  if (metric === "customer-notifications") {
+    return {
+      title: "Notifications",
+      summary: "Portal messages",
+      rows: portalRows("notifications"),
+      columns: customerNotificationColumns()
+    };
+  }
+
   const rows = filteredRows(visibleRows(state.shipments));
   if (metric === "open-shipments") {
     const selected = rows.filter((row) => ["Draft", "Booked"].includes(row.status));
@@ -2192,6 +2237,9 @@ function dashboardMetricConfig(metric) {
 function dashboardMetricTableType(metric) {
   if (metric === "pending-requests") return "userRequest";
   if (metric === "month-revenue" || metric === "gross-profit") return "invoice";
+  if (metric === "customer-total-shipments") return "customerShipment";
+  if (["customer-pending-requests", "customer-approved-requests", "customer-rejected-requests"].includes(metric)) return "customerRequest";
+  if (metric === "customer-notifications") return "customerNotification";
   return "shipment";
 }
 
@@ -5346,6 +5394,16 @@ function bindPalletDimensionBuilder() {
       return;
     }
 
+    const duplicateButton = event.target.closest("[data-duplicate-pallet-line]");
+    if (duplicateButton) {
+      const sourceIndex = Number(duplicateButton.dataset.duplicatePalletLine);
+      const source = lines[sourceIndex];
+      if (!source) return;
+      lines.splice(sourceIndex + 1, 0, { ...source });
+      sync();
+      return;
+    }
+
     const editButton = event.target.closest("[data-edit-pallet-line]");
     if (editButton) {
       editingLineIndex = Number(editButton.dataset.editPalletLine);
@@ -5404,7 +5462,7 @@ function palletDimensionTable(lines, total, roundedTotal, volumeCategory = "") {
   const rows = lines.length
     ? lines.map((line, index) => `<tr>
       <td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${line.count || line.quantity}</td><td>${line.length}</td><td>${line.width}</td><td>${line.height}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.weightKg || line.totalWeight || 0)}</td><td>${money(cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", volumeCategory))}</td>
-      <td><button type="button" class="ghost-button" data-remove-pallet-line="${index}">Remove</button><button type="button" class="ghost-button" data-edit-pallet-line="${index}">Edit</button></td>
+      <td><button type="button" class="ghost-button" data-remove-pallet-line="${index}">Remove</button><button type="button" class="ghost-button" data-edit-pallet-line="${index}">Edit</button><button type="button" class="ghost-button" data-duplicate-pallet-line="${index}">Duplicate</button></td>
     </tr>`).join("")
     : `<tr><td colspan="10" class="empty-state">No cargo items added.</td></tr>`;
   return `<div class="table-wrap"><table class="tariff-charges-table pallet-dimensions-table">
