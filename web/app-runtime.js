@@ -21,6 +21,7 @@ const modules = [
   ["Documents", "Document tags, shipment attachments, and missing file checks"],
   ["Billing / Invoices", "Invoice shipments, monitor unbilled jobs, and check margins"],
   ["Quotation", "Create customer quotations and convert them into shipments"],
+  ["Customer Requests", "Review, approve, or reject shipment requests submitted by customers"],
   ["POD / Delivery", "Delivery status, POD uploads, disputes, and pending lists"],
   ["Shipment Status", "Dedicated shipment status updates and history controls"],
   ["Reports", "Operational, billing, POD, and margin reports"],
@@ -173,6 +174,7 @@ function seedState() {
       invoice("DRAFT-260006", "Al Noor Projects", "AFS-2605003", 780, 590, "Draft", "2026-05-05")
     ],
     quotations: [],
+    shipmentRequests: [],
     users: [
       user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All Branches", "All", true, true, true, true, "admin123", "System temporary admin"),
       user("ops-kuwait", "operations.kuwait@apollofreightsolution.com", "Operations", "Active", "Kuwait HO", "Assigned Branch Only", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Kuwait HO shipments"),
@@ -902,6 +904,7 @@ function normalizeState(stored) {
     additionalCharges: Array.isArray(stored.additionalCharges) ? stored.additionalCharges : defaults.additionalCharges,
     invoices: Array.isArray(stored.invoices) ? stored.invoices : defaults.invoices,
     quotations: Array.isArray(stored.quotations) ? stored.quotations : defaults.quotations,
+    shipmentRequests: Array.isArray(stored.shipmentRequests) ? stored.shipmentRequests : defaults.shipmentRequests,
     users: normalizeUsers(Array.isArray(stored.users) && stored.users.length ? stored.users : defaults.users),
     customerUsers: Array.isArray(stored.customerUsers) ? stored.customerUsers : defaults.customerUsers,
     unblockRequests: Array.isArray(stored.unblockRequests) ? stored.unblockRequests : defaults.unblockRequests,
@@ -1675,6 +1678,7 @@ async function syncFromApi() {
       additionalCharges,
       invoices,
       quotations,
+      shipmentRequests,
       users,
       customerUsers,
       unblockRequests,
@@ -1692,6 +1696,7 @@ async function syncFromApi() {
       fetchJson("/api/additional-charges"),
       fetchJson("/api/invoices"),
       fetchJson("/api/quotations"),
+      fetchJson("/api/shipment-requests"),
       fetchJson("/api/users"),
       fetchJson("/api/customer-users"),
       fetchJson("/api/unblock-requests"),
@@ -1718,6 +1723,7 @@ async function syncFromApi() {
       state.additionalCharges = (additionalCharges.rows || []).map(apiAdditionalCharge);
       state.invoices = (invoices.rows || []).map(apiInvoice);
       state.quotations = (quotations.rows || []).map(apiQuotation);
+      state.shipmentRequests = (shipmentRequests.rows || []).map(apiShipmentRequest);
       state.users = normalizeUsers((users.rows || []).map(apiUser));
       state.customerUsers = (customerUsers.rows || []).map(apiCustomerUser);
       state.unblockRequests = (unblockRequests.rows || []).map(apiUnblockRequest);
@@ -1850,6 +1856,32 @@ function apiAdditionalCharge(row) {
     row.approval_notes || "",
     row.created_by || row.requested_by || "admin"
   );
+}
+
+function apiShipmentRequest(row) {
+  return {
+    requestNo: row.request_no,
+    customerCode: row.customer_code || "",
+    customerName: row.customer_name || "",
+    shipmentType: row.shipment_type || "",
+    origin: row.origin || "",
+    destination: row.destination || "",
+    consignee: row.consignee || "",
+    itemName: row.item_name || "",
+    hsCode: row.hs_code || "",
+    itemCode: row.item_code || "",
+    quantity: Number(row.quantity || 0),
+    weight: Number(row.weight || 0),
+    invoiceValue: Number(row.invoice_value || 0),
+    remarks: row.remarks || "",
+    attachmentsJson: row.attachments_json || "[]",
+    status: row.status || "SUBMITTED",
+    approvalNotes: row.approval_notes || "",
+    autoApproved: Boolean(row.auto_approved),
+    convertedJobNo: row.converted_job_no || "",
+    createdBy: row.created_by || "",
+    createdAt: String(row.created_at || today()).slice(0, 10)
+  };
 }
 
 function apiQuotation(row) {
@@ -2015,6 +2047,7 @@ function render() {
     Documents: renderDocuments,
     "Billing / Invoices": renderInvoices,
     Quotation: renderQuotations,
+    "Customer Requests": renderShipmentRequests,
     "POD / Delivery": renderPod,
     "Shipment Status": renderShipmentStatus,
     Reports: renderReports,
@@ -2054,7 +2087,7 @@ function updateDateFilterStatus() {
 
 function portalRows(name) { return Array.isArray(customerPortalData?.[name]) ? customerPortalData[name] : []; }
 function portalStatus(value) { return String(value || "").toUpperCase().replace(/\s+/g, "_"); }
-function renderCustomerDashboard() { const requests = portalRows("shipmentRequests"); const shipments = portalRows("shipments"); const notifications = portalRows("notifications"); const activity = portalRows("activityLogs"); const pending = requests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))).length; const approved = requests.filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))).length; const rejected = requests.filter((row) => portalStatus(row.status) === "REJECTED").length; return "<section class=\"kpi-grid\">" + kpi("Total Shipments", shipments.length + requests.length, "Your shipment records", "customer-total-shipments") + kpi("Pending Requests", pending, "Waiting company review", "customer-pending-requests") + kpi("Approved Requests", approved, "Approved or auto approved", "customer-approved-requests") + kpi("Rejected Requests", rejected, "Rejected requests", "customer-rejected-requests") + kpi("Notifications", notifications.length, "Portal messages", "customer-notifications") + "</section><section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Recent Requests", "Customer Portal") + table("customerRequest", requests.slice(0, 8), customerRequestColumns(), false, "customerRequest:dashboard") + "</article><article class=\"panel\">" + panelHeader("Recent Activity", "Customer Portal") + table("customerActivity", activity.slice(0, 8), customerActivityColumns(), false, "customerActivity:dashboard") + "</article></section>"; }
+function renderCustomerDashboard() { const requests = portalRows("shipmentRequests"); const shipments = portalRows("shipments"); const notifications = portalRows("notifications"); const activity = portalRows("activityLogs"); const pending = requests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))).length; const approved = requests.filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))).length; const sentBack = requests.filter((row) => portalStatus(row.status) === "SENT_BACK").length; return "<section class=\"kpi-grid\">" + kpi("Total Shipments", shipments.length + requests.length, "Your shipment records", "customer-total-shipments") + kpi("Pending Requests", pending, "Waiting company review", "customer-pending-requests") + kpi("Approved Requests", approved, "Approved or auto approved", "customer-approved-requests") + kpi("Sent Back Requests", sentBack, "Needs your attention", "customer-sent-back-requests") + kpi("Notifications", notifications.length, "Portal messages", "customer-notifications") + "</section><section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Recent Requests", "Customer Portal") + table("customerRequest", requests.slice(0, 8), customerRequestColumns(), false, "customerRequest:dashboard") + "</article><article class=\"panel\">" + panelHeader("Recent Activity", "Customer Portal") + table("customerActivity", activity.slice(0, 8), customerActivityColumns(), false, "customerActivity:dashboard") + "</article></section>"; }
 function renderCustomerNewShipment() { const hsOptions = portalRows("hsCodeMaster").map((row) => ({ value: row.item_name || row.itemName || "", label: [row.hs_code || row.hsCode, row.item_code || row.itemCode, row.alternate_name || row.alternateName].filter(Boolean).join(" | ") })); return "<section class=\"panel\">" + panelHeader("New Shipment Request", "Customer Portal") + "<form class=\"stack-form\" data-form=\"customer-shipment-request\">" + select("shipmentType", "Shipment Type", ["Export", "Import", "Cross Trade", "Local Delivery"], "Export") + input("origin", "Origin", "") + input("destination", "Destination", "") + input("consignee", "Consignee", currentSession()?.customerName || "") + selectFrom("itemName", "Item Name", hsOptions, "") + input("hsCode", "HS Code", "") + input("itemCode", "Item Code", "") + input("quantity", "Quantity", "1", false, "number") + input("weight", "Weight", "0", false, "number") + input("invoiceValue", "Invoice Value", "0", false, "number") + textarea("remarks", "Remarks", "", false, 3) + "<label>Attachments<input name=\"attachments\" type=\"file\" multiple accept=\".pdf,.jpg,.jpeg,.png,.docx,.xlsx\" /></label><button type=\"submit\">Submit Request</button></form></section>"; }
 function renderCustomerShipments() { return "<section class=\"split-grid wide-left\"><article class=\"panel\">" + panelHeader("Shipment Requests", "History") + table("customerRequest", portalRows("shipmentRequests"), customerRequestColumns(), false) + "</article><article class=\"panel\">" + panelHeader("Company Shipments", "Tracking") + table("customerShipment", portalRows("shipments"), customerShipmentColumns(), false) + "</article></section>"; }
 function renderCustomerTracking() { return "<section class=\"panel\">" + panelHeader("Tracking", "Customer Portal") + table("customerShipment", portalRows("shipments"), customerShipmentColumns(), false) + "</section>"; }
@@ -2073,6 +2106,7 @@ function renderDashboard() {
   const pod = rows.filter((row) => row.podStatus !== "Uploaded").length;
   const unbilled = rows.filter((row) => ["Unbilled", "Missing rate"].includes(row.invoiceStatus)).length;
   const pendingRequests = pendingRequestCount();
+  const pendingCustomerRequests = state.shipmentRequests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(String(row.status || "").toUpperCase())).length;
   const pendingCharges = state.additionalCharges.filter((row) => row.status === "Pending Approval").length;
   if (!isAdminSession()) {
     return `
@@ -2082,6 +2116,7 @@ function renderDashboard() {
         ${kpi("Pending POD", pod, "Need delivery proof", "pending-pod")}
         ${kpi("Unbilled", unbilled, "Your jobs ready for billing", "unbilled")}
         ${kpi("Pending Requests", pendingRequests, "Your pending approvals", "pending-requests")}
+        ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
       </section>
       <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:myShipments")}</section>`;
   }
@@ -2092,6 +2127,7 @@ function renderDashboard() {
       ${kpi("Pending POD", pod, "Need delivery proof", "pending-pod")}
       ${kpi("Unbilled", unbilled, "Ready for billing review", "unbilled")}
       ${kpi("Pending Requests", pendingRequests, "Need admin action", "pending-requests")}
+      ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
       ${kpi("Customer Portal", portalCustomerCount(), "Customer users", "customer-portal")}
       ${kpi("Month Revenue", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0), 0)), "Invoiced total", "month-revenue")}
       ${kpi("Gross Profit", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0) - Number(row.supplierCost || 0), 0)), "Invoiced revenue minus cost", "gross-profit")}
@@ -2114,6 +2150,15 @@ function renderDashboard() {
 }
 
 function dashboardMetricConfig(metric) {
+  if (metric === "customer-requests") {
+    return {
+      title: "Customer Requests",
+      summary: "Shipment requests waiting on your review",
+      rows: state.shipmentRequests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(String(row.status || "").toUpperCase())),
+      columns: shipmentRequestColumns()
+    };
+  }
+
   if (metric === "customer-total-shipments") {
     return {
       title: "Total Shipments",
@@ -2141,11 +2186,11 @@ function dashboardMetricConfig(metric) {
     };
   }
 
-  if (metric === "customer-rejected-requests") {
+  if (metric === "customer-sent-back-requests") {
     return {
-      title: "Rejected Requests",
-      summary: "Requests the company rejected",
-      rows: portalRows("shipmentRequests").filter((row) => portalStatus(row.status) === "REJECTED"),
+      title: "Sent Back Requests",
+      summary: "Requests sent back by the company for review",
+      rows: portalRows("shipmentRequests").filter((row) => portalStatus(row.status) === "SENT_BACK"),
       columns: customerRequestColumns()
     };
   }
@@ -2236,9 +2281,10 @@ function dashboardMetricConfig(metric) {
 
 function dashboardMetricTableType(metric) {
   if (metric === "pending-requests") return "userRequest";
+  if (metric === "customer-requests") return "shipmentRequest";
   if (metric === "month-revenue" || metric === "gross-profit") return "invoice";
   if (metric === "customer-total-shipments") return "customerShipment";
-  if (["customer-pending-requests", "customer-approved-requests", "customer-rejected-requests"].includes(metric)) return "customerRequest";
+  if (["customer-pending-requests", "customer-approved-requests", "customer-sent-back-requests"].includes(metric)) return "customerRequest";
   if (metric === "customer-notifications") return "customerNotification";
   return "shipment";
 }
@@ -2420,6 +2466,27 @@ function renderAdditionalCharges() {
       </article>
     </section>
     ${adminDeletePanel("charge", "Additional Charge")}`;
+}
+
+function renderShipmentRequests() {
+  const rows = filteredRows(state.shipmentRequests);
+  return `
+    <section class="split-grid wide-left">
+      <article class="panel">${panelHeader("Customer Shipment Requests", "Review Queue")} ${table("shipmentRequest", rows, shipmentRequestColumns())}</article>
+      ${moduleActionPanel("Customer Request Actions", "shipmentRequest", "Open a request to review full details, then Approve, Reject, or Convert it into a shipment.", quickOpenShipmentRequestMarkup())}
+    </section>
+    ${adminDeletePanel("shipmentRequest", "Shipment Request")}`;
+}
+
+function quickOpenShipmentRequestMarkup() {
+  return `<div class="action-stack">
+    <label>Open by Request No
+      <input type="text" id="quickOpenShipmentRequestInput" placeholder="Enter number and click Open" />
+    </label>
+    <div class="action-row">
+      <button type="button" class="secondary-button" data-action="quick-open-shipment-request">Open Request</button>
+    </div>
+  </div>`;
 }
 
 function renderQuotations() {
@@ -2976,6 +3043,19 @@ function tableActionButton(type, id) {
     return `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Review</button>`;
   }
 
+  if (type === "shipmentRequest") {
+    const record = state.shipmentRequests.find((row) => row.requestNo === id);
+    const status = String(record?.status || "").toUpperCase();
+    const isPending = ["SUBMITTED", "PENDING_REVIEW"].includes(status);
+    const isApprovedNotConverted = ["APPROVED", "AUTO_APPROVED"].includes(status) && !record?.convertedJobNo;
+    return `<div class="row-action-group">
+      <button class="ghost-button" data-action="open" data-type="shipmentRequest" data-id="${escapeHtml(id)}">Open</button>
+      ${isPending ? `<button class="ghost-button" data-action="approve-shipment-request" data-id="${escapeHtml(id)}">Approve</button>` : ""}
+      ${isPending ? `<button class="ghost-button" data-action="send-back-shipment-request" data-id="${escapeHtml(id)}">Send Back</button>` : ""}
+      ${isApprovedNotConverted ? `<button class="ghost-button" data-action="convert-shipment-request" data-id="${escapeHtml(id)}">Convert</button>` : ""}
+    </div>`;
+  }
+
   if (type === "quotation") {
     return `<div class="row-action-group">
       <button class="ghost-button" data-action="open" data-type="quotation" data-id="${escapeHtml(id)}">Open</button>
@@ -3383,6 +3463,7 @@ function defaultColumnLayouts() {
     document: [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]],
     invoice: [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"], ["createdBy", "USERNAME"]],
     quotation: [["quotationNo", "Quotation"], ["date", "Date"], ["customerName", "Customer"], ["customerMobile", "Mobile"], ["customerEmail", "Email"], ["cbm", "CBM"], ["status", "Status"], ["createdBy", "USERNAME"]],
+    shipmentRequest: [["requestNo", "Request"], ["createdAt", "Date"], ["customerName", "Customer"], ["shipmentType", "Type"], ["origin", "Origin"], ["destination", "Destination"], ["itemName", "Item"], ["status", "Status"]],
     customerUser: [["customerCode", "Customer Code"], ["username", "Portal Username"], ["email", "Email"], ["status", "Status"], ["lastLogin", "Last Login"], ["createdAt", "Created"]],
     charge: [["refNo", "Ref No"], ["shipmentNo", "Shipment No"], ["chargeType", "Charge Type"], ["supplier", "Supplier"], ["amount", "Amount"], ["taxAmount", "Tax"], ["totalAmount", "Total"], ["status", "Status"]],
     user: [["userName", "User"], ["email", "Email"], ["role", "Role"], ["accountStatus", "Status"], ["branchAccess", "Branch"]]
@@ -3417,6 +3498,10 @@ function quotationColumns() {
   return configurableColumns("quotation", defaultColumnLayouts().quotation);
 }
 
+function shipmentRequestColumns() {
+  return configurableColumns("shipmentRequest", defaultColumnLayouts().shipmentRequest);
+}
+
 function customerUserColumns() {
   return configurableColumns("customerUser", defaultColumnLayouts().customerUser);
 }
@@ -3448,6 +3533,23 @@ function userRequestColumns() {
 
 function auditColumns() {
   return [["dateTime", "Date Time"], ["user", "User"], ["action", "Action"], ["reference", "Reference"]];
+}
+
+function openShipmentRequestByNumber(rawQuery) {
+  const query = String(rawQuery || "").trim().toLowerCase();
+  if (!query) {
+    window.alert("Enter a Request No first.");
+    return;
+  }
+
+  const match = state.shipmentRequests.find((row) => String(row.requestNo || "").trim().toLowerCase() === query);
+
+  if (!match) {
+    window.alert(`No request found matching "${rawQuery}".`);
+    return;
+  }
+
+  openRecord("shipmentRequest", rowId("shipmentRequest", match));
 }
 
 function openQuotationByNumber(rawQuery) {
@@ -3528,6 +3630,7 @@ function rowId(type, row) {
     charge: "refNo",
     invoice: "invoiceNo",
     quotation: "quotationNo",
+    shipmentRequest: "requestNo",
     user: "userName",
     customerUser: "username",
     settings: "settingsKey",
@@ -3553,6 +3656,7 @@ function collectionFor(type) {
     charge: visibleRows(state.additionalCharges),
     invoice: visibleRows(state.invoices),
     quotation: visibleRows(state.quotations),
+    shipmentRequest: state.shipmentRequests,
     user: state.users,
     customerUser: state.customerUsers,
     unblock: state.unblockRequests,
@@ -3584,6 +3688,26 @@ async function handleModuleClick(event) {
 
   if (action === "convert-quotation") {
     convertQuotationToShipment(id);
+    return;
+  }
+
+  if (action === "quick-open-shipment-request") {
+    openShipmentRequestByNumber(document.querySelector("#quickOpenShipmentRequestInput")?.value || "");
+    return;
+  }
+
+  if (action === "approve-shipment-request") {
+    approveShipmentRequest(id);
+    return;
+  }
+
+  if (action === "send-back-shipment-request") {
+    sendBackShipmentRequest(id);
+    return;
+  }
+
+  if (action === "convert-shipment-request") {
+    convertShipmentRequestToShipment(id);
     return;
   }
 
@@ -3786,6 +3910,11 @@ function handleModuleLinkClick(event) {
 }
 
 function handleModuleKeydown(event) {
+  if (event.key === "Enter" && event.target.id === "quickOpenShipmentRequestInput") {
+    event.preventDefault();
+    openShipmentRequestByNumber(event.target.value);
+    return;
+  }
   if (event.key === "Enter" && event.target.id === "quickOpenQuotationInput") {
     event.preventDefault();
     openQuotationByNumber(event.target.value);
@@ -3895,6 +4024,34 @@ function openRecord(type, id) {
       afterOpen: () => {
         bindTariffWeightRates();
         bindTariffAdditionalCharges(record.additionalChargesJson || "[]");
+      }
+    });
+    return;
+  }
+
+  if (type === "shipmentRequest") {
+    editing = { type, id, record };
+    dialogState = null;
+    const isPending = ["SUBMITTED", "PENDING_REVIEW"].includes(String(record.status || "").toUpperCase());
+    openDialog({
+      title: `Shipment Request - ${id}`,
+      typeLabel: "Shipment Request",
+      saveLabel: "Save Notes",
+      secondaryLabel: isPending ? "Approve" : "",
+      onSecondary: isPending ? () => approveShipmentRequest(id, true) : null,
+      body: shipmentRequestDialogBody(record),
+      onSave: async () => {
+        const data = collectFormValues(dialogBody.closest("form"));
+        const updatedRecord = { ...record, approvalNotes: data.approvalNotes || record.approvalNotes || "" };
+        state.shipmentRequests = state.shipmentRequests.map((row) => rowId("shipmentRequest", row) === id ? updatedRecord : row);
+        await persistRecord("shipmentRequest", updatedRecord);
+        saveState();
+        recordDialog.close();
+        render();
+        notifySuccess("Notes saved", `${id} was updated.`);
+      },
+      afterOpen: () => {
+        dialogBody.querySelector("[data-dialog-action='send-back-request']")?.addEventListener("click", () => sendBackShipmentRequest(id, true));
       }
     });
     return;
@@ -4063,6 +4220,7 @@ function allCollectionFor(type) {
     charge: state.additionalCharges,
     invoice: state.invoices,
     quotation: state.quotations,
+    shipmentRequest: state.shipmentRequests,
     user: state.users,
     customerUser: state.customerUsers,
     unblock: state.unblockRequests,
@@ -4724,6 +4882,44 @@ function palletDimensionBuilder(initialValue = "[]") {
     </div>
     <div class="tariff-charge-table" data-pallet-lines-list></div>
   </section>`;
+}
+
+function shipmentRequestDialogBody(record) {
+  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
+  const attachments = (() => {
+    try {
+      const parsed = JSON.parse(record?.attachmentsJson || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  })();
+  return `
+    ${input("requestNo", "Request No", fieldValue("requestNo"), true)}
+    ${input("createdAt", "Submitted", fieldValue("createdAt"), true)}
+    ${badge(display(fieldValue("status")))}
+    ${formSection("Customer", `
+      ${input("customerName", "Customer Name", fieldValue("customerName"), true)}
+      ${input("customerCode", "Customer Code", fieldValue("customerCode"), true)}
+    `)}
+    ${formSection("Shipment Details", `
+      ${input("shipmentType", "Shipment Type", fieldValue("shipmentType"), true)}
+      ${input("origin", "Origin", fieldValue("origin"), true)}
+      ${input("destination", "Destination", fieldValue("destination"), true)}
+      ${input("consignee", "Consignee", fieldValue("consignee"), true)}
+      ${input("itemName", "Item Name", fieldValue("itemName"), true)}
+      ${input("hsCode", "HS Code", fieldValue("hsCode"), true)}
+      ${input("itemCode", "Item Code", fieldValue("itemCode"), true)}
+      ${input("quantity", "Quantity", fieldValue("quantity"), true)}
+      ${input("weight", "Weight (KG)", fieldValue("weight"), true)}
+      ${input("invoiceValue", "Invoice Value", fieldValue("invoiceValue"), true)}
+    `)}
+    ${textarea("remarks", "Customer Remarks", fieldValue("remarks"), true, 2)}
+    ${attachments.length ? `<div class="form-section"><h3>Attachments</h3>${attachments.map((file) => `<p>${escapeHtml(file.name || file.fileName || String(file))}</p>`).join("")}</div>` : ""}
+    ${textarea("approvalNotes", "Approval / Send Back Notes", fieldValue("approvalNotes"), false, 3)}
+    ${["SUBMITTED", "PENDING_REVIEW"].includes(String(fieldValue("status")).toUpperCase()) ? `<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="send-back-request">Send Back to Customer</button></div>` : ""}
+    <input type="hidden" name="convertedJobNo" value="${escapeHtml(fieldValue("convertedJobNo"))}" />
+  `;
 }
 
 function quotationDialogBody(record) {
@@ -7041,6 +7237,89 @@ function companyNameMarkup(name) {
     .join(" ");
 }
 
+async function approveShipmentRequest(id, fromDialog = false) {
+  const record = state.shipmentRequests.find((row) => row.requestNo === id);
+  if (!record) return;
+  const notes = fromDialog ? (dialogValue("approvalNotes") || record.approvalNotes || "") : (record.approvalNotes || "");
+  const updatedRecord = { ...record, status: "APPROVED", approvalNotes: notes };
+  state.shipmentRequests = state.shipmentRequests.map((row) => rowId("shipmentRequest", row) === id ? updatedRecord : row);
+  await persistRecord("shipmentRequest", updatedRecord);
+  saveState();
+  if (fromDialog) recordDialog.close();
+  render();
+  notifySuccess("Request approved", `${id} was approved and the customer has been notified.`);
+}
+
+async function sendBackShipmentRequest(id, fromDialog = false) {
+  const record = state.shipmentRequests.find((row) => row.requestNo === id);
+  if (!record) return;
+  let notes = fromDialog ? (dialogValue("approvalNotes") || record.approvalNotes || "") : (record.approvalNotes || "");
+  if (!notes.trim()) {
+    notes = window.prompt("Let the customer know what needs to change before this can be approved:", "") || "";
+    if (!notes.trim()) {
+      notifyDenied("Send back cancelled", "A note is required so the customer knows what to fix.");
+      return;
+    }
+  }
+  const updatedRecord = { ...record, status: "SENT_BACK", approvalNotes: notes };
+  state.shipmentRequests = state.shipmentRequests.map((row) => rowId("shipmentRequest", row) === id ? updatedRecord : row);
+  await persistRecord("shipmentRequest", updatedRecord);
+  saveState();
+  if (fromDialog) recordDialog.close();
+  render();
+  notifySuccess("Request sent back", `${id} was sent back to the customer for review.`);
+}
+
+function convertShipmentRequestToShipment(id) {
+  const record = state.shipmentRequests.find((row) => row.requestNo === id);
+  if (!record) {
+    window.alert("Shipment request not found.");
+    return;
+  }
+  editing = null;
+  dialogState = null;
+  const directionMap = { export: "Export", import: "Import", consolidation: "Consolidation" };
+  const prefillRecord = {
+    customer: record.customerName || "",
+    shipmentDirection: directionMap[String(record.shipmentType || "").toLowerCase()] || "",
+    origin: record.origin || "",
+    destination: record.destination || "",
+    consigneeName: record.consignee || "",
+    natureOfGoods: [record.itemName, record.hsCode ? `HS Code: ${record.hsCode}` : ""].filter(Boolean).join(" - "),
+    customerReference: record.itemCode || "",
+    branch: defaultUserBranch()
+  };
+  openDialog({
+    title: `New Shipment (from ${record.requestNo})`,
+    typeLabel: "Shipment",
+    saveLabel: "Create Shipment",
+    body: shipmentDialogBody("shipment", prefillRecord),
+    onSave: async () => {
+      const data = collectFormValues(dialogBody.closest("form"));
+      rememberDropdownOptions(data);
+      const saved = await createShipment(data);
+      if (saved === false) return;
+      const updatedRecord = { ...record, convertedJobNo: data.jobNo || "" };
+      state.shipmentRequests = state.shipmentRequests.map((row) => rowId("shipmentRequest", row) === id ? updatedRecord : row);
+      await persistRecord("shipmentRequest", updatedRecord);
+      saveState();
+      recordDialog.close();
+      render();
+    },
+    afterOpen: () => {
+      bindShipmentDirectionDialog();
+      bindShipmentCustomerTariffs();
+      bindShipmentCustomerAutofill();
+      bindShipmentCopySections();
+      bindTransporterAutofill();
+      bindTariffFinancialAutofill();
+      bindVolumeCalculator();
+      bindPalletDimensionBuilder();
+      bindAwbFetchButton();
+    }
+  });
+}
+
 function printQuotation(id) {
   const record = state.quotations.find((row) => rowId("quotation", row) === id);
   if (!record) {
@@ -7736,6 +8015,7 @@ function endpointFor(type) {
     charge: "additional-charges",
     invoice: "invoices",
     quotation: "quotations",
+    shipmentRequest: "shipment-requests",
     user: "users",
     customerUser: "customer-users",
     unblock: "unblock-requests",
@@ -7821,6 +8101,7 @@ function typeLabel(type) {
     charge: "additional charge",
     invoice: "invoice",
     quotation: "quotation",
+    shipmentRequest: "shipment request",
     user: "user account",
     customerUser: "customer portal account"
   }[type] || type;
