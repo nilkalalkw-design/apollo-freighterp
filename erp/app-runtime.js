@@ -4535,8 +4535,9 @@ function bindVolumeCalculator() {
     }
     const divisor = Number(divisorField.value || 0);
     const gross = Number(actualWeightField?.value || 0);
-    const volumeWeight = Number(cbmField.dataset.volumeWeight || 0);
-    if (divisor > 0 && volumeWeight >= 0) {
+    const cbm = Number(cbmField.value || 0);
+    const volumeWeight = cbm * divisor;
+    if (divisor > 0 && cbm >= 0) {
       chargeableField.value = String(roundUpToWholeKg(Math.max(gross, volumeWeight)));
     }
   };
@@ -4631,8 +4632,10 @@ function bindPalletDimensionBuilder() {
     const actualWeight = lines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0);
     const total = lines.reduce((sum, line) => sum + Number(line.total || line.volumeWeight || 0), 0);
     const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
-    const totalVolumetricWeight = lines.reduce((sum, line) => sum + cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", volumeCategory), 0);
     const roundedTotal = roundUpToHalf(total);
+    const totalVolumetricWeight = isSameAsGrossWeightCategory(volumeCategory)
+      ? actualWeight
+      : Number((roundedTotal * volumeDivisorFor(volumeCategory)).toFixed(3));
     hiddenField.value = JSON.stringify(lines);
     if (legacyPalletField) legacyPalletField.value = hiddenField.value;
     if (piecesField) piecesField.value = String(totalPieces || Number(piecesField.value || 0));
