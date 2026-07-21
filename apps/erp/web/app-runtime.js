@@ -4537,7 +4537,7 @@ function bindVolumeCalculator() {
     const gross = Number(actualWeightField?.value || 0);
     const volumeWeight = Number(cbmField.dataset.volumeWeight || 0);
     if (divisor > 0 && volumeWeight >= 0) {
-      chargeableField.value = String(Number(Math.max(gross, volumeWeight).toFixed(3)));
+      chargeableField.value = String(roundUpToWholeKg(Math.max(gross, volumeWeight)));
     }
   };
 
@@ -4643,8 +4643,8 @@ function bindPalletDimensionBuilder() {
     }
     const volumeWeight = isSameAsGrossWeightCategory(volumeCategory) ? actualWeight : totalVolumetricWeight;
     const chargeableWeight = Math.max(actualWeight, volumeWeight);
-    if (chargeableField && !chargeableField.dataset.manualChargeable) chargeableField.value = String(Number(chargeableWeight.toFixed(3)));
-    if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(Number(chargeableWeight.toFixed(3)));
+    if (chargeableField && !chargeableField.dataset.manualChargeable) chargeableField.value = String(roundUpToWholeKg(chargeableWeight));
+    if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(roundUpToWholeKg(chargeableWeight));
     list.innerHTML = palletDimensionTable(lines, total, roundedTotal, volumeCategory);
   };
 
@@ -5024,7 +5024,7 @@ function effectiveChargeableWeightForShipment(shipmentItem) {
   const divisor = Number(shipmentItem?.chargeableDivisor || volumeDivisorFor(shipmentItem?.volumeCategory || '') || 0);
   const volumetric = divisor > 0 && cbm > 0 ? Number((cbm * divisor).toFixed(3)) : 0;
   const calculated = Math.max(actual, volumetric);
-  if (calculated > 0) return Number(calculated.toFixed(3));
+  if (calculated > 0) return roundUpToWholeKg(calculated);
   return Number(shipmentItem?.chargeableKg || 0);
 }
 
@@ -6157,6 +6157,10 @@ function parsePalletDimensions(value) {
 
 function roundUpToHalf(value) {
   return Math.ceil(Number(value || 0) * 10) / 10;
+}
+
+function roundUpToWholeKg(value) {
+  return Math.ceil(Number(value || 0));
 }
 
 function palletDimensionPrintTable(lines, roundedTotal) {
