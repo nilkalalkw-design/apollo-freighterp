@@ -4724,8 +4724,10 @@ function bindPalletDimensionBuilder() {
 
   dialogBody.querySelector("[name='volumeCategory']")?.addEventListener("change", sync);
   chargeableField?.addEventListener("input", () => {
+    const roundedChargeableWeight = roundUpToWholeKg(chargeableField.value);
+    chargeableField.value = String(roundedChargeableWeight);
     chargeableField.dataset.manualChargeable = "1";
-    if (manualChargeableField) manualChargeableField.value = chargeableField.value;
+    if (manualChargeableField) manualChargeableField.value = String(roundedChargeableWeight);
   });
   fields.totalWeight?.addEventListener("input", () => {
     manualGrossTouched = true;
@@ -5018,7 +5020,7 @@ function invoiceTotals(lines, taxPercent) {
 
 function effectiveChargeableWeightForShipment(shipmentItem) {
   const manual = Number(shipmentItem?.manualChargeableKg || 0);
-  if (manual > 0) return Number(manual.toFixed(3));
+  if (manual > 0) return roundUpToWholeKg(manual);
   const actual = Number(shipmentItem?.actualKg || 0);
   const cbm = Number(shipmentItem?.cbm || 0);
   const divisor = Number(shipmentItem?.chargeableDivisor || volumeDivisorFor(shipmentItem?.volumeCategory || '') || 0);
