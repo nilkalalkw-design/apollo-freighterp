@@ -7055,7 +7055,7 @@ function parsePalletDimensions(value) {
 }
 
 function roundUpToHalf(value) {
-  return Math.ceil(Number(value || 0) * 2) / 2;
+  return Math.ceil(Number(value || 0) * 10) / 10;
 }
 
 function palletDimensionPrintTable(lines, roundedTotal) {
