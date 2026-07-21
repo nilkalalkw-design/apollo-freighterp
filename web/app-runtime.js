@@ -5420,14 +5420,15 @@ function bindVolumeCalculator() {
 
   const syncChargeable = () => {
     if (isSameAsGrossWeightCategory(categoryField.value)) {
-      chargeableField.value = String(Number(Number(actualWeightField?.value || 0).toFixed(3)));
+      chargeableField.value = String(roundUpToWholeKg(actualWeightField?.value || 0));
       return;
     }
     const divisor = Number(divisorField.value || 0);
     const gross = Number(actualWeightField?.value || 0);
-    const volumeWeight = Number(cbmField.dataset.volumeWeight || 0);
-    if (divisor > 0 && volumeWeight >= 0) {
-      chargeableField.value = String(Number(Math.max(gross, volumeWeight).toFixed(3)));
+    const cbm = Number(cbmField.value || 0);
+    const volumeWeight = cbm * divisor;
+    if (divisor > 0 && cbm >= 0) {
+      chargeableField.value = String(roundUpToWholeKg(Math.max(gross, volumeWeight)));
     }
   };
 
@@ -5521,8 +5522,10 @@ function bindPalletDimensionBuilder() {
     const actualWeight = lines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0);
     const total = lines.reduce((sum, line) => sum + Number(line.total || line.volumeWeight || 0), 0);
     const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
-    const totalVolumetricWeight = lines.reduce((sum, line) => sum + cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", volumeCategory), 0);
     const roundedTotal = roundUpToHalf(total);
+    const totalVolumetricWeight = isSameAsGrossWeightCategory(volumeCategory)
+      ? actualWeight
+      : Number((roundedTotal * volumeDivisorFor(volumeCategory)).toFixed(3));
     hiddenField.value = JSON.stringify(lines);
     if (legacyPalletField) legacyPalletField.value = hiddenField.value;
     if (piecesField) piecesField.value = String(totalPieces || Number(piecesField.value || 0));
@@ -5533,8 +5536,8 @@ function bindPalletDimensionBuilder() {
     }
     const volumeWeight = isSameAsGrossWeightCategory(volumeCategory) ? actualWeight : totalVolumetricWeight;
     const chargeableWeight = Math.max(actualWeight, volumeWeight);
-    if (chargeableField && !chargeableField.dataset.manualChargeable) chargeableField.value = String(Number(chargeableWeight.toFixed(3)));
-    if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(Number(chargeableWeight.toFixed(3)));
+    if (chargeableField && !chargeableField.dataset.manualChargeable) chargeableField.value = String(roundUpToWholeKg(chargeableWeight));
+    if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(roundUpToWholeKg(chargeableWeight));
     list.innerHTML = palletDimensionTable(lines, total, roundedTotal, volumeCategory);
   };
 
@@ -5624,8 +5627,10 @@ function bindPalletDimensionBuilder() {
 
   dialogBody.querySelector("[name='volumeCategory']")?.addEventListener("change", sync);
   chargeableField?.addEventListener("input", () => {
+    const roundedChargeableWeight = roundUpToWholeKg(chargeableField.value);
+    chargeableField.value = String(roundedChargeableWeight);
     chargeableField.dataset.manualChargeable = "1";
-    if (manualChargeableField) manualChargeableField.value = chargeableField.value;
+    if (manualChargeableField) manualChargeableField.value = String(roundedChargeableWeight);
   });
   fields.totalWeight?.addEventListener("input", () => {
     manualGrossTouched = true;
@@ -5917,13 +5922,13 @@ function invoiceTotals(lines, taxPercent) {
 
 function effectiveChargeableWeightForShipment(shipmentItem) {
   const manual = Number(shipmentItem?.manualChargeableKg || 0);
-  if (manual > 0) return Number(manual.toFixed(3));
+  if (manual > 0) return roundUpToWholeKg(manual);
   const actual = Number(shipmentItem?.actualKg || 0);
   const cbm = Number(shipmentItem?.cbm || 0);
   const divisor = Number(shipmentItem?.chargeableDivisor || volumeDivisorFor(shipmentItem?.volumeCategory || '') || 0);
   const volumetric = divisor > 0 && cbm > 0 ? Number((cbm * divisor).toFixed(3)) : 0;
   const calculated = Math.max(actual, volumetric);
-  if (calculated > 0) return Number(calculated.toFixed(3));
+  if (calculated > 0) return roundUpToWholeKg(calculated);
   return Number(shipmentItem?.chargeableKg || 0);
 }
 
@@ -7056,6 +7061,10 @@ function parsePalletDimensions(value) {
 
 function roundUpToHalf(value) {
   return Math.ceil(Number(value || 0) * 10) / 10;
+}
+
+function roundUpToWholeKg(value) {
+  return Math.ceil(Number(value || 0));
 }
 
 function palletDimensionPrintTable(lines, roundedTotal) {
