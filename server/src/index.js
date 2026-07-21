@@ -689,6 +689,7 @@ const resources = {
       field("status", ["status"]),
       field("approval_notes", ["approvalNotes", "approval_notes"]),
       field("auto_approved", ["autoApproved", "auto_approved"]),
+      field("converted_job_no", ["convertedJobNo", "converted_job_no"]),
       field("created_by", ["createdBy", "created_by"])
     ]
   },
@@ -1122,6 +1123,22 @@ async function updateRow(config, id, body) {
     const error = new Error("Record not found.");
     error.status = 404;
     throw error;
+  }
+
+  if (config.table === "shipment_requests") {
+    const row = result.rows[0];
+    const status = String(row.status || "").toUpperCase();
+    if (status === "APPROVED" || status === "SENT_BACK") {
+      await createCustomerNotification({
+        userType: "customer",
+        customerCode: row.customer_code || "",
+        type: status === "APPROVED" ? "REQUEST_APPROVED" : "REQUEST_SENT_BACK",
+        title: status === "APPROVED" ? `Shipment request ${row.request_no} approved` : `Shipment request ${row.request_no} needs your attention`,
+        message: status === "APPROVED"
+          ? `Your shipment request ${row.request_no} (${row.origin} to ${row.destination}) has been approved.${row.approval_notes ? ` Note: ${row.approval_notes}` : ""}`
+          : `Your shipment request ${row.request_no} (${row.origin} to ${row.destination}) was sent back for review.${row.approval_notes ? ` Details: ${row.approval_notes}` : ""}`
+      });
+    }
   }
 
   return result.rows[0];
