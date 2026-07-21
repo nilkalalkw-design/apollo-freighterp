@@ -4530,7 +4530,7 @@ function bindVolumeCalculator() {
 
   const syncChargeable = () => {
     if (isSameAsGrossWeightCategory(categoryField.value)) {
-      chargeableField.value = String(Number(Number(actualWeightField?.value || 0).toFixed(3)));
+      chargeableField.value = String(roundUpToWholeKg(actualWeightField?.value || 0));
       return;
     }
     const divisor = Number(divisorField.value || 0);
