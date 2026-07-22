@@ -6934,7 +6934,8 @@ function tcnDocumentHtml(record) {
   const cargoPieces = cargoLines.reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0);
   const totalPieces = Number(mergedRecord.pieces || 0) || cargoPieces || "";
   const totalGrossWeight = cargoLines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0) || Number(mergedRecord.actualKg || 0);
-  const chargeableWeight = Math.max(totalGrossWeight, totalVolumetricWeight, Number(mergedRecord.chargeableKg || 0));
+  const grandTotalCbm = Number(mergedRecord.cbm || roundUpToHalf(cargoLines.reduce((sum, line) => sum + cargoVolumeCbm(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM"), 0)));
+  const chargeableWeight = roundUpToWholeKg(Math.max(totalGrossWeight, totalVolumetricWeight, Number(mergedRecord.chargeableKg || 0)));
   return documentShell(
     `TCN ${mergedRecord.tcnNumber || mergedRecord.jobNo}`,
     "Truck Consignment Note - TCN / WAYBILL",
@@ -6963,8 +6964,8 @@ function tcnDocumentHtml(record) {
       </section>
       <h2>CARGO DETAILS</h2>
       <table class="tcn-cargo-table">
-        <thead><tr><th>No Of Pieces / Pallets</th><th>Gross Weight (Kgs)</th><th>Volume Weight (Kgs)</th><th>Nature of Goods</th></tr></thead>
-        <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${money(totalGrossWeight)}</td><td>${money(chargeableWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
+        <thead><tr><th>No Of Pieces / Pallets</th><th>Grand Total CBM</th><th>Gross Weight (Kgs)</th><th>Chargeable Weight (Kgs)</th><th>Nature of Goods</th></tr></thead>
+        <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${money(grandTotalCbm)}</td><td>${money(totalGrossWeight)}</td><td>${money(chargeableWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
       </table>
       ${printOnlyCargoDetails ? "" : tcnDimensionsTable(cargoLines, mergedRecord.volumeCategory)}
       ${tcnTermsHtml()}
@@ -6993,9 +6994,9 @@ function mergeFilled(base, override) {
 
 function tcnDimensionsTable(lines, volumeCategory = "") {
   const rows = lines.length
-    ? lines.map((line, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${escapeHtml(line.quantity || line.count || "")}</td><td>${escapeHtml(line.length || "")}</td><td>${escapeHtml(line.width || "")}</td><td>${escapeHtml(line.height || "")}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", volumeCategory))}</td></tr>`).join("")
+    ? lines.map((line, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${escapeHtml(line.quantity || line.count || "")}</td><td>${escapeHtml(line.length || "")}</td><td>${escapeHtml(line.width || "")}</td><td>${escapeHtml(line.height || "")}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.weightKg || line.weight || 0)}</td></tr>`).join("")
     : `<tr><td colspan="8">No dimensions recorded.</td></tr>`;
-  return `<h2>DIMENSIONS</h2><table><thead><tr><th>Sr</th><th>Package</th><th>Qty</th><th>Length</th><th>Width</th><th>Height</th><th>Unit</th><th>Volume Weight</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<h2>DIMENSIONS</h2><table><thead><tr><th>Sr</th><th>Package</th><th>Qty</th><th>Length</th><th>Width</th><th>Height</th><th>Unit</th><th>Gross Weight</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function tcnTermsHtml() {
