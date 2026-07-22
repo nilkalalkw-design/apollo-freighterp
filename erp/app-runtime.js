@@ -6066,7 +6066,7 @@ function tcnDocumentHtml(record) {
       <h2>CARGO DETAILS</h2>
       <table class="tcn-cargo-table">
         <thead><tr><th>No Of Pieces / Pallets</th><th>Grand Total CBM</th><th>Gross Weight (Kgs)</th><th>Chargeable Weight (Kgs)</th><th>Nature of Goods</th></tr></thead>
-        <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${money(grandTotalCbm)}</td><td>${money(totalGrossWeight)}</td><td>${money(chargeableWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
+        <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${escapeHtml(grandTotalCbm)}</td><td>${money(totalGrossWeight)}</td><td>${money(chargeableWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
       </table>
       ${printOnlyCargoDetails ? "" : tcnDimensionsTable(cargoLines, mergedRecord.volumeCategory)}
       ${tcnTermsHtml()}
