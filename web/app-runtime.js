@@ -1190,6 +1190,10 @@ function boot() {
   moduleContent.addEventListener("mousedown", handleColumnResizeStart);
   moduleContent.addEventListener("keydown", handleModuleKeydown);
   moduleContent.addEventListener("submit", handleModuleSubmit);
+  recordDialog.addEventListener("click", handleModuleClick);
+  recordDialog.addEventListener("click", handleModuleLinkClick);
+  recordDialog.addEventListener("mousedown", handleColumnResizeStart);
+  recordDialog.addEventListener("keydown", handleModuleKeydown);
   dialogSecondary.addEventListener("click", () => dialogState?.onSecondary?.());
   dialogMinimize?.addEventListener("click", toggleDialogMinimized);
   dialogMaximize?.addEventListener("click", toggleDialogMaximized);
@@ -1795,6 +1799,12 @@ function apiShipment(row) {
     row.created_by || "admin",
     row.notes || ""
   );
+  item.transporter = row.transporter || "";
+  item.transporterCode = row.transporter_code || "";
+  item.vehicleNo = row.vehicle_no || "";
+  item.driverName = row.driver_name || "";
+  item.driverNumber = row.driver_number || "";
+  item.driverMobile = row.driver_mobile || "";
   return item;
 }
 
@@ -2306,7 +2316,7 @@ function openDashboardMetricDialog(metric) {
             </div>
             <span class="status-badge neutral">${escapeHtml(String(config.rows.length))}</span>
           </div>
-          ${config.rows.length ? table(dashboardMetricTableType(metric), config.rows, config.columns, false, `metric:${metric}`, false) : `<p class="empty-state">No matching records found.</p>`}
+          ${config.rows.length ? table(dashboardMetricTableType(metric), config.rows, config.columns, !metric.startsWith("customer-"), `metric:${metric}`, false) : `<p class="empty-state">No matching records found.</p>`}
         </div>
       </div>
       </div>
@@ -3986,6 +3996,7 @@ function openRecord(type, id) {
   const collection = collectionFor(type);
   const record = collection.find((row) => rowId(type, row) === id);
   if (!record) return;
+  if (recordDialog.open) recordDialog.close();
 
   if (type === "adminRequest") {
     openAdminRequestDialog(record);
@@ -4478,6 +4489,7 @@ function toggleDialogMaximized() {
 }
 
 function openDialog({ title, typeLabel, body, saveLabel, secondaryLabel = "", onSave = null, onSecondary = null, afterOpen = null, singleColumn = false }) {
+  if (recordDialog.open) recordDialog.close();
   resetDialogShell();
   dialogType.textContent = typeLabel;
   dialogTitle.textContent = title;
@@ -4833,6 +4845,14 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("deliveryMobile", "Delivery Mobile", fieldValue("deliveryMobile"))}
       ${input("deliveryDate", "Delivery Date", fieldValue("deliveryDate"), false, "date")}
       ${input("deliveryTime", "Delivery Time", fieldValue("deliveryTime"), false, "time")}
+    `, true, sectionOpen)}
+    ${formSection("Transport Information", `
+      ${selectFrom("transporter", "Transporter", state.suppliers.map((row) => ({ value: row.name, label: `${row.code} | ${row.name}` })), fieldValue("transporter"))}
+      ${selectFrom("transporterCode", "Transporter Number", state.suppliers.map((row) => ({ value: row.code, label: `${row.code} | ${row.name}` })), fieldValue("transporterCode"))}
+      ${input("vehicleNo", "Vehicle No", fieldValue("vehicleNo"))}
+      ${input("driverName", "Driver Name", fieldValue("driverName"))}
+      ${input("driverNumber", "Driver Number", fieldValue("driverNumber"))}
+      ${input("driverMobile", "Driver Mobile", fieldValue("driverMobile"))}
     `, true, sectionOpen)}
     ${formSection("Billing Party 1", `
       ${checkbox("copyCustomerToBilling1", "Same as customer information")}
