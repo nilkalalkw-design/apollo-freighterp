@@ -494,6 +494,12 @@ const resources = {
       field("shipment_service_other", ["shipmentServiceOther", "shipment_service_other"]),
       field("volume_category", ["volumeCategory", "volume_category"]),
       field("chargeable_divisor", ["chargeableDivisor", "chargeable_divisor"]),
+      field("transporter"),
+      field("transporter_code", ["transporterCode", "transporter_code"]),
+      field("vehicle_no", ["vehicleNo", "vehicle_no"]),
+      field("driver_name", ["driverName", "driver_name"]),
+      field("driver_number", ["driverNumber", "driver_number"]),
+      field("driver_mobile", ["driverMobile", "driver_mobile"]),
       field("notes"),
       field("created_by", ["createdBy", "created_by"])
     ]
