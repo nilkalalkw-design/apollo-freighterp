@@ -1370,6 +1370,32 @@ th {
   gap: 10px;
 }
 
+.status-expand-row td {
+  background: rgba(0, 0, 0, 0.02);
+  padding: 0;
+}
+
+.status-expand-panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.status-expand-panel h4 {
+  margin: 4px 0 0;
+}
+
+.inline-status-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.inline-status-form .action-row {
+  grid-column: 1 / -1;
+}
+
 .tariff-detail-preview {
   display: grid;
   grid-column: 1 / -1;
