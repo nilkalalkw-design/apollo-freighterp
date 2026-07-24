@@ -2320,8 +2320,15 @@ function renderShipmentStatus() {
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Shipment Status Register", "Click a Job No to update status")} ${shipmentStatusTable(rows)}</article>
-      <article class="panel">${panelHeader("Status Actions", "Register-driven updates")}
-        <p class="empty-state">Click any Job No in the register to expand it. From there you can change the status, add a manual remark, save it to the tracking history, and email the update to the registered customer.</p>
+      <article class="panel">${panelHeader("Status Actions", "Quick Open / Email")}
+        <div class="action-stack">
+          <p class="empty-state">Pick a Job No below to expand it in the register, or click any row directly. Change status, add a remark, and it's saved to tracking history. Use Send Update to email the customer.</p>
+          ${loadSelectorMarkup("status", "Shipment To Open")}
+          <div class="action-row">
+            <button type="button" data-action="load-record" data-type="status">Open</button>
+            <button type="button" class="secondary-button" data-action="send-status-email" data-type="status">Send Update</button>
+          </div>
+        </div>
       </article>
     </section>
     ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for status-board shipment cleanup.")}`;
@@ -2382,9 +2389,14 @@ function shipmentStatusExpandRowMarkup(row, colSpan) {
     : `<tr><td colspan="4">${empty("No status history yet for this shipment.")}</td></tr>`;
   return `<tr class="status-expand-row"><td colspan="${colSpan}">
     <div class="status-expand-panel">
+      <div class="status-expand-panel-header">
+        <h4>Update Status - ${escapeHtml(jobNo)}</h4>
+        <button type="button" class="ghost-button" data-action="toggle-status-row" data-id="${escapeHtml(jobNo)}">Collapse ▲</button>
+      </div>
       <form data-form="status" class="inline-status-form">
         <input type="hidden" name="jobNo" value="${escapeHtml(jobNo)}" />
-        ${select("status", "Change Status", statusOptions(), row.status)}
+        ${select("status", "Status", statusOptions(), row.status)}
+        ${input("date", "Date", today(), false, "date")}
         ${input("notes", "Manual Remark", "")}
         <div class="action-row">
           <button type="submit" class="primary-button">Save Status Update</button>
@@ -3436,7 +3448,13 @@ function handleLoadRecord(type) {
   }
 
   if (type === "status") {
-    openStatusDialog(selectedId);
+    if (!selectedId) {
+      window.alert("Select a shipment first.");
+      return;
+    }
+    state.ui.expandedStatusJob = selectedId;
+    saveState();
+    render();
     return;
   }
 
@@ -7075,6 +7093,7 @@ async function updateStatus(data) {
 
   const newStatus = data.status || shipmentItem.status;
   const remark = data.notes || "";
+  const entryDate = data.date || today();
   shipmentItem.status = newStatus;
   await persistRecord("shipment", shipmentItem);
 
@@ -7085,7 +7104,7 @@ async function updateStatus(data) {
     invoiceStatus: shipmentItem.invoiceStatus,
     notes: remark,
     updatedBy: currentUserName(),
-    updatedAt: new Date().toISOString()
+    updatedAt: entryDate
   };
   state.shipmentStatusHistory.unshift(historyEntry);
   await postRecord("statusHistory", historyEntry);
