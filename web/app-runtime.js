@@ -175,6 +175,7 @@ function seedState() {
     ],
     quotations: [],
     shipmentRequests: [],
+    shipmentStatusHistory: [],
     users: [
       user("admin", "admin@apollofreightsolution.com", "Admin", "Active", "Both", "All Branches", "All", true, true, true, true, "admin123", "System temporary admin"),
       user("ops-kuwait", "operations.kuwait@apollofreightsolution.com", "Operations", "Active", "Kuwait HO", "Assigned Branch Only", "Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports", true, false, false, false, "ops123", "Can create and track Kuwait HO shipments"),
@@ -905,6 +906,7 @@ function normalizeState(stored) {
     invoices: Array.isArray(stored.invoices) ? stored.invoices : defaults.invoices,
     quotations: Array.isArray(stored.quotations) ? stored.quotations : defaults.quotations,
     shipmentRequests: Array.isArray(stored.shipmentRequests) ? stored.shipmentRequests : defaults.shipmentRequests,
+    shipmentStatusHistory: Array.isArray(stored.shipmentStatusHistory) ? stored.shipmentStatusHistory : defaults.shipmentStatusHistory,
     users: normalizeUsers(Array.isArray(stored.users) && stored.users.length ? stored.users : defaults.users),
     customerUsers: Array.isArray(stored.customerUsers) ? stored.customerUsers : defaults.customerUsers,
     unblockRequests: Array.isArray(stored.unblockRequests) ? stored.unblockRequests : defaults.unblockRequests,
@@ -1683,6 +1685,7 @@ async function syncFromApi() {
       invoices,
       quotations,
       shipmentRequests,
+      shipmentStatusHistory,
       users,
       customerUsers,
       unblockRequests,
@@ -1701,6 +1704,7 @@ async function syncFromApi() {
       fetchJson("/api/invoices"),
       fetchJson("/api/quotations"),
       fetchJson("/api/shipment-requests"),
+      fetchJson("/api/shipment-status-history"),
       fetchJson("/api/users"),
       fetchJson("/api/customer-users"),
       fetchJson("/api/unblock-requests"),
@@ -1728,6 +1732,7 @@ async function syncFromApi() {
       state.invoices = (invoices.rows || []).map(apiInvoice);
       state.quotations = (quotations.rows || []).map(apiQuotation);
       state.shipmentRequests = (shipmentRequests.rows || []).map(apiShipmentRequest);
+      state.shipmentStatusHistory = (shipmentStatusHistory.rows || []).map(apiShipmentStatusHistory);
       state.users = normalizeUsers((users.rows || []).map(apiUser));
       state.customerUsers = (customerUsers.rows || []).map(apiCustomerUser);
       state.unblockRequests = (unblockRequests.rows || []).map(apiUnblockRequest);
@@ -1891,6 +1896,18 @@ function apiShipmentRequest(row) {
     convertedJobNo: row.converted_job_no || "",
     createdBy: row.created_by || "",
     createdAt: String(row.created_at || today()).slice(0, 10)
+  };
+}
+
+function apiShipmentStatusHistory(row) {
+  return {
+    jobNo: row.job_no || "",
+    status: row.status || "",
+    podStatus: row.pod_status || "",
+    invoiceStatus: row.invoice_status || "",
+    notes: row.notes || "",
+    updatedBy: row.updated_by || "",
+    updatedAt: row.updated_at || new Date().toISOString()
   };
 }
 
@@ -2581,23 +2598,82 @@ function renderShipmentStatus() {
   const rows = filteredRows(visibleRows(state.shipments));
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Shipment Status Register", "Status board")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:status")}</article>
-      <article class="panel">${panelHeader("Status Actions", "Update / Email")}
-        <div class="action-stack">
-          <p class="empty-state">Select a shipment, load its status window, or send the latest update through Outlook to the related customer.</p>
-          ${newRecordSelectorMarkup("status")}
-          <div class="action-row">
-            <button type="button" data-action="new-record" data-type="status">New</button>
-          </div>
-          ${loadSelectorMarkup("status", "Shipment To Load")}
-          <div class="action-row">
-            <button type="button" data-action="load-record" data-type="status">Load</button>
-            <button type="button" class="secondary-button" data-action="send-status-email" data-type="status">Send Update</button>
-          </div>
-        </div>
+      <article class="panel">${panelHeader("Shipment Status Register", "Click a Job No to update status")} ${shipmentStatusTable(rows)}</article>
+      <article class="panel">${panelHeader("Status Actions", "Register-driven updates")}
+        <p class="empty-state">Click any Job No in the register to expand it. From there you can change the status, add a manual remark, save it to the tracking history, and email the update to the registered customer.</p>
       </article>
     </section>
     ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for status-board shipment cleanup.")}`;
+}
+
+function shipmentStatusColumns() {
+  const columns = shipmentColumns();
+  const statusEntry = columns.find(([key]) => key === "status");
+  const destinationIndex = columns.findIndex(([key]) => key === "destination");
+  if (!statusEntry || destinationIndex === -1) return columns;
+  const reordered = columns.filter(([key]) => key !== "status");
+  const insertAt = reordered.findIndex(([key]) => key === "destination") + 1;
+  reordered.splice(insertAt, 0, statusEntry);
+  return reordered;
+}
+
+function shipmentStatusTable(rows) {
+  const columns = shipmentStatusColumns();
+  const expandedJob = state.ui.expandedStatusJob || "";
+  const headCells = columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("");
+  const body = rows.length
+    ? rows.map((row, index) => shipmentStatusRowMarkup(row, index, columns, expandedJob)).join("")
+    : `<tr><td colspan="${columns.length}">${empty("No records found.")}</td></tr>`;
+  return `<div class="table-wrap"><table><thead><tr>${headCells}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function shipmentStatusRowMarkup(row, index, columns, expandedJob) {
+  const jobNo = row.jobNo;
+  const isExpanded = jobNo === expandedJob;
+  const cells = columns
+    .map(([key]) => {
+      if (key === "jobNo") {
+        return `<td><button type="button" class="table-inline-link" data-action="toggle-status-row" data-id="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button></td>`;
+      }
+      return `<td>${cellHtml("shipment", key, row, index)}</td>`;
+    })
+    .join("");
+  const mainRow = `<tr class="${isExpanded ? "is-expanded" : ""}">${cells}</tr>`;
+  return isExpanded ? mainRow + shipmentStatusExpandRowMarkup(row, columns.length) : mainRow;
+}
+
+function shipmentStatusExpandRowMarkup(row, colSpan) {
+  const jobNo = row.jobNo;
+  const history = (state.shipmentStatusHistory || [])
+    .filter((entry) => entry.jobNo === jobNo)
+    .sort((left, right) => new Date(right.updatedAt || 0) - new Date(left.updatedAt || 0));
+  const historyRows = history.length
+    ? history
+        .map(
+          (entry) => `<tr>
+            <td>${escapeHtml(String(entry.updatedAt || "").slice(0, 10))}</td>
+            <td>${escapeHtml(entry.status)}</td>
+            <td>${escapeHtml(entry.notes || "")}</td>
+            <td>${escapeHtml(entry.updatedBy || "")}</td>
+          </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="4">${empty("No status history yet for this shipment.")}</td></tr>`;
+  return `<tr class="status-expand-row"><td colspan="${colSpan}">
+    <div class="status-expand-panel">
+      <form data-form="status" class="inline-status-form">
+        <input type="hidden" name="jobNo" value="${escapeHtml(jobNo)}" />
+        ${select("status", "Change Status", statusOptions(), row.status)}
+        ${input("notes", "Manual Remark", "")}
+        <div class="action-row">
+          <button type="submit" class="primary-button">Save Status Update</button>
+          <button type="button" class="secondary-button" data-action="send-status-email-row" data-id="${escapeHtml(jobNo)}">Send Update</button>
+        </div>
+      </form>
+      <h4>Tracking History (newest first)</h4>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Status</th><th>Manual Remark</th><th>Updated By</th></tr></thead><tbody>${historyRows}</tbody></table></div>
+    </div>
+  </td></tr>`;
 }
 
 function renderReports() {
@@ -3814,6 +3890,18 @@ async function handleModuleClick(event) {
 
   if (action === "send-status-email") {
     sendShipmentStatusEmail(selectedRecordId("status"));
+    return;
+  }
+
+  if (action === "toggle-status-row") {
+    state.ui.expandedStatusJob = state.ui.expandedStatusJob === id ? "" : id;
+    saveState();
+    render();
+    return;
+  }
+
+  if (action === "send-status-email-row") {
+    sendShipmentStatusEmail(id);
     return;
   }
 
@@ -8046,6 +8134,7 @@ function endpointFor(type) {
     invoice: "invoices",
     quotation: "quotations",
     shipmentRequest: "shipment-requests",
+    statusHistory: "shipment-status-history",
     user: "users",
     customerUser: "customer-users",
     unblock: "unblock-requests",
@@ -8320,6 +8409,36 @@ async function updateCustomerProfile(data) {
   await fetchJson("/api/customer/profile", { method: "PUT", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify(data) });
   notifySuccess("Profile saved", "Your customer profile was updated.");
   return true;
+}
+
+async function updateStatus(data) {
+  const jobNo = data.jobNo;
+  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
+  if (!shipmentItem) {
+    notifyDenied("Shipment not found", "Select a valid Job No.");
+    return false;
+  }
+
+  const newStatus = data.status || shipmentItem.status;
+  const remark = data.notes || "";
+  shipmentItem.status = newStatus;
+  await persistRecord("shipment", shipmentItem);
+
+  const historyEntry = {
+    jobNo,
+    status: newStatus,
+    podStatus: shipmentItem.podStatus,
+    invoiceStatus: shipmentItem.invoiceStatus,
+    notes: remark,
+    updatedBy: currentUserName(),
+    updatedAt: new Date().toISOString()
+  };
+  state.shipmentStatusHistory.unshift(historyEntry);
+  await postRecord("statusHistory", historyEntry);
+
+  addHistory("Updated shipment status", `${jobNo} -> ${newStatus}`);
+  notifySuccess("Status updated", `${jobNo} is now ${newStatus}.`);
+  state.ui.expandedStatusJob = jobNo;
 }
 
 function sendShipmentStatusEmail(jobNo) {
