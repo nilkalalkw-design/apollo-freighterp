@@ -1385,15 +1385,40 @@ th {
   margin: 4px 0 0;
 }
 
-.inline-status-form {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.status-expand-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
+}
+
+.status-expand-panel-header h4 {
+  margin: 0;
+}
+
+.inline-status-form {
+  display: flex;
+  flex-wrap: wrap;
   align-items: end;
+  gap: 12px;
+}
+
+.inline-status-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 220px;
+  max-width: 100%;
+}
+
+.inline-status-form input,
+.inline-status-form select {
+  width: 100%;
 }
 
 .inline-status-form .action-row {
-  grid-column: 1 / -1;
+  width: 100%;
+  flex-basis: 100%;
 }
 
 .tariff-detail-preview {
