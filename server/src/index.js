@@ -504,6 +504,18 @@ const resources = {
       field("created_by", ["createdBy", "created_by"])
     ]
   },
+  "shipment-status-history": {
+    table: "shipment_status_history",
+    order: "updated_at desc",
+    fields: [
+      field("job_no", ["jobNo", "job_no"], true),
+      field("status", ["status"], true),
+      field("pod_status", ["podStatus", "pod_status"]),
+      field("invoice_status", ["invoiceStatus", "invoice_status"]),
+      field("notes", ["notes", "remark", "manualRemark"]),
+      field("updated_by", ["updatedBy", "updated_by"])
+    ]
+  },
   consolidations: {
     table: "consolidations",
     key: "load_no",
