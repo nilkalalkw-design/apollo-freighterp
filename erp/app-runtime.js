@@ -4636,15 +4636,14 @@ function bindVolumeCalculator() {
 
   const syncChargeable = () => {
     if (isSameAsGrossWeightCategory(categoryField.value)) {
-      chargeableField.value = String(roundUpToWholeKg(actualWeightField?.value || 0));
+      chargeableField.value = String(Number(Number(actualWeightField?.value || 0).toFixed(3)));
       return;
     }
     const divisor = Number(divisorField.value || 0);
     const gross = Number(actualWeightField?.value || 0);
-    const cbm = Number(cbmField.value || 0);
-    const volumeWeight = cbm * divisor;
-    if (divisor > 0 && cbm >= 0) {
-      chargeableField.value = String(roundUpToWholeKg(Math.max(gross, volumeWeight)));
+    const volumeWeight = Number(cbmField.dataset.volumeWeight || 0);
+    if (divisor > 0 && volumeWeight >= 0) {
+      chargeableField.value = String(Number(Math.max(gross, volumeWeight).toFixed(3)));
     }
   };
 
@@ -4738,10 +4737,8 @@ function bindPalletDimensionBuilder() {
     const actualWeight = lines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0);
     const total = lines.reduce((sum, line) => sum + Number(line.total || line.volumeWeight || 0), 0);
     const volumeCategory = dialogBody.querySelector("[name='volumeCategory']")?.value;
+    const totalVolumetricWeight = lines.reduce((sum, line) => sum + cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", volumeCategory), 0);
     const roundedTotal = roundUpToHalf(total);
-    const totalVolumetricWeight = isSameAsGrossWeightCategory(volumeCategory)
-      ? actualWeight
-      : Number((roundedTotal * volumeDivisorFor(volumeCategory)).toFixed(3));
     hiddenField.value = JSON.stringify(lines);
     if (legacyPalletField) legacyPalletField.value = hiddenField.value;
     if (piecesField) piecesField.value = String(totalPieces || Number(piecesField.value || 0));
@@ -4752,8 +4749,8 @@ function bindPalletDimensionBuilder() {
     }
     const volumeWeight = isSameAsGrossWeightCategory(volumeCategory) ? actualWeight : totalVolumetricWeight;
     const chargeableWeight = Math.max(actualWeight, volumeWeight);
-    if (chargeableField && !chargeableField.dataset.manualChargeable) chargeableField.value = String(roundUpToWholeKg(chargeableWeight));
-    if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(roundUpToWholeKg(chargeableWeight));
+    if (chargeableField && !chargeableField.dataset.manualChargeable) chargeableField.value = String(Number(chargeableWeight.toFixed(3)));
+    if (manualChargeableField && !Number(manualChargeableField.value || 0)) manualChargeableField.value = String(Number(chargeableWeight.toFixed(3)));
     list.innerHTML = palletDimensionTable(lines, total, roundedTotal, volumeCategory);
   };
 
@@ -4833,10 +4830,8 @@ function bindPalletDimensionBuilder() {
 
   dialogBody.querySelector("[name='volumeCategory']")?.addEventListener("change", sync);
   chargeableField?.addEventListener("input", () => {
-    const roundedChargeableWeight = roundUpToWholeKg(chargeableField.value);
-    chargeableField.value = String(roundedChargeableWeight);
     chargeableField.dataset.manualChargeable = "1";
-    if (manualChargeableField) manualChargeableField.value = String(roundedChargeableWeight);
+    if (manualChargeableField) manualChargeableField.value = chargeableField.value;
   });
   fields.totalWeight?.addEventListener("input", () => {
     manualGrossTouched = true;
@@ -5129,13 +5124,13 @@ function invoiceTotals(lines, taxPercent) {
 
 function effectiveChargeableWeightForShipment(shipmentItem) {
   const manual = Number(shipmentItem?.manualChargeableKg || 0);
-  if (manual > 0) return roundUpToWholeKg(manual);
+  if (manual > 0) return Number(manual.toFixed(3));
   const actual = Number(shipmentItem?.actualKg || 0);
   const cbm = Number(shipmentItem?.cbm || 0);
   const divisor = Number(shipmentItem?.chargeableDivisor || volumeDivisorFor(shipmentItem?.volumeCategory || '') || 0);
   const volumetric = divisor > 0 && cbm > 0 ? Number((cbm * divisor).toFixed(3)) : 0;
   const calculated = Math.max(actual, volumetric);
-  if (calculated > 0) return roundUpToWholeKg(calculated);
+  if (calculated > 0) return Number(calculated.toFixed(3));
   return Number(shipmentItem?.chargeableKg || 0);
 }
 
@@ -6141,8 +6136,7 @@ function tcnDocumentHtml(record) {
   const cargoPieces = cargoLines.reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0);
   const totalPieces = Number(mergedRecord.pieces || 0) || cargoPieces || "";
   const totalGrossWeight = cargoLines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0) || Number(mergedRecord.actualKg || 0);
-  const grandTotalCbm = Number(mergedRecord.cbm || roundUpToHalf(cargoLines.reduce((sum, line) => sum + cargoVolumeCbm(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM"), 0)));
-  const chargeableWeight = roundUpToWholeKg(Math.max(totalGrossWeight, totalVolumetricWeight, Number(mergedRecord.chargeableKg || 0)));
+  const chargeableWeight = Math.max(totalGrossWeight, totalVolumetricWeight, Number(mergedRecord.chargeableKg || 0));
   return documentShell(
     `TCN ${mergedRecord.tcnNumber || mergedRecord.jobNo}`,
     "Truck Consignment Note - TCN / WAYBILL",
@@ -6171,8 +6165,8 @@ function tcnDocumentHtml(record) {
       </section>
       <h2>CARGO DETAILS</h2>
       <table class="tcn-cargo-table">
-        <thead><tr><th>No Of Pieces / Pallets</th><th>Grand Total CBM</th><th>Gross Weight (Kgs)</th><th>Chargeable Weight (Kgs)</th><th>Nature of Goods</th></tr></thead>
-        <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${escapeHtml(grandTotalCbm)}</td><td>${money(totalGrossWeight)}</td><td>${money(chargeableWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
+        <thead><tr><th>No Of Pieces / Pallets</th><th>Gross Weight (Kgs)</th><th>Volume Weight (Kgs)</th><th>Nature of Goods</th></tr></thead>
+        <tbody><tr><td>${escapeHtml(totalPieces)}</td><td>${money(totalGrossWeight)}</td><td>${money(chargeableWeight)}</td><td>${escapeHtml(mergedRecord.natureOfGoods || "")}</td></tr></tbody>
       </table>
       ${printOnlyCargoDetails ? "" : tcnDimensionsTable(cargoLines, mergedRecord.volumeCategory)}
       ${tcnTermsHtml()}
@@ -6201,9 +6195,9 @@ function mergeFilled(base, override) {
 
 function tcnDimensionsTable(lines, volumeCategory = "") {
   const rows = lines.length
-    ? lines.map((line, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${escapeHtml(line.quantity || line.count || "")}</td><td>${escapeHtml(line.length || "")}</td><td>${escapeHtml(line.width || "")}</td><td>${escapeHtml(line.height || "")}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(line.weightKg || line.weight || 0)}</td></tr>`).join("")
+    ? lines.map((line, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(line.packageType || "Pallet")}</td><td>${escapeHtml(line.quantity || line.count || "")}</td><td>${escapeHtml(line.length || "")}</td><td>${escapeHtml(line.width || "")}</td><td>${escapeHtml(line.height || "")}</td><td>${escapeHtml(line.dimensionUnit || "CM")}</td><td>${money(cargoVolumetricWeight(line.count || line.quantity, line.length, line.width, line.height, line.dimensionUnit || "CM", volumeCategory))}</td></tr>`).join("")
     : `<tr><td colspan="8">No dimensions recorded.</td></tr>`;
-  return `<h2>DIMENSIONS</h2><table><thead><tr><th>Sr</th><th>Package</th><th>Qty</th><th>Length</th><th>Width</th><th>Height</th><th>Unit</th><th>Gross Weight</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<h2>DIMENSIONS</h2><table><thead><tr><th>Sr</th><th>Package</th><th>Qty</th><th>Length</th><th>Width</th><th>Height</th><th>Unit</th><th>Volume Weight</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function tcnTermsHtml() {
@@ -6268,11 +6262,7 @@ function parsePalletDimensions(value) {
 }
 
 function roundUpToHalf(value) {
-  return Math.ceil(Number(value || 0) * 10) / 10;
-}
-
-function roundUpToWholeKg(value) {
-  return Math.ceil(Number(value || 0));
+  return Math.ceil(Number(value || 0) * 2) / 2;
 }
 
 function palletDimensionPrintTable(lines, roundedTotal) {
@@ -6494,6 +6484,7 @@ async function submitBlockRequest(type, id, requestType) {
   }
   const targetType = type === "shipment" ? "Shipment" : type === "suppliers" ? "Supplier" : "Customer";
   const displayName = record.customer || record.name || id;
+  const adminActing = isAdminSession();
   const request = {
     requestNo: nextNumber("REQ", state.unblockRequests, "requestNo"),
     requestType,
@@ -6502,13 +6493,23 @@ async function submitBlockRequest(type, id, requestType) {
     customerName: displayName,
     requestedBy: currentUserName(),
     reason: `${requestType} requested for ${targetType.toLowerCase()} ${id}`,
-    status: "Pending",
+    status: adminActing ? "Approved" : "Pending",
     date: today(),
-    approvedBy: "",
-    notes: ""
+    approvedBy: adminActing ? currentUserName() : "",
+    notes: adminActing ? "Applied directly by admin - no approval step required" : ""
   };
   state.unblockRequests.unshift(request);
   await postRecord("unblock", request);
+
+  if (adminActing) {
+    await applyBlockRequestToRecord(request);
+    addHistory(`${requestType} applied directly`, `${targetType} ${id}`);
+    saveState();
+    notifySuccess(`${targetType} ${requestType}ed`, `${id} was ${requestType.toLowerCase()}ed immediately.`);
+    render();
+    return true;
+  }
+
   addHistory(`Submitted ${requestType.toLowerCase()} request`, `${targetType} ${id}`);
   saveState();
   notifySuccess("Request sent", `${requestType} request for ${id} was sent to admin.`);
