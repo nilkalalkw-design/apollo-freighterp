@@ -2809,13 +2809,19 @@ function moduleActionPanel(title, type, note, extra = "") {
 
 function blockRequestControls(type, label) {
   const rows = collectionFor(type);
+  const adminActing = isAdminSession();
+  const blockLabel = adminActing ? "Block" : "Block Request";
+  const unblockLabel = adminActing ? "Unblock" : "Unblock Request";
+  const helpText = adminActing
+    ? "As admin, this applies immediately - no approval needed."
+    : "Requests are sent to admin and shown in User Management / Settings.";
   return `<div class="action-stack">
-    ${loadSelectorMarkup(type, `${label} To Request`)}
+    ${loadSelectorMarkup(type, `${label} To ${adminActing ? "Update" : "Request"}`)}
     <div class="action-row">
-      <button type="button" class="secondary-button" data-action="request-block" data-type="${escapeHtml(type)}">Block Request</button>
-      <button type="button" class="secondary-button" data-action="request-unblock" data-type="${escapeHtml(type)}">Unblock Request</button>
+      <button type="button" class="secondary-button" data-action="request-block" data-type="${escapeHtml(type)}">${blockLabel}</button>
+      <button type="button" class="secondary-button" data-action="request-unblock" data-type="${escapeHtml(type)}">${unblockLabel}</button>
     </div>
-    <p class="empty-state">${rows.length ? "Requests are sent to admin and shown in User Management / Settings." : `No ${label.toLowerCase()} records available for request.`}</p>
+    <p class="empty-state">${rows.length ? helpText : `No ${label.toLowerCase()} records available for request.`}</p>
   </div>`;
 }
 
@@ -6602,8 +6608,82 @@ function exportReport() {
   setTimeout(() => printWindow.print(), 150);
 }
 
+function fullShipmentExportColumns() {
+  return [
+    ["jobNo", "Job No"],
+    ["airwayBillNo", "Airway Bill / BL No"],
+    ["bookingDate", "Booking Date"],
+    ["shipmentDate", "Shipment Date"],
+    ["status", "Status"],
+    ["shipmentDirection", "Shipment Type"],
+    ["shipmentService", "Service Type"],
+    ["origin", "Origin"],
+    ["destination", "Destination"],
+    ["customerReference", "Customer Reference"],
+    ["branch", "Branch"],
+    ["salesPerson", "Sales Person"],
+    ["transitDays", "Transit Days"],
+    ["tcnNumber", "TCN Number"],
+    ["deliveryNoteNo", "Delivery Note No"],
+    ["customer", "Customer Name"],
+    ["customerCode", "Customer Code"],
+    ["customerContactPerson", "Customer Contact Person"],
+    ["customerMobile", "Customer Mobile"],
+    ["customerEmail", "Customer Email"],
+    ["customerAddress", "Customer Address"],
+    ["shipperName", "Shipper Name"],
+    ["shipperAddress", "Shipper Address"],
+    ["shipperContactPerson", "Shipper Contact Person"],
+    ["shipperMobile", "Shipper Mobile"],
+    ["shipperEmail", "Shipper Email"],
+    ["shipperCountry", "Shipper Country"],
+    ["shipperVatTrn", "Shipper VAT / TRN"],
+    ["consigneeName", "Consignee Name"],
+    ["consigneeAddress", "Consignee Address"],
+    ["consigneeContactPerson", "Consignee Contact Person"],
+    ["consigneeMobile", "Consignee Mobile"],
+    ["consigneeEmail", "Consignee Email"],
+    ["consigneeCountry", "Consignee Country"],
+    ["pickupLocation", "Pickup Location"],
+    ["pickupAddress", "Pickup Address"],
+    ["pickupContactPerson", "Pickup Contact Person"],
+    ["pickupMobile", "Pickup Mobile"],
+    ["pickupDate", "Pickup Date"],
+    ["pickupTime", "Pickup Time"],
+    ["deliveryLocation", "Delivery Location"],
+    ["deliveryAddress", "Delivery Address"],
+    ["deliveryContactPerson", "Delivery Contact Person"],
+    ["deliveryMobile", "Delivery Mobile"],
+    ["deliveryDate", "Delivery Date"],
+    ["deliveryTime", "Delivery Time"],
+    ["transporter", "Transporter"],
+    ["transporterCode", "Transporter Number"],
+    ["vehicleNo", "Vehicle No"],
+    ["driverName", "Driver Name"],
+    ["driverNumber", "Driver Number"],
+    ["driverMobile", "Driver Mobile"],
+    ["billTo1", "Billing Party Name"],
+    ["billingParty1Address", "Billing Party Address"],
+    ["billingParty1ContactPerson", "Billing Party Contact Person"],
+    ["billingParty1Mobile", "Billing Party Mobile"],
+    ["billingParty1Email", "Billing Party Email"],
+    ["billingParty1CreditTerms", "Billing Party Credit Terms"],
+    ["tariffNo", "Tariff No"],
+    ["natureOfGoods", "Nature of Goods"],
+    ["volumeCategory", "Volume Category"],
+    ["cbm", "CBM"],
+    ["actualKg", "Actual Weight (KG)"],
+    ["chargeableKg", "Chargeable Weight (KG)"],
+    ["podStatus", "POD Status"],
+    ["invoiceStatus", "Invoice Status"],
+    ["sell", "Sell"],
+    ["buyCost", "Buy Cost"],
+    ["createdBy", "USERNAME"]
+  ];
+}
+
 function downloadCsv(preview) {
-  const columns = shipmentColumns();
+  const columns = fullShipmentExportColumns();
   const header = columns.map(([, label]) => `"${label.replace(/"/g, '""')}"`).join(",");
   const lines = preview.rows.map((row) =>
     columns
@@ -7378,8 +7458,12 @@ async function approveShipmentRequest(id, fromDialog = false) {
   if (!record) return;
   const notes = fromDialog ? (dialogValue("approvalNotes") || record.approvalNotes || "") : (record.approvalNotes || "");
   const updatedRecord = { ...record, status: "APPROVED", approvalNotes: notes };
+  const saved = await persistRecord("shipmentRequest", updatedRecord);
+  if (!saved) {
+    notifyFailed("Approval not saved", "Could not save this to the server. Please try again.");
+    return;
+  }
   state.shipmentRequests = state.shipmentRequests.map((row) => rowId("shipmentRequest", row) === id ? updatedRecord : row);
-  await persistRecord("shipmentRequest", updatedRecord);
   saveState();
   if (fromDialog) recordDialog.close();
   render();
@@ -7398,8 +7482,12 @@ async function sendBackShipmentRequest(id, fromDialog = false) {
     }
   }
   const updatedRecord = { ...record, status: "SENT_BACK", approvalNotes: notes };
+  const saved = await persistRecord("shipmentRequest", updatedRecord);
+  if (!saved) {
+    notifyFailed("Send back not saved", "Could not save this to the server. Please try again.");
+    return;
+  }
   state.shipmentRequests = state.shipmentRequests.map((row) => rowId("shipmentRequest", row) === id ? updatedRecord : row);
-  await persistRecord("shipmentRequest", updatedRecord);
   saveState();
   if (fromDialog) recordDialog.close();
   render();
@@ -7576,6 +7664,7 @@ async function submitBlockRequest(type, id, requestType) {
   }
   const targetType = type === "shipment" ? "Shipment" : type === "suppliers" ? "Supplier" : "Customer";
   const displayName = record.customer || record.name || id;
+  const adminActing = isAdminSession();
   const request = {
     requestNo: nextNumber("REQ", state.unblockRequests, "requestNo"),
     requestType,
@@ -7584,13 +7673,23 @@ async function submitBlockRequest(type, id, requestType) {
     customerName: displayName,
     requestedBy: currentUserName(),
     reason: `${requestType} requested for ${targetType.toLowerCase()} ${id}`,
-    status: "Pending",
+    status: adminActing ? "Approved" : "Pending",
     date: today(),
-    approvedBy: "",
-    notes: ""
+    approvedBy: adminActing ? currentUserName() : "",
+    notes: adminActing ? "Applied directly by admin - no approval step required" : ""
   };
   state.unblockRequests.unshift(request);
   await postRecord("unblock", request);
+
+  if (adminActing) {
+    await applyBlockRequestToRecord(request);
+    addHistory(`${requestType} applied directly`, `${targetType} ${id}`);
+    saveState();
+    notifySuccess(`${targetType} ${requestType}ed`, `${id} was ${requestType.toLowerCase()}ed immediately.`);
+    render();
+    return true;
+  }
+
   addHistory(`Submitted ${requestType.toLowerCase()} request`, `${targetType} ${id}`);
   saveState();
   notifySuccess("Request sent", `${requestType} request for ${id} was sent to admin.`);
