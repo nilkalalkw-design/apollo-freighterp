@@ -507,13 +507,15 @@ const resources = {
   "shipment-status-history": {
     table: "shipment_status_history",
     order: "updated_at desc",
+    metaFields: [],
     fields: [
       field("job_no", ["jobNo", "job_no"], true),
       field("status", ["status"], true),
       field("pod_status", ["podStatus", "pod_status"]),
       field("invoice_status", ["invoiceStatus", "invoice_status"]),
       field("notes", ["notes", "remark", "manualRemark"]),
-      field("updated_by", ["updatedBy", "updated_by"])
+      field("updated_by", ["updatedBy", "updated_by"]),
+      field("updated_at", ["updatedAt", "updated_at", "date"])
     ]
   },
   consolidations: {
@@ -1147,15 +1149,19 @@ async function updateRow(config, id, body) {
     const row = result.rows[0];
     const status = String(row.status || "").toUpperCase();
     if (status === "APPROVED" || status === "SENT_BACK") {
-      await createCustomerNotification({
-        userType: "customer",
-        customerCode: row.customer_code || "",
-        type: status === "APPROVED" ? "REQUEST_APPROVED" : "REQUEST_SENT_BACK",
-        title: status === "APPROVED" ? `Shipment request ${row.request_no} approved` : `Shipment request ${row.request_no} needs your attention`,
-        message: status === "APPROVED"
-          ? `Your shipment request ${row.request_no} (${row.origin} to ${row.destination}) has been approved.${row.approval_notes ? ` Note: ${row.approval_notes}` : ""}`
-          : `Your shipment request ${row.request_no} (${row.origin} to ${row.destination}) was sent back for review.${row.approval_notes ? ` Details: ${row.approval_notes}` : ""}`
-      });
+      try {
+        await createCustomerNotification({
+          userType: "customer",
+          customerCode: row.customer_code || "",
+          type: status === "APPROVED" ? "REQUEST_APPROVED" : "REQUEST_SENT_BACK",
+          title: status === "APPROVED" ? `Shipment request ${row.request_no} approved` : `Shipment request ${row.request_no} needs your attention`,
+          message: status === "APPROVED"
+            ? `Your shipment request ${row.request_no} (${row.origin} to ${row.destination}) has been approved.${row.approval_notes ? ` Note: ${row.approval_notes}` : ""}`
+            : `Your shipment request ${row.request_no} (${row.origin} to ${row.destination}) was sent back for review.${row.approval_notes ? ` Details: ${row.approval_notes}` : ""}`
+        });
+      } catch (notificationError) {
+        console.error("Failed to create customer notification for shipment request update:", notificationError);
+      }
     }
   }
 
