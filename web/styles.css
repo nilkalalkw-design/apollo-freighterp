@@ -850,6 +850,12 @@ label {
   min-width: 760px;
 }
 
+.audit-scroll th:first-child,
+.audit-scroll td:first-child {
+  width: 36px;
+  text-align: center;
+}
+
 .receipt-box {
   border: 1px solid var(--line);
   border-radius: 8px;
