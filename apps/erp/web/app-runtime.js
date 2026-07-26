@@ -2779,10 +2779,9 @@ function renderAudit() {
       ${input("auditFromDate", "From", state.ui.auditFilters?.fromDate || "", false, "date")}
       ${input("auditToDate", "To", state.ui.auditFilters?.toDate || "", false, "date")}
       <button type="button" data-action="filter-audit">Filter</button>
-      ${deleteSelectorMarkup("audit", "Log To Delete")}
-      <button type="button" class="danger-button" data-action="delete-audit-log">Delete Log</button>
+      <button type="button" class="danger-button" data-action="delete-audit-log-selected">Delete Selected</button>
     </div>
-    <div class="audit-scroll">${table("audit", rows, auditColumns())}</div>
+    <div class="audit-scroll">${auditTableMarkup(rows)}</div>
   </section>`;
 }
 
@@ -3639,6 +3638,26 @@ function auditColumns() {
   return [["dateTime", "Date Time"], ["user", "User"], ["action", "Action"], ["reference", "Reference"]];
 }
 
+function auditTableMarkup(rows) {
+  const sortedRows = applySort("audit", rows);
+  const columns = auditColumns();
+  const locked = isColumnWidthLocked("audit");
+  const headCells = columns.map(([key, label]) => sortableHeaderCell("audit", "audit", key, label, locked)).join("");
+  const body = sortedRows.length
+    ? sortedRows.map((row, index) => auditRowMarkup(row, index, columns)).join("")
+    : `<tr><td colspan="${columns.length + 1}">${empty("No records found.")}</td></tr>`;
+  return `${columnLockToggleMarkup("audit", locked)}<div class="table-wrap"><table><thead><tr>
+    <th><input type="checkbox" data-action="toggle-select-all-audit" title="Select all" /></th>
+    ${headCells}
+  </tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function auditRowMarkup(row, index, columns) {
+  const id = escapeHtml(String(rowId("audit", row)));
+  const cells = columns.map(([key]) => `<td>${cellHtml("audit", key, row, index)}</td>`).join("");
+  return `<tr><td><input type="checkbox" class="audit-row-checkbox" data-audit-id="${id}" /></td>${cells}</tr>`;
+}
+
 function openShipmentRequestByNumber(rawQuery) {
   const query = String(rawQuery || "").trim().toLowerCase();
   if (!query) {
@@ -3956,8 +3975,16 @@ async function handleModuleClick(event) {
     return;
   }
 
-  if (action === "delete-audit-log") {
-    await deleteAuditLog();
+  if (action === "toggle-select-all-audit") {
+    const checked = event.target.checked;
+    moduleContent.querySelectorAll(".audit-row-checkbox").forEach((box) => {
+      box.checked = checked;
+    });
+    return;
+  }
+
+  if (action === "delete-audit-log-selected") {
+    await deleteSelectedAuditLogs();
     return;
   }
 }
@@ -8408,22 +8435,27 @@ async function deleteRecordById(type, id) {
   render();
 }
 
-async function deleteAuditLog() {
+async function deleteSelectedAuditLogs() {
   if (!isAdminSession()) {
     notifyDenied("Delete denied", "Only admin users can delete audit logs.");
     return;
   }
-  const id = selectedDeleteId("audit");
-  if (!id) {
-    notifyDenied("Delete denied", "Select a log entry to delete.");
+  const ids = Array.from(moduleContent.querySelectorAll(".audit-row-checkbox:checked")).map((box) => box.dataset.auditId);
+  if (!ids.length) {
+    notifyDenied("Delete denied", "Select at least one log entry to delete.");
     return;
   }
-  if (!window.confirm(`Delete audit log ${id}?`)) return;
-  const deleted = await deleteRecord("audit", id);
-  if (!deleted) return;
-  state.audit = state.audit.filter((row) => String(rowId("audit", row)) !== String(id));
+  if (!window.confirm(`Delete ${ids.length} selected audit log ${ids.length === 1 ? "entry" : "entries"}?`)) return;
+
+  const deletedIds = [];
+  for (const id of ids) {
+    const deleted = await deleteRecord("audit", id);
+    if (deleted) deletedIds.push(id);
+  }
+  if (!deletedIds.length) return;
+  state.audit = state.audit.filter((row) => !deletedIds.includes(String(rowId("audit", row))));
   saveState();
-  notifySuccess("Audit log deleted", `Log ${id} was deleted successfully.`);
+  notifySuccess("Audit logs deleted", `${deletedIds.length} of ${ids.length} selected log(s) were deleted.`);
   render();
 }
 
