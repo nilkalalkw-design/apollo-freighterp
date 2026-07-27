@@ -8196,8 +8196,12 @@ async function createShipment(data) {
     data.shipmentServiceOther || "", data.volumeCategory || "Land", Number(data.chargeableDivisor || volumeDivisorFor(data.volumeCategory || "Land") || 0),
     currentUserName(), shipmentMetaNotes(data)
   );
+  const saved = await postRecord("shipment", record);
+  if (!saved) {
+    notifyDenied("Shipment not saved", "The shipment could not be saved. Check the connection and try again before generating a TCN.");
+    return false;
+  }
   state.shipments.unshift(record);
-  await postRecord("shipment", record);
   addHistory("Created shipment", data.jobNo);
   notifySuccess("Shipment created", data.jobNo + " was saved successfully.");
   return true;
