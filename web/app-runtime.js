@@ -856,8 +856,8 @@ function user(
   };
 }
 
-function audit(dateTime, userName, action, reference, id = "") {
-  return { id, dateTime, user: userName, action, reference };
+function audit(dateTime, userName, action, reference, details = "", id = "") {
+  return { id, dateTime, user: userName, action, reference, details };
 }
 
 function adminRequest(requestNo, requestType, targetModule, referenceNo, requestedBy, status, date, details, proposedValues, approvedBy = "", approvalNotes = "") {
@@ -1129,11 +1129,15 @@ function playBeep() {
   } catch {}
 }
 
-function addHistory(action, reference) {
-  const record = audit(new Date().toISOString().slice(0, 16).replace("T", " "), currentUserName(), action, reference);
+async function addHistory(action, reference, details = "") {
+  const record = audit(new Date().toISOString().slice(0, 16).replace("T", " "), currentUserName(), action, reference, details);
   state.audit.unshift(record);
-  postRecord("audit", record);
   saveState();
+  const saved = await postRecord("audit", record);
+  if (saved && typeof saved === "object" && saved.id !== undefined && saved.id !== null && saved.id !== "") {
+    record.id = String(saved.id);
+    saveState();
+  }
 }
 
 function recalculateLoad(loadItem) {
@@ -3316,6 +3320,12 @@ function badge(value) {
 
 function cellHtml(type, key, row, index = 0) {
   if (key === "slNo") return escapeHtml(index + 1);
+  if (type === "audit" && key === "details") {
+    const value = String(row.details || "");
+    if (!value) return `<span class="audit-details-empty">-</span>`;
+    const short = value.length > 80 ? `${value.slice(0, 80)}...` : value;
+    return `<span class="audit-details" title="${escapeHtml(value)}">${escapeHtml(short)}</span>`;
+  }
   if (key === "palletCount") return escapeHtml(cargoPalletCount(row));
   if (key === "truckDetails") return escapeHtml([row.vehicleNo, row.driverName, row.driverMobile].filter(Boolean).join(" / "));
   if (type === "shipment" && (key === "jobNo" || key === "airwayBillNo")) {
@@ -3635,7 +3645,7 @@ function userRequestColumns() {
 }
 
 function auditColumns() {
-  return [["dateTime", "Date Time"], ["user", "User"], ["action", "Action"], ["reference", "Reference"]];
+  return [["dateTime", "Date Time"], ["user", "User"], ["action", "Action"], ["reference", "Reference"], ["details", "Details"]];
 }
 
 function auditTableMarkup(rows) {
@@ -3654,8 +3664,9 @@ function auditTableMarkup(rows) {
 
 function auditRowMarkup(row, index, columns) {
   const id = escapeHtml(String(rowId("audit", row)));
+  const stillSaving = !id;
   const cells = columns.map(([key]) => `<td>${cellHtml("audit", key, row, index)}</td>`).join("");
-  return `<tr><td><input type="checkbox" class="audit-row-checkbox" data-audit-id="${id}" /></td>${cells}</tr>`;
+  return `<tr><td><input type="checkbox" class="audit-row-checkbox" data-audit-id="${id}" ${stillSaving ? "disabled title=\"Still saving - refresh in a moment\"" : ""} /></td>${cells}</tr>`;
 }
 
 function openShipmentRequestByNumber(rawQuery) {
@@ -4567,10 +4578,11 @@ async function saveDialogRecord() {
     return;
   }
 
+  const changeSummary = summarizeChanges(editing.record, updatedRecord);
   Object.assign(editing.record, updatedRecord);
   const editedType = editing.type;
   const editedId = editing.id;
-  addHistory(`Updated ${editing.type}`, editing.id);
+  addHistory(`Updated ${editing.type}`, editing.id, changeSummary);
   await persistRecord(editing.type, editing.record);
   saveState();
   resetDialogShell();
@@ -8298,7 +8310,7 @@ async function postRecord(type, record) {
       body: JSON.stringify(record)
     });
     if (result.mode === "demo") throw new Error("Database tables are not ready yet.");
-    return true;
+    return result.row || true;
   } catch (error) {
     markApiWriteError(error);
     return false;
@@ -8440,9 +8452,15 @@ async function deleteSelectedAuditLogs() {
     notifyDenied("Delete denied", "Only admin users can delete audit logs.");
     return;
   }
-  const ids = Array.from(moduleContent.querySelectorAll(".audit-row-checkbox:checked")).map((box) => box.dataset.auditId);
-  if (!ids.length) {
+  const checked = Array.from(moduleContent.querySelectorAll(".audit-row-checkbox:checked"));
+  if (!checked.length) {
     notifyDenied("Delete denied", "Select at least one log entry to delete.");
+    return;
+  }
+  const ids = checked.map((box) => box.dataset.auditId).filter(Boolean);
+  const skipped = checked.length - ids.length;
+  if (!ids.length) {
+    notifyDenied("Delete denied", "Selected log(s) are still saving. Wait a moment and try again.");
     return;
   }
   if (!window.confirm(`Delete ${ids.length} selected audit log ${ids.length === 1 ? "entry" : "entries"}?`)) return;
@@ -8452,11 +8470,16 @@ async function deleteSelectedAuditLogs() {
     const deleted = await deleteRecord("audit", id);
     if (deleted) deletedIds.push(id);
   }
-  if (!deletedIds.length) return;
-  state.audit = state.audit.filter((row) => !deletedIds.includes(String(rowId("audit", row))));
-  saveState();
-  notifySuccess("Audit logs deleted", `${deletedIds.length} of ${ids.length} selected log(s) were deleted.`);
-  render();
+  if (deletedIds.length) {
+    state.audit = state.audit.filter((row) => !deletedIds.includes(String(rowId("audit", row))));
+    saveState();
+    const failedCount = ids.length - deletedIds.length;
+    notifySuccess(
+      "Audit logs deleted",
+      `${deletedIds.length} of ${ids.length} selected log(s) were deleted.${failedCount ? ` ${failedCount} failed - see the warning above.` : ""}${skipped ? ` ${skipped} were still saving and were skipped - refresh and try again for those.` : ""}`
+    );
+    render();
+  }
 }
 
 function removeLocalRecord(type, id) {
@@ -8569,6 +8592,7 @@ async function updateStatus(data) {
   }
 
   const newStatus = data.status || shipmentItem.status;
+  const oldStatus = shipmentItem.status;
   const remark = data.notes || "";
   const entryDate = data.date || today();
   shipmentItem.status = newStatus;
@@ -8586,7 +8610,8 @@ async function updateStatus(data) {
   state.shipmentStatusHistory.unshift(historyEntry);
   await postRecord("statusHistory", historyEntry);
 
-  addHistory("Updated shipment status", `${jobNo} -> ${newStatus}`);
+  const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}`;
+  addHistory("Updated shipment status", `${jobNo} -> ${newStatus}`, statusDetails);
   notifySuccess("Status updated", `${jobNo} is now ${newStatus}.`);
   state.ui.expandedStatusJob = jobNo;
 }
