@@ -856,6 +856,15 @@ label {
   text-align: center;
 }
 
+.audit-details {
+  cursor: help;
+  border-bottom: 1px dotted var(--line);
+}
+
+.audit-details-empty {
+  color: var(--muted, #8a94a3);
+}
+
 .receipt-box {
   border: 1px solid var(--line);
   border-radius: 8px;
