@@ -4917,6 +4917,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
   const actualMode = record?.entryMode || mode || "shipment";
   const isAirway = actualMode === "airway";
   const loaded = Boolean(record);
+  const tcnAvailable = Boolean(record && state.shipments.some((shipmentItem) => shipmentItem.jobNo === record.jobNo));
   const sectionOpen = loaded;
   const defaultCustomer = record?.customer || "";
   const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
@@ -5016,8 +5017,8 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     <input type="hidden" name="shipmentServiceOther" value="${escapeHtml(fieldValue("shipmentServiceOther"))}" />
     ${checkbox("printOnlyCargoDetails", "Cargo Summary", fieldValue("printOnlyCargoDetails", false))}
     <div class="action-row">
-      <button type="button" class="secondary-button" data-dialog-action="generate-tcn">Generate TCN</button>
-      <button type="button" class="secondary-button" data-dialog-action="view-tcn">View TCN</button>
+      <button type="button" class="secondary-button" data-dialog-action="generate-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before generating a TCN\""}>Generate TCN</button>
+      <button type="button" class="secondary-button" data-dialog-action="view-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before viewing a TCN\""}>View TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="generate-pod">Generate Delivery Note / POD</button>
     </div>
   `;
@@ -5668,6 +5669,11 @@ function bindPalletDimensionBuilder() {
 
   const printTcn = (persistNumber = true) => {
     const data = currentShipmentData();
+    const savedShipment = state.shipments.some((shipmentItem) => shipmentItem.jobNo === data.jobNo);
+    if (!savedShipment) {
+      notifyDenied("Save shipment first", "Save or create this shipment or airway bill before generating a TCN.");
+      return;
+    }
     const tcn = data.tcnNumber || data.airwayBillNo || nextTcnNumber();
     if (persistNumber) {
       if (tcnField) tcnField.value = tcn;
