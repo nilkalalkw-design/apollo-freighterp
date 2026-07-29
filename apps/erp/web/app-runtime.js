@@ -3509,7 +3509,7 @@ function branchAccessOptions() {
 }
 
 function volumeCategoryOptions() {
-  return dropdownOptions("volumeCategory", ["1 CBM = 167 KG", "1 CBM = 200 KG", "1 CBM = 250 KG", "1 CBM = 333 KG", "Same as Gross Weight"]);
+  return ["1 CBM = 167 KG", "1 CBM = 200 KG", "1 CBM = 250 KG", "1 CBM = 333 KG", "Same as Gross Weight"];
 }
 
 function currencyOptions() {
@@ -4932,7 +4932,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("jobNo", isAirway ? "Airway Bill Number" : "Shipment Number", fieldValue("jobNo", isAirway ? nextNumber("AWB", state.shipments, "jobNo") : nextShipmentNumber()), loaded)}
       ${input("bookingDate", "Booking Date", fieldValue("bookingDate", today()), false, "date")}
       ${input("shipmentDate", "Shipment Date", fieldValue("shipmentDate", today()), false, "date")}
-      ${select("status", "Status", statusOptions(), fieldValue("status", ""))}
+      ${strictSelect("status", "Status", statusOptions(), fieldValue("status", ""))}
       ${select("loadType", "Load Type", ["LTL", "FTL"], fieldValue("loadType", "LTL"))}
       ${strictSelect("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", ""))}
       ${strictSelect("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "")), fieldValue("shipmentService", ""))}
@@ -5141,7 +5141,7 @@ function cargoItemsBuilder(
     </div>
     <div class="tariff-charge-table" data-pallet-lines-list></div>
     <div class="form-section-grid cargo-totals">
-      ${select("volumeCategory", "", volumeCategoryOptions(), volumeCategory)}
+      ${strictSelect("volumeCategory", "", volumeCategoryOptions(), volumeCategory)}
       ${input("cbm", "Grand Total CBM", "0", true, "number")}
       ${input("actualKg", "Total Actual Weight", "0", true, "number")}
       ${input("chargeableKg", "Chargeable Weight", "0", false, "number")}
