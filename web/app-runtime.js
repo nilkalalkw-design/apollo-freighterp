@@ -238,6 +238,7 @@ function shipmentMetaNotes(data) {
   return JSON.stringify({
     shipmentDate: String(data.shipmentDate || "").trim(),
     transportMode: String(data.transportMode || "").trim(),
+    loadType: String(data.loadType || "").trim(),
     customerCode: String(data.customerCode || "").trim(),
     customerContactPerson: String(data.customerContactPerson || "").trim(),
     customerMobile: String(data.customerMobile || "").trim(),
@@ -320,6 +321,7 @@ function shipmentMetaNotes(data) {
     deliveryNoteNo: String(data.deliveryNoteNo || "").trim(),
     ginNo: String(data.ginNo || "").trim(),
     customerReference: String(data.customerReference || "").trim(),
+    shipmentRemarks: String(data.shipmentRemarks || "").trim(),
     vehicleType: String(data.vehicleType || "").trim(),
     deliveryRemarks: String(data.deliveryRemarks || "").trim(),
     pocName: String(data.pocName || "").trim(),
@@ -397,6 +399,7 @@ function shipment(
     chargeableDivisor,
     shipmentDate: meta.shipmentDate || "",
     transportMode: meta.transportMode || "",
+    loadType: meta.loadType || "",
     customerCode: meta.customerCode || "",
     customerContactPerson: meta.customerContactPerson || "",
     customerMobile: meta.customerMobile || "",
@@ -478,6 +481,7 @@ function shipment(
     deliveryNoteNo: meta.deliveryNoteNo || "",
     ginNo: meta.ginNo || "",
     customerReference: meta.customerReference || "",
+    shipmentRemarks: meta.shipmentRemarks || "",
     vehicleType: meta.vehicleType || "",
     deliveryRemarks: meta.deliveryRemarks || "",
     printOnlyCargoDetails: isChecked(meta.printOnlyCargoDetails),
@@ -4584,6 +4588,7 @@ async function saveDialogRecord() {
   const editedId = editing.id;
   addHistory(`Updated ${editing.type}`, editing.id, changeSummary);
   await persistRecord(editing.type, editing.record);
+  if (editedType === "shipment") await createShipmentDocument(data, editedId);
   saveState();
   resetDialogShell();
   recordDialog.close();
@@ -4940,11 +4945,13 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("bookingDate", "Booking Date", fieldValue("bookingDate", today()), false, "date")}
       ${input("shipmentDate", "Shipment Date", fieldValue("shipmentDate", today()), false, "date")}
       ${select("status", "Status", statusOptions(), fieldValue("status", ""))}
+      ${select("loadType", "Load Type", ["LTL", "FTL"], fieldValue("loadType", "LTL"))}
       ${strictSelect("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", ""))}
       ${strictSelect("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "")), fieldValue("shipmentService", ""))}
       ${selectEditable("origin", "Origin", "origin", ["Kuwait City"], fieldValue("origin"))}
       ${selectEditable("destination", "Destination", "destination", ["Riyadh"], fieldValue("destination"))}
       ${input("customerReference", "Customer Reference", fieldValue("customerReference"))}
+      ${textarea("shipmentRemarks", "Remarks", fieldValue("shipmentRemarks"), false, 2)}
       ${select("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
       ${input("salesPerson", "Sales Person", fieldValue("salesPerson", currentUserName()))}
       <label>Airway Bill / Bill of Lading
@@ -5028,7 +5035,10 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     <input type="hidden" name="transitDays" value="${escapeHtml(fieldValue("transitDays", "3"))}" />
     <input type="hidden" name="shipmentServiceOther" value="${escapeHtml(fieldValue("shipmentServiceOther"))}" />
     ${checkbox("printOnlyCargoDetails", "Cargo Summary", fieldValue("printOnlyCargoDetails", false))}
+    <input class="is-hidden" name="shipmentDocumentUpload" type="file" accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf" />
     <div class="action-row">
+      <button type="button" class="secondary-button" data-dialog-action="upload-shipment-document">Upload Shipment Documents</button>
+      <span class="empty-state" data-shipment-document-name></span>
       <button type="button" class="secondary-button" data-dialog-action="generate-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before generating a TCN\""}>Generate TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="view-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before viewing a TCN\""}>View TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="generate-pod">Generate Delivery Note / POD</button>
@@ -5801,6 +5811,12 @@ function bindPalletDimensionBuilder() {
   dialogBody.querySelector("[data-dialog-action='generate-pod']")?.addEventListener("click", printPod);
   dialogBody.querySelector("[data-dialog-action='generate-tcn']")?.addEventListener("click", () => printTcn(true));
   dialogBody.querySelector("[data-dialog-action='view-tcn']")?.addEventListener("click", () => printTcn(false));
+  const shipmentDocumentUpload = dialogBody.querySelector("input[name='shipmentDocumentUpload']");
+  const shipmentDocumentName = dialogBody.querySelector("[data-shipment-document-name]");
+  dialogBody.querySelector("[data-dialog-action='upload-shipment-document']")?.addEventListener("click", () => shipmentDocumentUpload?.click());
+  shipmentDocumentUpload?.addEventListener("change", () => {
+    shipmentDocumentName.textContent = shipmentDocumentUpload.files?.[0]?.name || "";
+  });
 
   dialogBody.querySelector("[name='volumeCategory']")?.addEventListener("change", sync);
   chargeableField?.addEventListener("input", () => {
@@ -7211,7 +7227,9 @@ function tcnDocumentHtml(record) {
       </section>
       <section class="tcn-grid tcn-cargo-head">
         <div><span>CARGO TYPE</span><strong>${escapeHtml(mergedRecord.vehicleType || mergedRecord.transportMode || "GENERAL CARGO")}</strong></div>
+        <div><span>LOAD TYPE</span><strong>${escapeHtml(mergedRecord.loadType || "")}</strong></div>
         <div><span>CUSTOMER REFERENCE</span><strong>${escapeHtml(mergedRecord.customerReference || "")}</strong></div>
+        <div><span>REMARKS</span><strong>${escapeHtml(mergedRecord.shipmentRemarks || "")}</strong></div>
       </section>
       <h2>CARGO DETAILS</h2>
       <table class="tcn-cargo-table">
@@ -8055,6 +8073,12 @@ async function createDocument(data) {
   return true;
 }
 
+async function createShipmentDocument(data, shipmentNo) {
+  const upload = data?.shipmentDocumentUpload;
+  if (!upload || typeof upload !== "object" || !upload.name || !shipmentNo) return true;
+  return createDocument({ documentNo: nextNumber("DOC", state.documents, "documentNo"), linkedNo: shipmentNo, type: "Shipment Document", status: "Uploaded", date: today(), owner: currentUserName(), fileUpload: upload });
+}
+
 async function createCharge(data) {
   const baseRef = String(data.refNo || nextAdditionalChargeNumber()).trim();
   if (duplicateRecordExists("charge", baseRef)) {
@@ -8202,6 +8226,7 @@ async function createShipment(data) {
     return false;
   }
   state.shipments.unshift(record);
+  await createShipmentDocument(data, data.jobNo);
   addHistory("Created shipment", data.jobNo);
   notifySuccess("Shipment created", data.jobNo + " was saved successfully.");
   return true;
