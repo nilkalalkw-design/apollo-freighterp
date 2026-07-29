@@ -1436,6 +1436,159 @@ th {
   flex-basis: 100%;
 }
 
+.shipment-journey {
+  display: grid;
+  gap: 14px;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.shipment-journey-heading h4,
+.shipment-journey-heading p {
+  margin: 0;
+}
+
+.shipment-journey-heading .empty-state {
+  margin-top: 3px;
+}
+
+.shipment-timeline {
+  display: grid;
+  gap: 0;
+  max-width: 900px;
+}
+
+.shipment-timeline-card {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  position: relative;
+}
+
+.shipment-timeline-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.shipment-timeline-dot {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin-top: 18px;
+  border: 3px solid #58a87c;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 4px #edf7f2;
+}
+
+.shipment-timeline-line {
+  width: 2px;
+  min-height: 28px;
+  flex: 1;
+  background: var(--line-strong);
+}
+
+.shipment-timeline-content {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 8px 20px rgba(18, 32, 47, 0.06);
+}
+
+.shipment-timeline-title,
+.shipment-timeline-meta,
+.shipment-timeline-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  align-items: center;
+}
+
+.shipment-timeline-title {
+  justify-content: space-between;
+}
+
+.shipment-timeline-title h5,
+.shipment-timeline-remark {
+  margin: 0;
+}
+
+.shipment-timeline-title h5 {
+  color: var(--green-text);
+  font-size: 15px;
+}
+
+.shipment-timeline-state {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green-text);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.shipment-timeline-meta span,
+.shipment-timeline-details span {
+  display: grid;
+  gap: 2px;
+  min-width: 130px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.shipment-timeline-meta b,
+.shipment-timeline-details b,
+.shipment-timeline-remark b {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.shipment-timeline-details {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.shipment-timeline-remark {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.shipment-timeline-card.current .shipment-timeline-dot {
+  border-color: #2c77bb;
+  background: #2c77bb;
+  box-shadow: 0 0 0 4px #e8f2fb;
+}
+
+.shipment-timeline-card.current .shipment-timeline-title h5 { color: #2c77bb; }
+.shipment-timeline-card.current .shipment-timeline-state { background: #e8f2fb; color: #2c77bb; }
+.shipment-timeline-card.cancelled .shipment-timeline-dot { border-color: var(--red-text); box-shadow: 0 0 0 4px var(--red-soft); }
+.shipment-timeline-card.cancelled .shipment-timeline-title h5 { color: var(--red-text); }
+.shipment-timeline-card.cancelled .shipment-timeline-state { background: var(--red-soft); color: var(--red-text); }
+
+@media (max-width: 600px) {
+  .shipment-timeline-card { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; }
+  .shipment-timeline-content { padding: 13px; }
+  .shipment-timeline-dot { margin-top: 16px; }
+  .shipment-timeline-meta span,
+  .shipment-timeline-details span { min-width: 100%; }
+}
+
 .tariff-detail-preview {
   display: grid;
   grid-column: 1 / -1;

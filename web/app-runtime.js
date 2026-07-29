@@ -1932,7 +1932,16 @@ function apiShipmentStatusHistory(row) {
     invoiceStatus: row.invoice_status || "",
     notes: row.notes || "",
     updatedBy: row.updated_by || "",
-    updatedAt: row.updated_at || new Date().toISOString()
+    updatedAt: row.updated_at || new Date().toISOString(),
+    fromLocation: row.from_location || row.fromLocation || row.from || "",
+    toLocation: row.to_location || row.toLocation || row.to || "",
+    location: row.location || "",
+    carrier: row.carrier || "",
+    vehicleNo: row.vehicle_no || row.vehicleNo || "",
+    flightNo: row.flight_no || row.flightNo || "",
+    vessel: row.vessel || row.vessel_name || "",
+    departure: row.departure || row.departure_at || "",
+    arrival: row.arrival || row.arrival_at || ""
   };
 }
 
@@ -2678,19 +2687,7 @@ function shipmentStatusExpandRowMarkup(row, colSpan) {
   const jobNo = row.jobNo;
   const history = (state.shipmentStatusHistory || [])
     .filter((entry) => entry.jobNo === jobNo)
-    .sort((left, right) => new Date(right.updatedAt || 0) - new Date(left.updatedAt || 0));
-  const historyRows = history.length
-    ? history
-        .map(
-          (entry) => `<tr>
-            <td>${escapeHtml(String(entry.updatedAt || "").slice(0, 10))}</td>
-            <td>${escapeHtml(entry.status)}</td>
-            <td>${escapeHtml(entry.notes || "")}</td>
-            <td>${escapeHtml(entry.updatedBy || "")}</td>
-          </tr>`
-        )
-        .join("")
-    : `<tr><td colspan="4">${empty("No status history yet for this shipment.")}</td></tr>`;
+    .sort((left, right) => new Date(left.updatedAt || 0) - new Date(right.updatedAt || 0));
   return `<tr class="status-expand-row"><td colspan="${colSpan}">
     <div class="status-expand-panel">
       <div class="status-expand-panel-header">
@@ -2707,10 +2704,51 @@ function shipmentStatusExpandRowMarkup(row, colSpan) {
           <button type="button" class="secondary-button" data-action="send-status-email-row" data-id="${escapeHtml(jobNo)}">Send Update</button>
         </div>
       </form>
-      <h4>Tracking History (newest first)</h4>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Status</th><th>Manual Remark</th><th>Updated By</th></tr></thead><tbody>${historyRows}</tbody></table></div>
+      ${shipmentJourneyTimeline(history)}
     </div>
   </td></tr>`;
+}
+
+function shipmentJourneyTimeline(history) {
+  if (!history.length) {
+    return `<section class="shipment-journey"><div class="shipment-journey-heading"><div><p class="eyebrow">Shipment Journey</p><h4>Tracking Timeline</h4></div></div>${empty("No status history yet for this shipment.")}</section>`;
+  }
+  return `<section class="shipment-journey">
+    <div class="shipment-journey-heading"><div><p class="eyebrow">Shipment Journey</p><h4>Tracking Timeline</h4><p class="empty-state">Oldest to newest</p></div></div>
+    <div class="shipment-timeline">${history.map((entry, index) => shipmentTimelineCard(entry, index, history.length)).join("")}</div>
+  </section>`;
+}
+
+function shipmentTimelineCard(entry, index, total) {
+  const status = String(entry.status || "Status update");
+  const normalizedStatus = status.toLowerCase();
+  const tone = /cancel|reject|block/.test(normalizedStatus) ? "cancelled" : index === total - 1 ? "current" : "completed";
+  const details = [
+    ["From", entry.fromLocation],
+    ["To", entry.toLocation],
+    ["Location", entry.location],
+    ["Carrier", entry.carrier],
+    ["Vehicle No.", entry.vehicleNo],
+    ["Flight No.", entry.flightNo],
+    ["Vessel", entry.vessel],
+    ["Departure", entry.departure],
+    ["Arrival", entry.arrival]
+  ].filter(([, value]) => String(value || "").trim());
+  return `<article class="shipment-timeline-card ${tone}">
+    <div class="shipment-timeline-rail" aria-hidden="true"><span class="shipment-timeline-dot"></span>${index < total - 1 ? '<span class="shipment-timeline-line"></span>' : ""}</div>
+    <div class="shipment-timeline-content">
+      <div class="shipment-timeline-title"><h5>${escapeHtml(status)}</h5><span class="shipment-timeline-state">${tone === "current" ? "Current" : tone === "cancelled" ? "Cancelled" : "Completed"}</span></div>
+      <div class="shipment-timeline-meta"><span><b>Date &amp; Time</b>${escapeHtml(formatShipmentTimelineDate(entry.updatedAt))}</span>${entry.updatedBy ? `<span><b>Updated By</b>${escapeHtml(entry.updatedBy)}</span>` : ""}</div>
+      ${details.length ? `<div class="shipment-timeline-details">${details.map(([label, value]) => `<span><b>${escapeHtml(label)}</b>${escapeHtml(value)}</span>`).join("")}</div>` : ""}
+      ${entry.notes ? `<p class="shipment-timeline-remark"><b>Remark</b>${escapeHtml(entry.notes)}</p>` : ""}
+    </div>
+  </article>`;
+}
+
+function formatShipmentTimelineDate(value) {
+  const date = new Date(value || "");
+  if (Number.isNaN(date.getTime())) return String(value || "-");
+  return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
 function renderReports() {
