@@ -1106,6 +1106,37 @@ function filteredRows(rows) {
   });
 }
 
+function shipmentStatusKey(status) { return String(status || "").trim().toLowerCase().replace(/[\s_-]+/g, " "); }
+function shipmentIsDelivered(row) { return /delivered|completed|closed|invoiced/.test(shipmentStatusKey(row.status)); }
+function shipmentIsCancelled(row) { return /cancelled|returned|damaged/.test(shipmentStatusKey(row.status)); }
+function shipmentHasArrived(row) { return shipmentIsDelivered(row) || /arrived|destination warehouse|out for delivery/.test(shipmentStatusKey(row.status)); }
+function shipmentDateValue(value) { const date = new Date(`${String(value || "").slice(0, 10)}T00:00:00`); return Number.isNaN(date.getTime()) ? null : date; }
+function shipmentDelayAlerts(row) {
+  if (shipmentIsDelivered(row) || shipmentIsCancelled(row)) return [];
+  const todayDate = new Date(); todayDate.setHours(0, 0, 0, 0);
+  const alerts = [];
+  const arrivalDate = row.expectedArrivalDate || row.arrivalDate || (Number(row.transitDays || 0) ? (() => { const start = shipmentDateValue(row.shipmentDate || row.bookingDate); if (!start) return ""; start.setDate(start.getDate() + Number(row.transitDays)); return start.toISOString().slice(0, 10); })() : "");
+  [["Arrival Overdue", arrivalDate, shipmentHasArrived(row)], ["Delivery Overdue", row.expectedDeliveryDate || row.deliveryDate, false]].forEach(([kind, dueDate, reached]) => {
+    const due = shipmentDateValue(dueDate);
+    if (!reached && due && due < todayDate) alerts.push({ kind, due: String(dueDate).slice(0, 10), days: Math.max(1, Math.round((todayDate - due) / 86400000)) });
+  });
+  return alerts;
+}
+function shipmentStatusIcon(status) {
+  const icons = { "shipment created":"📝", "booking confirmed":"✅", "pickup scheduled":"📅", "driver assigned":"👨‍✈️", "pickup started":"🚚", "pickup completed":"📦", "warehouse received":"🏢", "warehouse processing":"📋", "customs submitted":"📄", "customs inspection":"🔍", "customs cleared":"🛃", "waiting for flight":"⏳", "flight departed":"✈️", "vessel departed":"🚢", "train departed":"🚆", "in transit":"🚛", "border crossed":"🌍", "arrived at destination":"📍", "destination warehouse":"🏬", "out for delivery":"🚐", "delivery attempt":"🚪", "delivered":"🎉", "proof of delivery uploaded":"📷", "completed":"✔️", "delayed":"⏰", "on hold":"⏸️", "exception":"⚠️", "damaged cargo":"📦⚠️", "returned":"↩️", "cancelled":"❌" };
+  const key = shipmentStatusKey(status); return icons[key] || (key.includes("delivered") ? "🎉" : key.includes("transit") ? "🚛" : "📦");
+}
+function shipmentVisualState(row) {
+  const alerts = shipmentDelayAlerts(row);
+  if (shipmentIsCancelled(row)) return { key: "cancelled", label: "Cancelled", icon: "❌" };
+  if (alerts.some((alert) => alert.kind === "Delivery Overdue")) return { key: "delivery-overdue", label: "Delivery Overdue", icon: "🚩" };
+  if (alerts.some((alert) => alert.kind === "Arrival Overdue")) return { key: "arrival-overdue", label: "Arrival Overdue", icon: "🚩" };
+  if (/delayed|on hold|exception/.test(shipmentStatusKey(row.status))) return { key: "delayed", label: "Delayed", icon: "⏰" };
+  if (shipmentIsDelivered(row)) return { key: "delivered", label: "Delivered", icon: "✅" };
+  if (/in transit|dispatched|departed/.test(shipmentStatusKey(row.status))) return { key: "in-transit", label: "In Transit", icon: "🚚" };
+  return { key: "on-time", label: "On Time", icon: "●" };
+}
+
 function maybePlayAdminNotification() {
   const pending = pendingRequestCount();
   if (isAdminSession() && lastPendingNotificationCount > 0 && pending > lastPendingNotificationCount) {
@@ -2704,17 +2735,19 @@ function shipmentStatusExpandRowMarkup(row, colSpan) {
           <button type="button" class="secondary-button" data-action="send-status-email-row" data-id="${escapeHtml(jobNo)}">Send Update</button>
         </div>
       </form>
-      ${shipmentJourneyTimeline(history)}
+      ${shipmentJourneyTimeline(history, row)}
     </div>
   </td></tr>`;
 }
 
-function shipmentJourneyTimeline(history) {
+function shipmentJourneyTimeline(history, shipmentItem = {}) {
+  const alerts = shipmentDelayAlerts(shipmentItem);
   if (!history.length) {
-    return `<section class="shipment-journey"><div class="shipment-journey-heading"><div><p class="eyebrow">Shipment Journey</p><h4>Tracking Timeline</h4></div></div>${empty("No status history yet for this shipment.")}</section>`;
+    return `<section class="shipment-journey"><div class="shipment-journey-heading"><div><p class="eyebrow">Shipment Journey</p><h4>Tracking Timeline</h4></div></div>${shipmentDelayAlertMarkup(alerts)}${empty("No status history yet for this shipment.")}</section>`;
   }
   return `<section class="shipment-journey">
     <div class="shipment-journey-heading"><div><p class="eyebrow">Shipment Journey</p><h4>Tracking Timeline</h4><p class="empty-state">Oldest to newest</p></div></div>
+    ${shipmentDelayAlertMarkup(alerts)}
     <div class="shipment-timeline">${history.map((entry, index) => shipmentTimelineCard(entry, index, history.length)).join("")}</div>
   </section>`;
 }
@@ -2722,7 +2755,7 @@ function shipmentJourneyTimeline(history) {
 function shipmentTimelineCard(entry, index, total) {
   const status = String(entry.status || "Status update");
   const normalizedStatus = status.toLowerCase();
-  const tone = /cancel|reject|block/.test(normalizedStatus) ? "cancelled" : index === total - 1 ? "current" : "completed";
+  const tone = /cancel|reject|block|returned|damaged/.test(normalizedStatus) ? "cancelled" : /delay|hold|exception|inspection|waiting/.test(normalizedStatus) ? "delayed" : index === total - 1 ? "current" : "completed";
   const details = [
     ["From", entry.fromLocation],
     ["To", entry.toLocation],
@@ -2735,14 +2768,19 @@ function shipmentTimelineCard(entry, index, total) {
     ["Arrival", entry.arrival]
   ].filter(([, value]) => String(value || "").trim());
   return `<article class="shipment-timeline-card ${tone}">
-    <div class="shipment-timeline-rail" aria-hidden="true"><span class="shipment-timeline-dot"></span>${index < total - 1 ? '<span class="shipment-timeline-line"></span>' : ""}</div>
+    <div class="shipment-timeline-rail" aria-hidden="true"><span class="shipment-timeline-dot">${shipmentStatusIcon(status)}</span>${index < total - 1 ? '<span class="shipment-timeline-line"></span>' : ""}</div>
     <div class="shipment-timeline-content">
-      <div class="shipment-timeline-title"><h5>${escapeHtml(status)}</h5><span class="shipment-timeline-state">${tone === "current" ? "Current" : tone === "cancelled" ? "Cancelled" : "Completed"}</span></div>
+      <div class="shipment-timeline-title"><h5>${escapeHtml(status)}</h5><span class="shipment-timeline-state">${tone === "current" ? "Current" : tone === "cancelled" ? "Cancelled" : tone === "delayed" ? "Attention" : "Completed"}</span></div>
       <div class="shipment-timeline-meta"><span><b>Date &amp; Time</b>${escapeHtml(formatShipmentTimelineDate(entry.updatedAt))}</span>${entry.updatedBy ? `<span><b>Updated By</b>${escapeHtml(entry.updatedBy)}</span>` : ""}</div>
       ${details.length ? `<div class="shipment-timeline-details">${details.map(([label, value]) => `<span><b>${escapeHtml(label)}</b>${escapeHtml(value)}</span>`).join("")}</div>` : ""}
       ${entry.notes ? `<p class="shipment-timeline-remark"><b>Remark</b>${escapeHtml(entry.notes)}</p>` : ""}
     </div>
   </article>`;
+}
+
+function shipmentDelayAlertMarkup(alerts) {
+  if (!alerts.length) return "";
+  return `<div class="shipment-delay-alerts">${alerts.map((alert) => `<article class="shipment-delay-alert"><span>🚩</span><div><strong>${escapeHtml(alert.kind)}</strong><p>Expected: ${escapeHtml(formatShipmentTimelineDate(alert.due))}</p><p>${escapeHtml(`${alert.days} ${alert.days === 1 ? "Day" : "Days"} Late`)}</p></div></article>`).join("")}</div>`;
 }
 
 function formatShipmentTimelineDate(value) {
@@ -3196,7 +3234,8 @@ function safeTable(type, rows, columns, fallbackText) {
 function tableRow(type, row, index, columns, showLoad = true) {
   const id = rowId(type, row);
   const actionCell = showLoad ? `<td>${tableActionButton(type, id)}</td>` : "";
-  return `<tr>${columns.map(([key]) => `<td>${cellHtml(type, key, row, index)}</td>`).join("")}${actionCell}</tr>`;
+  const rowClass = type === "shipment" ? `shipment-row-${shipmentVisualState(row).key}` : "";
+  return `<tr class="${rowClass}">${columns.map(([key]) => `<td>${cellHtml(type, key, row, index)}</td>`).join("")}${actionCell}</tr>`;
 }
 
 
@@ -3389,7 +3428,8 @@ function cellHtml(type, key, row, index = 0) {
   if (key === "truckDetails") return escapeHtml([row.vehicleNo, row.driverName, row.driverMobile].filter(Boolean).join(" / "));
   if (type === "shipment" && (key === "jobNo" || key === "airwayBillNo")) {
     const value = display(row[key]);
-    return `<button type="button" class="table-inline-link" data-shipment-open data-shipment-id="${escapeHtml(row.jobNo || "")}" data-shipment-field="${escapeHtml(key)}" aria-label="Open shipment ${escapeHtml(String(value))}">${escapeHtml(value)}</button>`;
+    const visual = key === "jobNo" ? shipmentVisualState(row) : null;
+    return `${visual ? `<span class="shipment-register-indicator ${escapeHtml(visual.key)}" title="${escapeHtml(visual.label)}">${visual.icon}</span>` : ""}<button type="button" class="table-inline-link" data-shipment-open data-shipment-id="${escapeHtml(row.jobNo || "")}" data-shipment-field="${escapeHtml(key)}" aria-label="Open shipment ${escapeHtml(String(value))}">${escapeHtml(value)}</button>`;
   }
 
   if (["status", "podStatus", "invoiceStatus", "accountStatus", "manifestStatus"].includes(key)) {

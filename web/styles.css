@@ -1473,10 +1473,12 @@ th {
 }
 
 .shipment-timeline-dot {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  margin-top: 18px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  margin-top: 12px;
+  place-items: center;
   border: 3px solid #58a87c;
   border-radius: 50%;
   background: #fff;
@@ -1580,6 +1582,20 @@ th {
 .shipment-timeline-card.cancelled .shipment-timeline-dot { border-color: var(--red-text); box-shadow: 0 0 0 4px var(--red-soft); }
 .shipment-timeline-card.cancelled .shipment-timeline-title h5 { color: var(--red-text); }
 .shipment-timeline-card.cancelled .shipment-timeline-state { background: var(--red-soft); color: var(--red-text); }
+.shipment-timeline-card.delayed .shipment-timeline-dot { border-color: #d7851f; box-shadow: 0 0 0 4px #fff3dd; }
+.shipment-timeline-card.delayed .shipment-timeline-title h5 { color: #b66708; }
+.shipment-timeline-card.delayed .shipment-timeline-state { background: #fff3dd; color: #b66708; }
+
+.shipment-delay-alerts { display: grid; gap: 8px; }
+.shipment-delay-alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid #f0bec5; border-radius: 10px; background: var(--red-soft); color: var(--red-text); }
+.shipment-delay-alert > span { font-size: 20px; }
+.shipment-delay-alert strong, .shipment-delay-alert p { margin: 0; }
+.shipment-delay-alert p { margin-top: 3px; font-size: 13px; }
+.shipment-register-indicator { display: inline-block; margin-right: 5px; }
+tr.shipment-row-delivered td { background: #f0faf4; }
+tr.shipment-row-arrival-overdue td, tr.shipment-row-delivery-overdue td { background: #fff0f1; }
+tr.shipment-row-delayed td { background: #fff8e9; }
+tr.shipment-row-cancelled td { background: #f2f3f5; }
 
 @media (max-width: 600px) {
   .shipment-timeline-card { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; }
