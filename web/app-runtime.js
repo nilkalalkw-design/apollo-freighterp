@@ -3492,7 +3492,15 @@ function optionLabel(option) {
 
 function dropdownOptions(key, defaults = []) {
   const saved = Array.isArray(state.dropdownOptions?.[key]) ? state.dropdownOptions[key] : [];
-  return [...new Set([...defaults, ...saved].map((item) => String(item || "").trim()).filter(Boolean))];
+  const seen = new Set();
+  return [...defaults, ...saved]
+    .map((item) => String(item || "").trim())
+    .filter((item) => {
+      const normalized = item.toLowerCase();
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
 }
 
 function selectEditable(name, label, optionKey, defaults = [], selected = "") {
@@ -8683,8 +8691,12 @@ async function updateStatus(data) {
     return false;
   }
 
-  const newStatus = data.status || shipmentItem.status;
+  const newStatus = String(data.status || shipmentItem.status).trim();
   const oldStatus = shipmentItem.status;
+  if (newStatus.toLowerCase() === String(oldStatus || "").trim().toLowerCase()) {
+    notifyDenied("Status already selected", `${jobNo} is already ${oldStatus}. Choose a different status to create a new journey update.`);
+    return false;
+  }
   const remark = data.notes || "";
   const entryDate = data.date || today();
   shipmentItem.status = newStatus;
