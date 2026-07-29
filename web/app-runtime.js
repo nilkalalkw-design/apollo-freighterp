@@ -1153,6 +1153,23 @@ function recalculateLoad(loadItem) {
   loadItem.chargeableKg = linked.reduce((sum, item) => sum + Number(item.chargeableKg || 0), 0);
 }
 
+async function syncManifestShipmentStatuses(loadItem) {
+  const status = String(loadItem?.status || "").trim();
+  const jobs = String(loadItem?.jobNumbers || "").split(",").map((job) => job.trim()).filter(Boolean);
+  if (!status || !jobs.length) return 0;
+  const linkedShipments = state.shipments.filter((shipmentItem) => jobs.includes(shipmentItem.jobNo) && shipmentItem.status !== status);
+  let updatedCount = 0;
+  for (const shipmentItem of linkedShipments) {
+    const saved = await persistRecord("shipment", { ...shipmentItem, status });
+    if (saved) {
+      shipmentItem.status = status;
+      updatedCount += 1;
+    }
+  }
+  if (updatedCount) addHistory("Updated shipment statuses from manifest", `${loadItem.loadNo} - ${status} (${updatedCount} shipments)`);
+  return updatedCount;
+}
+
 function boot() {
   renderModuleNav();
 
@@ -3565,6 +3582,7 @@ function defaultColumnLayouts() {
       ["pickupLocation", "PICK UP LOCATIONS"],
       ["deliveryLocation", "DELIVERY LOCATION"],
       ["shipmentDirection", "MODE"],
+      ["loadType", "LOAD TYPE"],
       ["shipmentService", "MODE FULL"],
       ["pieces", "PKGS / CARTONS"],
       ["palletCount", "No# of Pallets"],
@@ -4587,7 +4605,8 @@ async function saveDialogRecord() {
   const editedType = editing.type;
   const editedId = editing.id;
   addHistory(`Updated ${editing.type}`, editing.id, changeSummary);
-  await persistRecord(editing.type, editing.record);
+  const saved = await persistRecord(editing.type, editing.record);
+  if (editedType === "load" && saved) await syncManifestShipmentStatuses(editing.record);
   if (editedType === "shipment") await createShipmentDocument(data, editedId);
   saveState();
   resetDialogShell();
