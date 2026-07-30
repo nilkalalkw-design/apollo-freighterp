@@ -5530,7 +5530,10 @@ function fetchAwbAndRefillForm() {
 
   const currentBranch = dialogValue("branch");
   const prefillRecord = { ...match };
-  delete prefillRecord.jobNo;
+  // The source is only used as a template.  The saved record must be a new shipment,
+  // while retaining the fetched AWB/Bill of Lading as its reference.
+  prefillRecord.entryMode = "shipment";
+  prefillRecord.jobNo = nextShipmentNumber();
   prefillRecord.airwayBillNo = typedValue;
   prefillRecord.branch = normalizeBranchName(currentBranch || defaultUserBranch());
 
