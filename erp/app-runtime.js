@@ -239,6 +239,7 @@ function shipmentMetaNotes(data) {
     shipmentDate: String(data.shipmentDate || "").trim(),
     transportMode: String(data.transportMode || "").trim(),
     loadType: String(data.loadType || "").trim(),
+    expectedArrivalDate: String(data.expectedArrivalDate || "").trim(),
     customerCode: String(data.customerCode || "").trim(),
     customerContactPerson: String(data.customerContactPerson || "").trim(),
     customerMobile: String(data.customerMobile || "").trim(),
@@ -481,6 +482,7 @@ function shipment(
     deliveryNoteNo: meta.deliveryNoteNo || "",
     ginNo: meta.ginNo || "",
     customerReference: meta.customerReference || "",
+    expectedArrivalDate: meta.expectedArrivalDate || "",
     shipmentRemarks: meta.shipmentRemarks || "",
     vehicleType: meta.vehicleType || "",
     deliveryRemarks: meta.deliveryRemarks || "",
@@ -1144,6 +1146,29 @@ async function addHistory(action, reference, details = "") {
   }
 }
 
+function shipmentStatusKey(status) { return String(status || "").trim().toLowerCase().replace(/[\s_-]+/g, " "); }
+function shipmentIsDelivered(row) { return /delivered|completed|closed|invoiced/.test(shipmentStatusKey(row.status)); }
+function shipmentIsCancelled(row) { return /cancelled|returned|damaged/.test(shipmentStatusKey(row.status)); }
+function shipmentHasArrived(row) { return shipmentIsDelivered(row) || /arrived|destination warehouse|out for delivery/.test(shipmentStatusKey(row.status)); }
+function shipmentDateValue(value) { const date = new Date(`${String(value || "").slice(0, 10)}T00:00:00`); return Number.isNaN(date.getTime()) ? null : date; }
+
+function shipmentDelayAlerts(row) {
+  if (shipmentIsDelivered(row) || shipmentIsCancelled(row)) return [];
+  const todayDate = new Date(); todayDate.setHours(0, 0, 0, 0);
+  const alerts = [];
+  const arrivalDate = row.expectedArrivalDate || "";
+  [["Arrival Overdue", arrivalDate, shipmentHasArrived(row)]].forEach(([kind, dueDate, reached]) => {
+    const due = shipmentDateValue(dueDate);
+    if (!reached && due && due < todayDate) alerts.push({ kind, due: String(dueDate).slice(0, 10), days: Math.max(1, Math.round((todayDate - due) / 86400000)) });
+  });
+  return alerts;
+}
+
+function shipmentDelayAlertMarkup(alerts) {
+  if (!alerts.length) return "";
+  return `<div class="shipment-delay-alerts">${alerts.map((alert) => `<article class="shipment-delay-alert"><span>🚩</span><div><strong>${escapeHtml(alert.kind)}</strong><p>Expected: ${escapeHtml(alert.due)}</p><p>${escapeHtml(`${alert.days} ${alert.days === 1 ? "Day" : "Days"} Late`)}</p></div></article>`).join("")}</div>`;
+}
+
 function recalculateLoad(loadItem) {
   const jobs = loadItem.jobNumbers.split(",").map((job) => job.trim()).filter(Boolean);
   const linked = state.shipments.filter((shipmentItem) => jobs.includes(shipmentItem.jobNo));
@@ -1217,6 +1242,13 @@ function boot() {
   moduleContent.addEventListener("mousedown", handleColumnResizeStart);
   moduleContent.addEventListener("keydown", handleModuleKeydown);
   moduleContent.addEventListener("submit", handleModuleSubmit);
+  moduleContent.addEventListener("change", (event) => {
+    const statusSelect = event.target.closest("form[data-form='status'] [name='status']");
+    if (!statusSelect) return;
+    const field = statusSelect.closest("form").querySelector("[data-expected-arrival-field]");
+    if (!field) return;
+    field.hidden = String(statusSelect.value || "").trim().toLowerCase() !== "dispatched";
+  });
   recordDialog.addEventListener("click", handleModuleClick);
   recordDialog.addEventListener("click", handleModuleLinkClick);
   recordDialog.addEventListener("mousedown", handleColumnResizeStart);
@@ -2670,7 +2702,8 @@ function shipmentStatusRowMarkup(row, index, columns, expandedJob) {
       return `<td>${cellHtml("shipment", key, row, index)}</td>`;
     })
     .join("");
-  const mainRow = `<tr class="${isExpanded ? "is-expanded" : ""}">${cells}</tr>`;
+  const isOverdue = shipmentDelayAlerts(row).length > 0;
+  const mainRow = `<tr class="${isExpanded ? "is-expanded" : ""} ${isOverdue ? "shipment-row-arrival-overdue" : ""}">${cells}</tr>`;
   return isExpanded ? mainRow + shipmentStatusExpandRowMarkup(row, columns.length) : mainRow;
 }
 
@@ -2697,11 +2730,15 @@ function shipmentStatusExpandRowMarkup(row, colSpan) {
         <h4>Update Status - ${escapeHtml(jobNo)}</h4>
         <button type="button" class="ghost-button" data-action="toggle-status-row" data-id="${escapeHtml(jobNo)}">Collapse ▲</button>
       </div>
+      ${shipmentDelayAlertMarkup(shipmentDelayAlerts(row))}
       <form data-form="status" class="inline-status-form">
         <input type="hidden" name="jobNo" value="${escapeHtml(jobNo)}" />
         ${select("status", "Status", statusOptions(), row.status)}
         ${input("date", "Date", today(), false, "date")}
         ${input("notes", "Manual Remark", "")}
+        <div class="expected-arrival-field" data-expected-arrival-field ${String(row.status || "").trim().toLowerCase() === "dispatched" || row.expectedArrivalDate ? "" : "hidden"}>
+          ${input("expectedArrivalDate", "Expected Arrival Date", row.expectedArrivalDate || "", false, "date")}
+        </div>
         <div class="action-row">
           <button type="submit" class="primary-button">Save Status Update</button>
           <button type="button" class="secondary-button" data-action="send-status-email-row" data-id="${escapeHtml(jobNo)}">Send Update</button>
@@ -3158,7 +3195,8 @@ function safeTable(type, rows, columns, fallbackText) {
 function tableRow(type, row, index, columns, showLoad = true) {
   const id = rowId(type, row);
   const actionCell = showLoad ? `<td>${tableActionButton(type, id)}</td>` : "";
-  return `<tr>${columns.map(([key]) => `<td>${cellHtml(type, key, row, index)}</td>`).join("")}${actionCell}</tr>`;
+  const rowClass = type === "shipment" && shipmentDelayAlerts(row).length ? "shipment-row-arrival-overdue" : "";
+  return `<tr class="${rowClass}">${columns.map(([key]) => `<td>${cellHtml(type, key, row, index)}</td>`).join("")}${actionCell}</tr>`;
 }
 
 
@@ -7864,9 +7902,19 @@ async function approveAdminRequest(request, approvalNotes = "") {
   if (request.targetModule === "Consolidation") {
     const loadItem = state.loads.find((row) => row.loadNo === request.referenceNo);
     if (loadItem) {
+      const changes = parseChangeSummary(request.proposedValues);
+      Object.entries(changes).forEach(([key, value]) => {
+        if (["pieces", "actualKg", "cbm", "chargeableKg"].includes(key)) {
+          loadItem[key] = Number(value) || 0;
+        } else {
+          loadItem[key] = value;
+        }
+      });
       loadItem.manifestStatus = "Approved";
       loadItem.lastManifestRequestNo = request.requestNo;
+      recalculateLoad(loadItem);
       await persistRecord("load", loadItem);
+      await syncManifestShipmentStatuses(loadItem);
     }
   }
 
@@ -8650,6 +8698,10 @@ async function updateStatus(data) {
   const remark = data.notes || "";
   const entryDate = data.date || today();
   shipmentItem.status = newStatus;
+  if (String(newStatus).trim().toLowerCase() === "dispatched" && data.expectedArrivalDate) {
+    shipmentItem.expectedArrivalDate = data.expectedArrivalDate;
+  }
+  shipmentItem.notes = shipmentMetaNotes(shipmentItem);
   await persistRecord("shipment", shipmentItem);
 
   const historyEntry = {
