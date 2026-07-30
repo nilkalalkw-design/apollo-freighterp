@@ -4270,6 +4270,11 @@ function openRecord(type, id) {
   if (!record) return;
   if (recordDialog.open) recordDialog.close();
 
+  if (type === "shipment" && record.entryMode === "airway") {
+    openShipmentFromAirwayBill(record, record.airwayBillNo || record.jobNo, record.branch);
+    return;
+  }
+
   if (type === "adminRequest") {
     openAdminRequestDialog(record);
     return;
@@ -5528,14 +5533,19 @@ function fetchAwbAndRefillForm() {
     return;
   }
 
-  const currentBranch = dialogValue("branch");
-  const prefillRecord = { ...match };
+  openShipmentFromAirwayBill(match, typedValue, dialogValue("branch"));
+  notifySuccess("Data fetched", `Form filled from Airway Bill ${typedValue}.`);
+}
+
+function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
+  const typedValue = String(airwayBillNo || sourceRecord.airwayBillNo || sourceRecord.jobNo || "").trim();
+  const prefillRecord = { ...sourceRecord };
   // The source is only used as a template.  The saved record must be a new shipment,
   // while retaining the fetched AWB/Bill of Lading as its reference.
   prefillRecord.entryMode = "shipment";
   prefillRecord.jobNo = nextShipmentNumber();
   prefillRecord.airwayBillNo = typedValue;
-  prefillRecord.branch = normalizeBranchName(currentBranch || defaultUserBranch());
+  prefillRecord.branch = normalizeBranchName(branch || defaultUserBranch());
 
   editing = null;
   dialogState = null;
@@ -5565,7 +5575,6 @@ function fetchAwbAndRefillForm() {
       bindAwbFetchButton();
     }
   });
-  notifySuccess("Data fetched", `Form filled from Airway Bill ${typedValue}.`);
 }
 
 function bindShipmentCustomerAutofill() {
