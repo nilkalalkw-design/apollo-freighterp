@@ -5499,6 +5499,24 @@ function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
     recordDialog.close();
     render();
   };
+  if (recordDialog.open) {
+    resetDialogShell();
+    dialogType.textContent = "Shipment";
+    dialogTitle.textContent = "New Shipment (from Airway Bill)";
+    dialogBody.innerHTML = shipmentDialogBody("shipment", prefillRecord);
+    dialogSave.textContent = "Create Shipment";
+    dialogState = { onSave: saveFetchedShipment, onSecondary: null };
+    bindShipmentDirectionDialog();
+    bindShipmentCustomerTariffs();
+    bindShipmentCustomerAutofill();
+    bindShipmentCopySections();
+    bindTransporterAutofill();
+    bindTariffFinancialAutofill();
+    bindVolumeCalculator();
+    bindPalletDimensionBuilder();
+    bindAwbFetchButton();
+    return;
+  }
   openDialog({
     title: "New Shipment (from Airway Bill)", typeLabel: "Shipment", saveLabel: "Create Shipment", body: shipmentDialogBody("shipment", prefillRecord),
     onSave: saveFetchedShipment,
