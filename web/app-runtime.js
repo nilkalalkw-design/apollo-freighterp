@@ -998,7 +998,22 @@ function money(value) {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localDate();
+}
+
+function localDate(date = new Date()) {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 10);
+}
+
+function localDateTime(date = new Date()) {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16).replace("T", " ");
+}
+
+function localDateTimeInput(date = new Date()) {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
 }
 
 function nextNumber(prefix, collection, field) {
@@ -1170,7 +1185,7 @@ function playBeep() {
 }
 
 async function addHistory(action, reference, details = "") {
-  const record = audit(new Date().toISOString().slice(0, 16).replace("T", " "), currentUserName(), action, reference, details);
+  const record = audit(localDateTime(), currentUserName(), action, reference, details);
   state.audit.unshift(record);
   saveState();
   const saved = await postRecord("audit", record);
@@ -4883,7 +4898,7 @@ function openPodDialog(jobNo = "") {
       ${input("receivedBy", "Goods Received By", shipmentItem.receivedBy || "")}
       ${input("receiverPhone", "Receiver Telephone Number", shipmentItem.receiverPhone || "")}
       ${input("receiverSignature", "Receiver Signature", shipmentItem.receiverSignature || "")}
-      ${input("deliveryDatetime", "Delivery Date & Time", shipmentItem.deliveryDatetime || new Date().toISOString().slice(0, 16), false, "datetime-local")}
+      ${input("deliveryDatetime", "Delivery Date & Time", shipmentItem.deliveryDatetime || localDateTimeInput(), false, "datetime-local")}
     `,
     saveLabel: "Mark Delivered + Upload POD",
     async onSave() {
