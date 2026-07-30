@@ -239,6 +239,7 @@ function shipmentMetaNotes(data) {
     shipmentDate: String(data.shipmentDate || "").trim(),
     transportMode: String(data.transportMode || "").trim(),
     loadType: String(data.loadType || "").trim(),
+    expectedArrivalDate: String(data.expectedArrivalDate || "").trim(),
     customerCode: String(data.customerCode || "").trim(),
     customerContactPerson: String(data.customerContactPerson || "").trim(),
     customerMobile: String(data.customerMobile || "").trim(),
@@ -400,6 +401,7 @@ function shipment(
     shipmentDate: meta.shipmentDate || "",
     transportMode: meta.transportMode || "",
     loadType: meta.loadType || "",
+    expectedArrivalDate: meta.expectedArrivalDate || "",
     customerCode: meta.customerCode || "",
     customerContactPerson: meta.customerContactPerson || "",
     customerMobile: meta.customerMobile || "",
@@ -1248,6 +1250,13 @@ function boot() {
   moduleContent.addEventListener("mousedown", handleColumnResizeStart);
   moduleContent.addEventListener("keydown", handleModuleKeydown);
   moduleContent.addEventListener("submit", handleModuleSubmit);
+  moduleContent.addEventListener("change", (event) => {
+    const statusSelect = event.target.closest("form[data-form='status'] [name='status']");
+    if (!statusSelect) return;
+    const field = statusSelect.closest("form").querySelector("[data-expected-arrival-field]");
+    if (!field) return;
+    field.hidden = String(statusSelect.value || "").trim().toLowerCase() !== "dispatched";
+  });
   recordDialog.addEventListener("click", handleModuleClick);
   recordDialog.addEventListener("click", handleModuleLinkClick);
   recordDialog.addEventListener("mousedown", handleColumnResizeStart);
@@ -2730,6 +2739,9 @@ function shipmentStatusExpandRowMarkup(row, colSpan) {
         ${select("status", "Status", statusOptions(), row.status)}
         ${input("date", "Date", today(), false, "date")}
         ${input("notes", "Manual Remark", "")}
+        <div class="expected-arrival-field" data-expected-arrival-field ${String(row.status || "").trim().toLowerCase() === "dispatched" || row.expectedArrivalDate ? "" : "hidden"}>
+          ${input("expectedArrivalDate", "Expected Arrival Date", row.expectedArrivalDate || "", false, "date")}
+        </div>
         <div class="action-row">
           <button type="submit" class="primary-button">Save Status Update</button>
           <button type="button" class="secondary-button" data-action="send-status-email-row" data-id="${escapeHtml(jobNo)}">Send Update</button>
@@ -7950,9 +7962,19 @@ async function approveAdminRequest(request, approvalNotes = "") {
   if (request.targetModule === "Consolidation") {
     const loadItem = state.loads.find((row) => row.loadNo === request.referenceNo);
     if (loadItem) {
+      const changes = parseChangeSummary(request.proposedValues);
+      Object.entries(changes).forEach(([key, value]) => {
+        if (["pieces", "actualKg", "cbm", "chargeableKg"].includes(key)) {
+          loadItem[key] = Number(value) || 0;
+        } else {
+          loadItem[key] = value;
+        }
+      });
       loadItem.manifestStatus = "Approved";
       loadItem.lastManifestRequestNo = request.requestNo;
+      recalculateLoad(loadItem);
       await persistRecord("load", loadItem);
+      await syncManifestShipmentStatuses(loadItem);
     }
   }
 
@@ -8740,6 +8762,10 @@ async function updateStatus(data) {
   const remark = data.notes || "";
   const entryDate = data.date || today();
   shipmentItem.status = newStatus;
+  if (newStatus.trim().toLowerCase() === "dispatched" && data.expectedArrivalDate) {
+    shipmentItem.expectedArrivalDate = data.expectedArrivalDate;
+  }
+  shipmentItem.notes = shipmentMetaNotes(shipmentItem);
   await persistRecord("shipment", shipmentItem);
 
   const historyEntry = {
@@ -8754,7 +8780,7 @@ async function updateStatus(data) {
   state.shipmentStatusHistory.unshift(historyEntry);
   await postRecord("statusHistory", historyEntry);
 
-  const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}`;
+  const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}${shipmentItem.expectedArrivalDate ? ` | expected arrival: ${shipmentItem.expectedArrivalDate}` : ""}`;
   addHistory("Updated shipment status", `${jobNo} -> ${newStatus}`, statusDetails);
   notifySuccess("Status updated", `${jobNo} is now ${newStatus}.`);
   state.ui.expandedStatusJob = jobNo;
