@@ -4208,6 +4208,11 @@ function openRecord(type, id) {
   if (!record) return;
   if (recordDialog.open) recordDialog.close();
 
+  if (type === "shipment" && (record.entryMode === "airway" || (String(record.jobNo || "").startsWith("AWB") && record.airwayBillNo === record.jobNo))) {
+    openShipmentFromAirwayBill(record, record.airwayBillNo || record.jobNo, record.branch);
+    return;
+  }
+
   if (type === "adminRequest") {
     openAdminRequestDialog(record);
     return;
@@ -5466,20 +5471,24 @@ function fetchAwbAndRefillForm() {
     return;
   }
 
-  const currentBranch = dialogValue("branch");
-  const prefillRecord = { ...match };
-  delete prefillRecord.jobNo;
-  prefillRecord.airwayBillNo = typedValue;
-  prefillRecord.branch = normalizeBranchName(currentBranch || defaultUserBranch());
+  openShipmentFromAirwayBill(match, typedValue, dialogValue("branch"));
+  notifySuccess("Data fetched", `Form filled from Airway Bill ${typedValue}.`);
+}
 
+function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
+  const typedValue = String(airwayBillNo || sourceRecord.airwayBillNo || sourceRecord.jobNo || "").trim();
+  const prefillRecord = { ...sourceRecord, entryMode: "shipment", jobNo: nextShipmentNumber(), airwayBillNo: typedValue, branch: normalizeBranchName(branch || defaultUserBranch()) };
   editing = null;
   dialogState = null;
   openDialog({
-    title: "New Shipment (from Airway Bill)",
-    typeLabel: "Shipment",
-    saveLabel: "Create Shipment",
-    body: shipmentDialogBody("shipment", prefillRecord),
-    onSave: createShipment,
+    title: "New Shipment (from Airway Bill)", typeLabel: "Shipment", saveLabel: "Create Shipment", body: shipmentDialogBody("shipment", prefillRecord),
+    async onSave() {
+      const data = collectFormValues(dialogBody.closest("form"));
+      rememberDropdownOptions(data);
+      const saved = await createShipment(data);
+      if (saved === false) return;
+      saveState(); recordDialog.close(); render();
+    },
     afterOpen: () => {
       bindShipmentDirectionDialog();
       bindShipmentCustomerTariffs();
@@ -5492,7 +5501,6 @@ function fetchAwbAndRefillForm() {
       bindAwbFetchButton();
     }
   });
-  notifySuccess("Data fetched", `Form filled from Airway Bill ${typedValue}.`);
 }
 
 function bindShipmentCustomerAutofill() {

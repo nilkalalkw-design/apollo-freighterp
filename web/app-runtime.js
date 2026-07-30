@@ -4270,7 +4270,7 @@ function openRecord(type, id) {
   if (!record) return;
   if (recordDialog.open) recordDialog.close();
 
-  if (type === "shipment" && record.entryMode === "airway") {
+  if (type === "shipment" && (record.entryMode === "airway" || (String(record.jobNo || "").startsWith("AWB") && record.airwayBillNo === record.jobNo))) {
     openShipmentFromAirwayBill(record, record.airwayBillNo || record.jobNo, record.branch);
     return;
   }
