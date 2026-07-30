@@ -34,6 +34,7 @@ const state = loadState();
 let activeModule = "Dashboard";
 let editing = null;
 let dialogState = null;
+let skipNextDialogCloseReset = false;
 let lastPendingNotificationCount = 0;
 let activeDropdownMenu = null;
 let customerPortalData = null;
@@ -1268,7 +1269,13 @@ function boot() {
   dialogMaximize?.addEventListener("click", toggleDialogMaximized);
   dialogClose?.addEventListener("click", () => recordDialog.close());
   dialogSave.addEventListener("click", saveDialogRecord);
-  recordDialog.addEventListener("close", resetDialogShell);
+  recordDialog.addEventListener("close", () => {
+    if (skipNextDialogCloseReset) {
+      skipNextDialogCloseReset = false;
+      return;
+    }
+    resetDialogShell();
+  });
   document.addEventListener("focus", handleDropdownFocus, true);
   document.addEventListener("pointerdown", handleDropdownPointerDown, true);
   document.addEventListener("input", handleDropdownInput, true);
@@ -4268,7 +4275,10 @@ function openRecord(type, id) {
   const collection = collectionFor(type);
   const record = collection.find((row) => rowId(type, row) === id);
   if (!record) return;
-  if (recordDialog.open) recordDialog.close();
+  if (recordDialog.open) {
+    skipNextDialogCloseReset = true;
+    recordDialog.close();
+  }
 
   if (type === "shipment" && (record.entryMode === "airway" || (String(record.jobNo || "").startsWith("AWB") && record.airwayBillNo === record.jobNo))) {
     openShipmentFromAirwayBill(record, record.airwayBillNo || record.jobNo, record.branch);
