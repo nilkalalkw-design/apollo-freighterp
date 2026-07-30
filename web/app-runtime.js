@@ -5559,20 +5559,21 @@ function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
 
   editing = null;
   dialogState = null;
+  const saveFetchedShipment = async () => {
+    const data = collectFormValues(dialogBody.closest("form"));
+    rememberDropdownOptions(data);
+    const saved = await createShipment(data);
+    if (saved === false) return;
+    saveState();
+    recordDialog.close();
+    render();
+  };
   openDialog({
     title: "New Shipment (from Airway Bill)",
     typeLabel: "Shipment",
     saveLabel: "Create Shipment",
     body: shipmentDialogBody("shipment", prefillRecord),
-    async onSave() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      rememberDropdownOptions(data);
-      const saved = await createShipment(data);
-      if (saved === false) return;
-      saveState();
-      recordDialog.close();
-      render();
-    },
+    onSave: saveFetchedShipment,
     afterOpen: () => {
       bindShipmentDirectionDialog();
       bindShipmentCustomerTariffs();
@@ -5584,6 +5585,11 @@ function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
       bindPalletDimensionBuilder();
       bindAwbFetchButton();
     }
+  });
+  window.requestAnimationFrame(() => {
+    if (!recordDialog.open || dialogTitle.textContent !== "New Shipment (from Airway Bill)") return;
+    dialogSave.textContent = "Create Shipment";
+    dialogState = { onSave: saveFetchedShipment, onSecondary: null };
   });
 }
 
