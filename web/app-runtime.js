@@ -237,6 +237,7 @@ function parseJsonMeta(value) {
 function shipmentMetaNotes(data) {
   return JSON.stringify({
     shipmentDate: String(data.shipmentDate || "").trim(),
+    expectedArrivalDate: String(data.expectedArrivalDate || "").trim(),
     transportMode: String(data.transportMode || "").trim(),
     loadType: String(data.loadType || "").trim(),
     expectedArrivalDate: String(data.expectedArrivalDate || "").trim(),
@@ -399,6 +400,7 @@ function shipment(
     volumeCategory,
     chargeableDivisor,
     shipmentDate: meta.shipmentDate || "",
+    expectedArrivalDate: meta.expectedArrivalDate || "",
     transportMode: meta.transportMode || "",
     loadType: meta.loadType || "",
     expectedArrivalDate: meta.expectedArrivalDate || "",
@@ -5539,7 +5541,15 @@ function fetchAwbAndRefillForm() {
     typeLabel: "Shipment",
     saveLabel: "Create Shipment",
     body: shipmentDialogBody("shipment", prefillRecord),
-    onSave: createShipment,
+    async onSave() {
+      const data = collectFormValues(dialogBody.closest("form"));
+      rememberDropdownOptions(data);
+      const saved = await createShipment(data);
+      if (saved === false) return;
+      saveState();
+      recordDialog.close();
+      render();
+    },
     afterOpen: () => {
       bindShipmentDirectionDialog();
       bindShipmentCustomerTariffs();
