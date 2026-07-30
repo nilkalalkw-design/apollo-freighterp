@@ -5475,7 +5475,7 @@ function fetchAwbAndRefillForm() {
 
 function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
   const typedValue = String(airwayBillNo || sourceRecord.airwayBillNo || sourceRecord.jobNo || "").trim();
-  const prefillRecord = { ...sourceRecord, entryMode: "shipment", jobNo: nextShipmentNumber(), airwayBillNo: typedValue, branch: normalizeBranchName(branch || defaultUserBranch()) };
+  const prefillRecord = { ...sourceRecord, entryMode: "shipment", jobNo: nextShipmentNumber(), airwayBillNo: typedValue, bookingDate: today(), shipmentDate: today(), branch: normalizeBranchName(branch || defaultUserBranch()) };
   editing = null;
   dialogState = null;
   const saveFetchedShipment = async () => {

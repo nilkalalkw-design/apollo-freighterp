@@ -5555,6 +5555,8 @@ function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
   prefillRecord.entryMode = "shipment";
   prefillRecord.jobNo = nextShipmentNumber();
   prefillRecord.airwayBillNo = typedValue;
+  prefillRecord.bookingDate = today();
+  prefillRecord.shipmentDate = today();
   prefillRecord.branch = normalizeBranchName(branch || defaultUserBranch());
 
   editing = null;
