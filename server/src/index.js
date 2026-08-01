@@ -1054,32 +1054,6 @@ async function prepareRecordForConfig(config, body) {
     prepared.invoice_snapshot_json = stringify(prepared.invoice_snapshot_json || prepared.invoiceSnapshotJson, "{}");
   }
 
-  if (config.table === "invoices") {
-    const stringify = (value, fallback) => {
-      if (typeof value === "string") return value;
-      if (value && typeof value === "object") return JSON.stringify(value);
-      return fallback;
-    };
-    prepared.customer_code = String(prepared.customer_code || prepared.customerCode || "").trim();
-    prepared.tariff_no = String(prepared.tariff_no || prepared.tariffNo || "").trim();
-    prepared.tariff_name = String(prepared.tariff_name || prepared.tariffName || "").trim();
-    prepared.chargeable_weight = Number(prepared.chargeable_weight || prepared.chargeableWeight || 0);
-    prepared.revenue = Number(prepared.revenue || 0);
-    prepared.supplier_cost = Number(prepared.supplier_cost || prepared.supplierCost || 0);
-    prepared.total_cost = Number(prepared.total_cost || prepared.totalCost || prepared.supplier_cost || 0);
-    prepared.tax_percent = Number(prepared.tax_percent || prepared.taxPercent || 0);
-    prepared.tax_amount = Number(prepared.tax_amount || prepared.taxAmount || 0);
-    prepared.grand_total = Number(prepared.grand_total || prepared.grandTotal || prepared.revenue + prepared.tax_amount);
-    prepared.profit_percent = Number(
-      prepared.profit_percent ||
-        prepared.profitPercent ||
-        (prepared.revenue ? (((prepared.revenue - prepared.total_cost) / prepared.revenue) * 100) : 0)
-    );
-    prepared.invoice_lines_json = stringify(prepared.invoice_lines_json || prepared.invoiceLinesJson, "[]");
-    prepared.tariff_snapshot_json = stringify(prepared.tariff_snapshot_json || prepared.tariffSnapshotJson, "{}");
-    prepared.invoice_snapshot_json = stringify(prepared.invoice_snapshot_json || prepared.invoiceSnapshotJson, "{}");
-  }
-
   if (config.table === "notifications" && !String(prepared.read_status || "").trim()) {
     prepared.read_status = "UNREAD";
   }
