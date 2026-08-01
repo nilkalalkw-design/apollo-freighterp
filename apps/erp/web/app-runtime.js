@@ -8295,18 +8295,12 @@ async function createUser(data) {
 
 async function changeCurrentPassword(data) {
   const userName = currentUserName();
-  const record = state.users.find((row) => row.userName === userName);
-  if (!record) {
-    notifyDenied("Password not changed", "The current user account could not be found.");
-    return false;
-  }
-
   const currentPassword = String(data.currentPassword || "");
   const newPassword = String(data.newPassword || "");
   const confirmPassword = String(data.confirmPassword || "");
 
-  if (currentPassword !== String(record.password || "")) {
-    notifyDenied("Password not changed", "The current password is incorrect.");
+  if (!currentPassword) {
+    notifyDenied("Password not changed", "Enter your current password first.");
     return false;
   }
   if (!newPassword) {
@@ -8318,10 +8312,14 @@ async function changeCurrentPassword(data) {
     return false;
   }
 
-  record.password = newPassword;
-  const saved = await persistRecord("user", record);
-  if (!saved) {
-    notifyDenied("Password not changed", "The password could not be saved. Check the connection and try again.");
+  try {
+    await fetchJson("/api/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userName, currentPassword, newPassword })
+    });
+  } catch (error) {
+    notifyDenied("Password not changed", error.message || "The current password is incorrect.");
     return false;
   }
 
