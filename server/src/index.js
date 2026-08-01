@@ -1072,20 +1072,29 @@ async function insertRow(config, body) {
   }
 
   const placeholders = values.map((_, index) => `$${index + 1}`);
-  const updateColumns = columns.filter((column) => column !== config.key);
-  const conflict = config.key
-    ? updateColumns.length
-      ? `on conflict (${config.key}) do update set ${updateColumns.map((column) => `${column} = excluded.${column}`).join(", ")}`
-      : `on conflict (${config.key}) do nothing`
-    : "";
-  const result = await query(
-    `insert into ${config.table} (${columns.join(", ")})
-     values (${placeholders.join(", ")})
-     ${conflict}
-     returning ${columnsFor(config)}`,
-    values
-  );
-  return result.rows[0];
+
+  try {
+    const result = await query(
+      `insert into ${config.table} (${columns.join(", ")})
+       values (${placeholders.join(", ")})
+       returning ${columnsFor(config)}`,
+      values
+    );
+    return result.rows[0];
+  } catch (error) {
+    if (error.code === "23505") {
+      const keyIndex = config.key ? columns.indexOf(config.key) : -1;
+      const keyValue = keyIndex >= 0 ? values[keyIndex] : "";
+      const duplicateError = new Error(
+        keyValue
+          ? `${keyValue} already exists. Choose a different number and try again.`
+          : "A record with this value already exists. Choose a different number and try again."
+      );
+      duplicateError.status = 409;
+      throw duplicateError;
+    }
+    throw error;
+  }
 }
 
 async function updateRow(config, id, body) {
@@ -1352,6 +1361,43 @@ app.post("/api/login", async (request, response, next) => {
       return response.status(401).json({
         ok: false,
         error: "Invalid login credentials."
+      });
+    }
+
+    return next(error);
+  }
+});
+
+app.post("/api/change-password", async (request, response, next) => {
+  const userName = String(request.body?.userName || "").trim();
+  const currentPassword = String(request.body?.currentPassword || "");
+  const newPassword = String(request.body?.newPassword || "");
+
+  if (!userName || !currentPassword || !newPassword) {
+    return response.status(400).json({
+      ok: false,
+      error: "User name, current password, and new password are required."
+    });
+  }
+
+  try {
+    const row = await loginUser(userName, currentPassword);
+
+    if (!row) {
+      return response.status(401).json({
+        ok: false,
+        error: "The current password is incorrect."
+      });
+    }
+
+    await query("update app_users set password = $1 where user_name = $2", [newPassword, row.user_name]);
+
+    return response.json({ ok: true });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) {
+      return response.status(503).json({
+        ok: false,
+        error: "Password changes require a connected database."
       });
     }
 
