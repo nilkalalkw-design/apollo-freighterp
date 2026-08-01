@@ -3803,8 +3803,9 @@ function openShipmentByNumber(rawQuery) {
 
   const match = searchPool.find((row) => {
     const jobNo = String(row.jobNo || "").trim().toLowerCase();
+    const awbNo = String(row.airwayBillNo || "").trim().toLowerCase();
     const tcnNumber = String(row.tcnNumber || "").trim().toLowerCase();
-    return jobNo === query || tcnNumber === query;
+    return jobNo === query || awbNo === query || tcnNumber === query;
   });
 
   if (!match) {
@@ -3815,7 +3816,7 @@ function openShipmentByNumber(rawQuery) {
     return;
   }
 
-  openRecord("shipment", rowId("shipment", match));
+  openRecord("shipment", rowId("shipment", match), match);
 }
 
 function rowId(type, row) {
@@ -4209,9 +4210,9 @@ function handleLoadRecord(type) {
   openLoadDialog(type);
 }
 
-function openRecord(type, id) {
+function openRecord(type, id, presetRecord) {
   const collection = collectionFor(type);
-  const record = collection.find((row) => rowId(type, row) === id);
+  const record = presetRecord || collection.find((row) => rowId(type, row) === id);
   if (!record) return;
   if (recordDialog.open) {
     skipNextDialogCloseReset = true;
@@ -8301,6 +8302,43 @@ async function createUser(data) {
   await postRecord("user", record);
   addHistory("Created user", userName);
   notifySuccess("User created", userName + " was saved successfully.");
+  return true;
+}
+
+async function changeCurrentPassword(data) {
+  const userName = currentUserName();
+  const record = state.users.find((row) => row.userName === userName);
+  if (!record) {
+    notifyDenied("Password not changed", "The current user account could not be found.");
+    return false;
+  }
+
+  const currentPassword = String(data.currentPassword || "");
+  const newPassword = String(data.newPassword || "");
+  const confirmPassword = String(data.confirmPassword || "");
+
+  if (currentPassword !== String(record.password || "")) {
+    notifyDenied("Password not changed", "The current password is incorrect.");
+    return false;
+  }
+  if (!newPassword) {
+    notifyDenied("Password not changed", "Enter a new password first.");
+    return false;
+  }
+  if (newPassword !== confirmPassword) {
+    notifyDenied("Password not changed", "New password and confirm password do not match.");
+    return false;
+  }
+
+  record.password = newPassword;
+  const saved = await persistRecord("user", record);
+  if (!saved) {
+    notifyDenied("Password not changed", "The password could not be saved. Check the connection and try again.");
+    return false;
+  }
+
+  addHistory("Changed password", userName);
+  notifySuccess("Password updated", "Your password was changed successfully.");
   return true;
 }
 
