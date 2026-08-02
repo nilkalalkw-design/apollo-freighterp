@@ -119,7 +119,6 @@ function rememberSession(sessionOrUserName) {
       portal: session.portal || "company",
       role: session.role || "Operations",
       branchAccess: session.branchAccess || "Kuwait HO",
-      password: session.password || "",
       branchViewScope: normalizeBranchViewScope(
         session.branchViewScope ||
           session.branch_view_scope ||
@@ -880,9 +879,36 @@ function loadState() {
   }
 }
 
+let saveStateTimer = null;
+const SAVE_STATE_DEBOUNCE_MS = 200;
+const SAVE_STATE_MAX_AUDIT_ROWS = 500;
+
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (saveStateTimer) clearTimeout(saveStateTimer);
+  saveStateTimer = setTimeout(() => {
+    saveStateTimer = null;
+    writeStateSnapshot();
+  }, SAVE_STATE_DEBOUNCE_MS);
 }
+
+function writeStateSnapshot() {
+  try {
+    const snapshot = Array.isArray(state.audit) && state.audit.length > SAVE_STATE_MAX_AUDIT_ROWS
+      ? { ...state, audit: state.audit.slice(0, SAVE_STATE_MAX_AUDIT_ROWS) }
+      : state;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    console.warn("Could not save local state (it will still be saved to the server):", error);
+  }
+}
+
+window.addEventListener("beforeunload", () => {
+  if (saveStateTimer) {
+    clearTimeout(saveStateTimer);
+    saveStateTimer = null;
+    writeStateSnapshot();
+  }
+});
 
 function parseDropdownOptions(value) {
   try {
@@ -1679,7 +1705,7 @@ async function handleLogin(event) {
     const loginResult = customerMode ? await attemptCustomerLogin(userName, password) : { session: await attemptApiLogin(userName, password), data: null };
     customerPortalData = loginResult.data || null;
     const session = loginResult.session;
-    rememberSession({ ...session, password });
+    rememberSession(session);
     loginMessage.textContent = "";
     resetMessage.textContent = "";
     showApp();
@@ -1819,8 +1845,14 @@ async function syncFromApi() {
   }
 }
 
-async function fetchJson(path, options) {
-  const response = await fetch(`${API_URL}${path}`, options);
+async function fetchJson(path, options = {}) {
+  const session = currentSession();
+  const existingHeaders = options.headers || {};
+  const hasAuthHeader = Object.keys(existingHeaders).some((key) => key.toLowerCase() === "authorization");
+  const headers = session?.token && !hasAuthHeader
+    ? { ...existingHeaders, Authorization: "Bearer " + session.token }
+    : existingHeaders;
+  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) throw new Error(data.error || `Request failed: ${response.status}`);
   return data;
@@ -4467,7 +4499,9 @@ function allCollectionFor(type) {
 }
 
 function notifyDuplicate(id) {
-  notifyDenied("Already used", `${id} is already used. Enter a different serial number.`);
+  const message = `${id} is already used. Enter a different serial number.`;
+  notifyDenied("Already used", message);
+  window.alert(`Already used\n${message}`);
 }
 
 function detailFieldControl(type, key, value, record) {
@@ -8494,6 +8528,11 @@ async function postRecord(type, record) {
     if (result.mode === "demo") throw new Error("Database tables are not ready yet.");
     return result.row || true;
   } catch (error) {
+    if (/already exists/i.test(error?.message || "")) {
+      notifyDenied("Already used", error.message);
+      window.alert(`Already used\n${error.message}`);
+      return false;
+    }
     markApiWriteError(error);
     return false;
   }
