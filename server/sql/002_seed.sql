@@ -197,9 +197,9 @@ insert into app_users (
     notes
 )
 values
-    ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'All Branches', 'All', 'admin123', true, true, true, true, 'System temporary admin'),
-    ('ops-kuwait', 'operations.kuwait@apollofreightsolution.com', 'Operations', 'Active', 'Kuwait HO', 'Assigned Branch Only', 'Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'ops123', false, true, false, false, 'Can create and track Kuwait HO shipments'),
-    ('billing-dubai', 'billing.dubai@apollofreightsolution.com', 'Billing', 'Active', 'Dubai', 'Assigned Branch Only', 'Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports', 'billing123', true, false, true, true, 'Invoice and finance access for Dubai')
+    ('admin', 'admin@apollofreightsolution.com', 'Admin', 'Active', 'Both', 'All Branches', 'All', 'pbkdf2$120000$c062c29dcdc632dc$ed19e93cd258ba7de539118d29ddbbf200f8f8379dc1fd476e05f327ca53073e', true, true, true, true, 'System temporary admin'),
+    ('ops-kuwait', 'operations.kuwait@apollofreightsolution.com', 'Operations', 'Active', 'Kuwait HO', 'Assigned Branch Only', 'Dashboard, Shipment / Airway, Manifest, Customers, Suppliers / Transporters, Documents, Tariffs / Rate Master, Reports', 'pbkdf2$120000$e88750c8b3e0ccbf$fae99b36a994c4176202c29b4e91f7210c411d7b576e3d15676e446fe5a61590', false, true, false, false, 'Can create and track Kuwait HO shipments'),
+    ('billing-dubai', 'billing.dubai@apollofreightsolution.com', 'Billing', 'Active', 'Dubai', 'Assigned Branch Only', 'Dashboard, Billing / Invoices, POD / Delivery, Shipment Status, Reports', 'pbkdf2$120000$d7af4928c4a3781a$7b08be3f0a27ea01930248c5e1a07fb68c446a59e05641b8c49f664d15aad642', true, false, true, true, 'Invoice and finance access for Dubai')
 on conflict (user_name) do update set
     email = excluded.email,
     role = excluded.role,
