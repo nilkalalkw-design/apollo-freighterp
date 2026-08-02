@@ -10,6 +10,7 @@ const { query, testConnection } = require("./db");
 const { runMigrations } = require("./migrate");
 
 const app = express();
+app.set("trust proxy", 1);
 const webDirCandidates = [path.resolve(__dirname, "..", "web"), path.resolve(__dirname, "..", "..", "web")];
 const webDir = webDirCandidates.find((candidate) => fs.existsSync(path.join(candidate, "index.html"))) || webDirCandidates[0];
 const webIndex = path.join(webDir, "index.html");
@@ -22,6 +23,31 @@ const runtimeStatus = {
     ? ""
     : "No database connection string was found. Set DATABASE_URL or one of the supported PostgreSQL aliases."
 };
+
+// Simple in-memory rate limiter for auth-sensitive endpoints. Deliberately dependency-free and
+// generous (won't interfere with normal usage/testing) - it only slows down rapid brute-force attempts.
+function rateLimiter({ windowMs, max, keyFor }) {
+  const hits = new Map();
+  return (request, response, next) => {
+    const key = (keyFor ? keyFor(request) : request.ip) || "unknown";
+    const now = Date.now();
+    const entry = hits.get(key);
+    if (!entry || now - entry.start > windowMs) {
+      hits.set(key, { start: now, count: 1 });
+      return next();
+    }
+    entry.count += 1;
+    if (entry.count > max) {
+      return response.status(429).json({ ok: false, error: "Too many attempts. Please wait a few minutes and try again." });
+    }
+    return next();
+  };
+}
+const loginRateLimiter = rateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 20,
+  keyFor: (request) => `${request.ip}:${String(request.body?.userName || request.body?.email || request.body?.customerCode || "").trim().toLowerCase()}`
+});
 
 const demoRows = {
   shipments: [
@@ -162,7 +188,6 @@ const demoRows = {
       branch_access: "Both",
       branch_view_scope: "All Branches",
       section_access: "All",
-      password: "admin123",
       can_view_all_entry: true,
       can_view_only_self_entry: true,
       can_edit_all_entry: true,
@@ -214,6 +239,7 @@ const demoRows = {
 };
 
 const CUSTOMER_PORTAL_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const APP_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 
 function normalizePortalStatus(value) {
   return String(value || "").trim().toLowerCase();
@@ -306,6 +332,24 @@ function requireCustomerPortalAuth(request, response, next) {
   }
 
   request.customerSession = session;
+  return next();
+}
+
+function appAuthFromRequest(request) {
+  const bearer = String(request.headers.authorization || "").trim();
+  const token = bearer.toLowerCase().startsWith("bearer ") ? bearer.slice(7).trim() : "";
+  if (!token) return null;
+  const payload = verifyCustomerToken(token);
+  return payload && payload.portal === "app" ? payload : null;
+}
+
+function requireAppAuth(request, response, next) {
+  const session = appAuthFromRequest(request);
+  if (!session) {
+    return response.status(401).json({ ok: false, error: "Login required." });
+  }
+
+  request.appSession = session;
   return next();
 }
 async function getCustomerAccount(identifier) {
@@ -973,15 +1017,20 @@ async function getRows(resourceName, config) {
 async function loginUser(identifier, password) {
   const result = await query(
     `select user_name, email, role, account_status, branch_access, branch_view_scope, section_access,
-            can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history
+            can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history, password
      from app_users
-     where (lower(user_name) = lower($1) or lower(email) = lower($1))
-       and password = $2
+     where lower(user_name) = lower($1) or lower(email) = lower($1)
      limit 1`,
-    [identifier, password]
+    [identifier]
   );
 
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (!row || !verifyCustomerPassword(password, row.password)) {
+    return null;
+  }
+
+  delete row.password;
+  return row;
 }
 
 async function prepareRecordForConfig(config, body) {
@@ -1000,6 +1049,13 @@ async function prepareRecordForConfig(config, body) {
     }
     delete prepared.password;
     delete prepared.passwordHash;
+  }
+
+  if (config.table === "app_users") {
+    const password = String(prepared.password || "").trim();
+    if (password && !password.startsWith("pbkdf2$")) {
+      prepared.password = hashCustomerPassword(password);
+    }
   }
 
   if (config.table === "shipment_requests") {
@@ -1206,10 +1262,19 @@ async function checkDatabaseReady() {
 }
 
 function demoResponse(resourceName) {
+  const config = resources[resourceName];
+  const hidden = new Set(config?.hiddenFields || []);
+  const rows = (demoRows[resourceName] || []).map((row) => {
+    if (!hidden.size) return row;
+    const clone = { ...row };
+    hidden.forEach((field) => delete clone[field]);
+    return clone;
+  });
+
   return {
     ok: true,
     mode: "demo",
-    rows: demoRows[resourceName] || []
+    rows
   };
 }
 
@@ -1299,7 +1364,7 @@ app.get("/api/health", async (_request, response) => {
   }
 });
 
-app.post("/api/login", async (request, response, next) => {
+app.post("/api/login", loginRateLimiter, async (request, response, next) => {
   const identifier = String(request.body?.userName || request.body?.email || "").trim();
   const password = String(request.body?.password || "");
 
@@ -1339,7 +1404,8 @@ app.post("/api/login", async (request, response, next) => {
         canViewAllEntry: row.can_view_all_entry,
         canViewOnlySelfEntry: row.can_view_only_self_entry,
         canEditAllEntry: row.can_edit_all_entry,
-        canViewUpdatedHistory: row.can_view_updated_history
+        canViewUpdatedHistory: row.can_view_updated_history,
+        token: signCustomerToken({ userName: row.user_name, role: row.role, portal: "app", exp: Date.now() + APP_TOKEN_TTL_MS })
       }
     });
   } catch (error) {
@@ -1353,7 +1419,8 @@ app.post("/api/login", async (request, response, next) => {
             role: "Admin",
             branchAccess: "Both",
             branchViewScope: "All Branches",
-            sectionAccess: "All"
+            sectionAccess: "All",
+            token: signCustomerToken({ userName: "admin", role: "Admin", portal: "app", exp: Date.now() + APP_TOKEN_TTL_MS })
           }
         });
       }
@@ -1368,7 +1435,7 @@ app.post("/api/login", async (request, response, next) => {
   }
 });
 
-app.post("/api/change-password", async (request, response, next) => {
+app.post("/api/change-password", loginRateLimiter, async (request, response, next) => {
   const userName = String(request.body?.userName || "").trim();
   const currentPassword = String(request.body?.currentPassword || "");
   const newPassword = String(request.body?.newPassword || "");
@@ -1390,7 +1457,7 @@ app.post("/api/change-password", async (request, response, next) => {
       });
     }
 
-    await query("update app_users set password = $1 where user_name = $2", [newPassword, row.user_name]);
+    await query("update app_users set password = $1 where user_name = $2", [hashCustomerPassword(newPassword), row.user_name]);
 
     return response.json({ ok: true });
   } catch (error) {
@@ -1405,7 +1472,7 @@ app.post("/api/change-password", async (request, response, next) => {
   }
 });
 
-app.post("/api/customer-login", async (request, response, next) => {
+app.post("/api/customer-login", loginRateLimiter, async (request, response, next) => {
   const identifier = String(request.body?.userName || request.body?.email || request.body?.customerCode || "").trim();
   const password = String(request.body?.password || "");
 
@@ -1699,7 +1766,7 @@ app.get("/api/:resource", async (request, response, next) => {
   }
 });
 
-app.post("/api/:resource", async (request, response, next) => {
+app.post("/api/:resource", requireAppAuth, async (request, response, next) => {
   const resourceName = request.params.resource;
   const config = resources[resourceName];
 
@@ -1726,7 +1793,7 @@ app.post("/api/:resource", async (request, response, next) => {
   }
 });
 
-app.put("/api/:resource/:id", async (request, response, next) => {
+app.put("/api/:resource/:id", requireAppAuth, async (request, response, next) => {
   const resourceName = request.params.resource;
   const config = resources[resourceName];
 
@@ -1753,7 +1820,7 @@ app.put("/api/:resource/:id", async (request, response, next) => {
   }
 });
 
-app.delete("/api/audit", async (_request, response, next) => {
+app.delete("/api/audit", requireAppAuth, async (_request, response, next) => {
   try {
     const result = await query("delete from audit_log returning id");
     response.json({
@@ -1773,7 +1840,7 @@ app.delete("/api/audit", async (_request, response, next) => {
   }
 });
 
-app.delete("/api/:resource/:id", async (request, response, next) => {
+app.delete("/api/:resource/:id", requireAppAuth, async (request, response, next) => {
   const resourceName = request.params.resource;
   const config = resources[resourceName];
 
