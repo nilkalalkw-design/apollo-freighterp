@@ -2459,23 +2459,35 @@ function renderHrDashboard() {
 }
 
 function renderHrProfile() {
-  const myRecord = myEmployeeRecord();
-  if (!myRecord) {
-    return `<section class="panel">${panelHeader("My Profile")}${empty("No employee profile on file yet. Contact HR to set one up.")}</section>`;
-  }
+  const myRecord = myEmployeeRecord() || {};
   return `<section class="panel">${panelHeader("My Profile")}
-    <div class="detail-grid">
-      ${input("employeeCode", "Employee Code", myRecord.employeeCode, true)}
-      ${input("fullName", "Full Name", myRecord.fullName, true)}
-      ${input("department", "Department", myRecord.department, true)}
-      ${input("designation", "Designation", myRecord.designation, true)}
-      ${input("joinDate", "Join Date", myRecord.joinDate, true, "date")}
-      ${input("phone", "Phone", myRecord.phone, true)}
-      ${input("personalEmail", "Personal Email", myRecord.personalEmail, true)}
-      ${input("employmentStatus", "Employment Status", myRecord.employmentStatus, true)}
-      ${input("reportingManager", "Reporting Manager", myRecord.reportingManager, true)}
-    </div>
-    <p class="empty-state">To update your profile details, contact HR.</p>
+    <form class="stack-form" data-form="employee-profile">
+      <p class="empty-state">Keep your contact and identity information up to date. Employment details are managed by HR.</p>
+      <div class="detail-grid">
+        ${input("userName", "Login User Name", currentUserName(), true)}
+        ${input("fullName", "Full Name", myRecord.fullName || "")}
+        ${input("phone", "Mobile Number", myRecord.phone || "", false, "tel")}
+        ${input("personalEmail", "Personal Email", myRecord.personalEmail || "", false, "email")}
+        ${input("nationality", "Nationality", myRecord.nationality || "")}
+        ${input("dateOfBirth", "Date of Birth", myRecord.dateOfBirth || "", false, "date")}
+        ${input("civilIdNo", "Civil ID Number", myRecord.civilIdNo || "")}
+        ${input("passportNo", "Passport Number", myRecord.passportNo || "")}
+        ${input("passportExpiry", "Passport Expiry Date", myRecord.passportExpiry || "", false, "date")}
+        ${input("emergencyContactName", "Emergency Contact Name", myRecord.emergencyContactName || "")}
+        ${input("emergencyContactPhone", "Emergency Contact Number", myRecord.emergencyContactPhone || "", false, "tel")}
+      </div>
+      ${textarea("currentAddress", "Current Address", myRecord.currentAddress || "", false, 3)}
+      ${textarea("permanentAddress", "Permanent Address", myRecord.permanentAddress || "", false, 3)}
+      <div class="detail-grid">
+        ${input("employeeCode", "Employee Code", myRecord.employeeCode || "", true)}
+        ${input("department", "Department", myRecord.department || "", true)}
+        ${input("designation", "Designation", myRecord.designation || "", true)}
+        ${input("joinDate", "Join Date", myRecord.joinDate || "", true, "date")}
+        ${input("employmentStatus", "Employment Status", myRecord.employmentStatus || "", true)}
+        ${input("reportingManager", "Reporting Manager", myRecord.reportingManager || "", true)}
+      </div>
+      <button type="submit">Save My Profile</button>
+    </form>
   </section>`;
 }
 
@@ -8635,7 +8647,8 @@ async function handleModuleSubmit(event) {
     status: () => updateStatus(data),
     settings: () => updateSettings(data),
     "customer-shipment-request": () => submitCustomerShipmentRequest(data, form),
-    "customer-profile": () => updateCustomerProfile(data)
+    "customer-profile": () => updateCustomerProfile(data),
+    "employee-profile": () => updateEmployeeProfile(data)
   };
   const saved = await handlers[type]?.();
   if (saved === false) {
@@ -9488,6 +9501,48 @@ async function updateCustomerProfile(data) {
   if (!session?.token) return false;
   await fetchJson("/api/customer/profile", { method: "PUT", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify(data) });
   notifySuccess("Profile saved", "Your customer profile was updated.");
+  return true;
+}
+
+async function updateEmployeeProfile(data) {
+  const userName = currentUserName();
+  const existing = myEmployeeRecord();
+  const record = {
+    ...(existing || {}),
+    userName,
+    employeeCode: existing?.employeeCode || "",
+    fullName: String(data.fullName || "").trim(),
+    department: existing?.department || "",
+    designation: existing?.designation || "",
+    joinDate: existing?.joinDate || "",
+    phone: String(data.phone || "").trim(),
+    personalEmail: String(data.personalEmail || "").trim(),
+    employmentStatus: existing?.employmentStatus || "Active",
+    reportingManager: existing?.reportingManager || "",
+    notes: existing?.notes || "",
+    nationality: String(data.nationality || "").trim(),
+    dateOfBirth: String(data.dateOfBirth || "").trim(),
+    civilIdNo: String(data.civilIdNo || "").trim(),
+    passportNo: String(data.passportNo || "").trim(),
+    passportExpiry: String(data.passportExpiry || "").trim(),
+    currentAddress: String(data.currentAddress || "").trim(),
+    permanentAddress: String(data.permanentAddress || "").trim(),
+    emergencyContactName: String(data.emergencyContactName || "").trim(),
+    emergencyContactPhone: String(data.emergencyContactPhone || "").trim()
+  };
+  if (!record.fullName) {
+    notifyDenied("Profile not saved", "Enter your full name first.");
+    return false;
+  }
+  const saved = existing ? await persistRecord("employee", record) : await postRecord("employee", record);
+  if (!saved) {
+    notifyDenied("Profile not saved", "Could not save your profile. Please try again.");
+    return false;
+  }
+  if (existing) Object.assign(existing, record);
+  else state.employees.unshift(record);
+  addHistory("Updated employee profile", userName);
+  notifySuccess("Profile saved", "Your employee profile was updated.");
   return true;
 }
 

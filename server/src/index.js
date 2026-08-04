@@ -951,6 +951,15 @@ const resources = {
       field("personal_email", ["personalEmail", "personal_email"]),
       field("employment_status", ["employmentStatus", "employment_status"]),
       field("reporting_manager", ["reportingManager", "reporting_manager"]),
+      field("nationality"),
+      field("date_of_birth", ["dateOfBirth", "date_of_birth"]),
+      field("civil_id_no", ["civilIdNo", "civil_id_no"]),
+      field("passport_no", ["passportNo", "passport_no"]),
+      field("passport_expiry", ["passportExpiry", "passport_expiry"]),
+      field("current_address", ["currentAddress", "current_address"]),
+      field("permanent_address", ["permanentAddress", "permanent_address"]),
+      field("emergency_contact_name", ["emergencyContactName", "emergency_contact_name"]),
+      field("emergency_contact_phone", ["emergencyContactPhone", "emergency_contact_phone"]),
       field("notes")
     ]
   },
