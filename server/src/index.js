@@ -730,6 +730,8 @@ const resources = {
       field("can_view_only_self_entry", ["canViewOnlySelfEntry", "can_view_only_self_entry"]),
       field("can_edit_all_entry", ["canEditAllEntry", "can_edit_all_entry"]),
       field("can_view_updated_history", ["canViewUpdatedHistory", "can_view_updated_history"]),
+      field("can_billing_sales_entry", ["canBillingSalesEntry", "can_billing_sales_entry"]),
+      field("can_billing_cost_entry", ["canBillingCostEntry", "can_billing_cost_entry"]),
       field("hr_portal_access", ["hrPortalAccess", "hr_portal_access"]),
       field("notes")
     ]
@@ -1126,7 +1128,7 @@ async function loginUser(identifier, password) {
     result = await query(
       `select user_name, email, role, account_status, branch_access, branch_view_scope, section_access,
               can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history,
-              hr_portal_access, password
+              can_billing_sales_entry, can_billing_cost_entry, hr_portal_access, password
        from app_users
        where lower(user_name) = lower($1) or lower(email) = lower($1)
        limit 1`,
@@ -1145,7 +1147,11 @@ async function loginUser(identifier, password) {
        limit 1`,
       [identifier]
     );
-    if (result.rows[0]) result.rows[0].hr_portal_access = false;
+    if (result.rows[0]) {
+      result.rows[0].hr_portal_access = false;
+      result.rows[0].can_billing_sales_entry = true;
+      result.rows[0].can_billing_cost_entry = true;
+    }
   }
 
   const row = result.rows[0];
@@ -1531,6 +1537,8 @@ app.post("/api/login", loginRateLimiter, async (request, response, next) => {
         canViewOnlySelfEntry: row.can_view_only_self_entry,
         canEditAllEntry: row.can_edit_all_entry,
         canViewUpdatedHistory: row.can_view_updated_history,
+        canBillingSalesEntry: row.can_billing_sales_entry !== false,
+        canBillingCostEntry: row.can_billing_cost_entry !== false,
         hrPortalAccess: Boolean(row.hr_portal_access),
         token: signCustomerToken({ userName: row.user_name, role: row.role, portal: "app", exp: Date.now() + APP_TOKEN_TTL_MS })
       }

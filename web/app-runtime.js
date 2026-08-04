@@ -145,7 +145,9 @@ function rememberSession(sessionOrUserName) {
       canViewAllEntry: Boolean(session.canViewAllEntry || (session.role || "").toLowerCase() === "admin"),
       canViewOnlySelfEntry: Boolean(session.canViewOnlySelfEntry),
       canEditAllEntry: Boolean(session.canEditAllEntry || (session.role || "").toLowerCase() === "admin"),
-      canViewUpdatedHistory: Boolean(session.canViewUpdatedHistory)
+      canViewUpdatedHistory: Boolean(session.canViewUpdatedHistory),
+      canBillingSalesEntry: session.canBillingSalesEntry === undefined ? true : isChecked(session.canBillingSalesEntry),
+      canBillingCostEntry: session.canBillingCostEntry === undefined ? true : isChecked(session.canBillingCostEntry)
     })
   );
 }
@@ -813,13 +815,10 @@ function invoiceDialogBody(record = {}) {
     input('volumeWeight', 'Volume Weight', volumeWeight, true, 'number') +
     selectEditable('currency', 'Currency', 'currency', currencyOptions(), record.currency || shipmentItem?.currency || 'KD') +
     input('taxPercent', 'Tax %', taxPercent, false, 'number') +
-    input('revenue', 'Revenue', revenue, true, 'number') +
-    input('supplierCost', 'Cost', supplierCost, false, 'number') +
-    input('totalCost', 'Total Cost', supplierCost, true, 'number') +
-    input('taxAmount', 'Tax Amount', totals.taxAmount, true, 'number') +
-    input('grossProfit', 'Gross Profit', totals.grossProfit, true, 'number') +
-    input('profitPercent', 'Profit %', totals.profitPercent, true, 'number') +
-    input('grandTotal', 'Grand Total', totals.grandTotal, true, 'number') +
+    (canBillingSalesEntry() ? input('revenue', 'Revenue', revenue, true, 'number') : '') +
+    (canBillingCostEntry() ? input('supplierCost', 'Cost', supplierCost, false, 'number') + input('totalCost', 'Total Cost', supplierCost, true, 'number') : '') +
+    (canBillingSalesEntry() ? input('taxAmount', 'Tax Amount', totals.taxAmount, true, 'number') + input('grandTotal', 'Grand Total', totals.grandTotal, true, 'number') : '') +
+    (canBillingSalesEntry() && canBillingCostEntry() ? input('grossProfit', 'Gross Profit', totals.grossProfit, true, 'number') + input('profitPercent', 'Profit %', totals.profitPercent, true, 'number') : '') +
     select('status', 'Status', ['Draft', 'Approved', 'Sent', 'Paid', 'Overdue'], record.status || 'Draft') +
     input('date', 'Date', record.date || today(), false, 'date') +
     '<input type="hidden" name="invoiceLinesJson" value="' + escapeHtml(record.invoiceLinesJson || JSON.stringify(lines)) + '" />' +
@@ -869,7 +868,9 @@ function user(
   password = "",
   notes = "Web demo user",
   createdDate = today(),
-  hrPortalAccess = false
+  hrPortalAccess = false,
+  canBillingSalesEntry = true,
+  canBillingCostEntry = true
 ) {
   return {
     userName,
@@ -886,7 +887,9 @@ function user(
     password,
     notes,
     createdDate,
-    hrPortalAccess: isChecked(hrPortalAccess)
+    hrPortalAccess: isChecked(hrPortalAccess),
+    canBillingSalesEntry: isChecked(canBillingSalesEntry),
+    canBillingCostEntry: isChecked(canBillingCostEntry)
   };
 }
 
@@ -1025,7 +1028,9 @@ function normalizeUsers(users) {
     canViewAllEntry: isChecked(record.canViewAllEntry),
     canViewOnlySelfEntry: isChecked(record.canViewOnlySelfEntry),
     canEditAllEntry: isChecked(record.canEditAllEntry),
-    canViewUpdatedHistory: isChecked(record.canViewUpdatedHistory)
+    canViewUpdatedHistory: isChecked(record.canViewUpdatedHistory),
+    canBillingSalesEntry: record.canBillingSalesEntry === undefined ? true : isChecked(record.canBillingSalesEntry),
+    canBillingCostEntry: record.canBillingCostEntry === undefined ? true : isChecked(record.canBillingCostEntry)
   }));
 }
 
@@ -1542,6 +1547,16 @@ function renderModuleNav() {
 
 function currentUserName() {
   return currentSession()?.userName || "operations";
+}
+
+function canBillingSalesEntry() {
+  const session = currentSession() || {};
+  return isAdminSession() || session.canBillingSalesEntry === undefined || isChecked(session.canBillingSalesEntry);
+}
+
+function canBillingCostEntry() {
+  const session = currentSession() || {};
+  return isAdminSession() || session.canBillingCostEntry === undefined || isChecked(session.canBillingCostEntry);
 }
 
 function canViewAllBranches() {
@@ -2983,10 +2998,13 @@ function quickOpenQuotationMarkup() {
 
 function renderInvoices() {
   const rows = filteredRows(visibleRows(state.invoices));
+  const canEnterBilling = canBillingSalesEntry() || canBillingCostEntry();
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Invoice Register", "Billing")} ${table("invoice", rows, invoiceColumns())}</article>
-      ${moduleActionPanel("Invoice Actions", "invoice", "Keep invoice creation and load/update in separate popup windows.", quickOpenInvoiceMarkup() + documentActionControls("invoice", "Bill"))}
+      ${canEnterBilling
+        ? moduleActionPanel("Invoice Actions", "invoice", "Keep invoice creation and load/update in separate popup windows.", quickOpenInvoiceMarkup() + documentActionControls("invoice", "Bill"))
+        : `<article class="panel">${panelHeader("Invoice Actions", "Restricted")}${empty("Your account has view-only access to billing.")}</article>`}
     </section>
     ${adminDeletePanel("invoice", "Invoice")}`;
 }
@@ -4105,7 +4123,12 @@ function documentColumns() {
 }
 
 function invoiceColumns() {
-  return configurableColumns("invoice", defaultColumnLayouts().invoice);
+  return configurableColumns("invoice", defaultColumnLayouts().invoice).filter(([key]) => {
+    if (key === "revenue") return canBillingSalesEntry();
+    if (key === "supplierCost" || key === "totalCost") return canBillingCostEntry();
+    if (key === "grossProfit" || key === "profitPercent") return canBillingCostEntry() && canBillingSalesEntry();
+    return true;
+  });
 }
 
 function quotationColumns() {
@@ -4840,13 +4863,13 @@ function openRecord(type, id, presetRecord) {
           volumeWeight: Number(data.volumeWeight || record.volumeWeight || 0),
           currency: data.currency || record.currency || "KD",
           taxPercent: Number(data.taxPercent || record.taxPercent || 0),
-          revenue: Number(data.revenue || record.revenue || 0),
-          supplierCost: Number(data.supplierCost || data.totalCost || record.supplierCost || 0),
-          totalCost: Number(data.totalCost || record.totalCost || data.supplierCost || 0),
-          taxAmount: Number(data.taxAmount || record.taxAmount || 0),
-          grossProfit: Number(data.grossProfit || record.grossProfit || 0),
-          profitPercent: Number(data.profitPercent || record.profitPercent || 0),
-          grandTotal: Number(data.grandTotal || record.grandTotal || 0),
+          revenue: canBillingSalesEntry() ? Number(data.revenue || record.revenue || 0) : Number(record.revenue || 0),
+          supplierCost: canBillingCostEntry() ? Number(data.supplierCost || data.totalCost || record.supplierCost || 0) : Number(record.supplierCost || 0),
+          totalCost: canBillingCostEntry() ? Number(data.totalCost || record.totalCost || data.supplierCost || 0) : Number(record.totalCost || 0),
+          taxAmount: canBillingSalesEntry() ? Number(data.taxAmount || record.taxAmount || 0) : Number(record.taxAmount || 0),
+          grossProfit: canBillingSalesEntry() && canBillingCostEntry() ? Number(data.grossProfit || record.grossProfit || 0) : Number(record.grossProfit || 0),
+          profitPercent: canBillingSalesEntry() && canBillingCostEntry() ? Number(data.profitPercent || record.profitPercent || 0) : Number(record.profitPercent || 0),
+          grandTotal: canBillingSalesEntry() ? Number(data.grandTotal || record.grandTotal || 0) : Number(record.grandTotal || 0),
           status: data.status || record.status || "Draft",
           date: data.date || record.date || today(),
           invoiceLinesJson: data.invoiceLinesJson || record.invoiceLinesJson || "[]",
@@ -5844,6 +5867,9 @@ function userDialogBody() {
     ${checkbox("canViewOnlySelfEntry", "User can view only self entry", true)}
     ${checkbox("canEditAllEntry", "User can edit all entry")}
     ${checkbox("canViewUpdatedHistory", "User can view updated history", true)}
+    <p class="field-group-label">Billing / Invoices Permissions</p>
+    ${checkbox("canBillingSalesEntry", "Allow Sales Entry (selling data)")}
+    ${checkbox("canBillingCostEntry", "Allow Cost Entry (cost data)")}
     ${checkbox("hrPortalAccess", "Allow HR Portal access (Employee Login)")}
     ${input("notes", "Notes", "Created from admin panel")}
   `;
@@ -8886,7 +8912,9 @@ async function createUser(data) {
     password,
     String(data.notes || "").trim(),
     data.createdDate || today(),
-    data.hrPortalAccess
+    data.hrPortalAccess,
+    isChecked(data.canBillingSalesEntry),
+    isChecked(data.canBillingCostEntry)
   );
   state.users.unshift(record);
   await postRecord("user", record);
@@ -9167,13 +9195,13 @@ async function createInvoice(data) {
   const lines = parseInvoiceLineItems(data.invoiceLinesJson || JSON.stringify(invoiceLinesFromTariff(shipmentItem, tariffItem, chargeableWeight)));
   const totals = invoiceTotals(lines, Number(data.taxPercent || 0));
   const customer = shipmentItem?.customer || data.customer;
-  const record = invoice(invoiceNo, customer, data.shipmentNo, Number(data.revenue || totals.revenue || 0), Number(data.supplierCost || data.totalCost || totals.cost || 0), data.status || "Draft", data.date || today());
+  const record = invoice(invoiceNo, customer, data.shipmentNo, canBillingSalesEntry() ? Number(data.revenue || totals.revenue || 0) : 0, canBillingCostEntry() ? Number(data.supplierCost || data.totalCost || totals.cost || 0) : 0, data.status || "Draft", data.date || today());
   Object.assign(record, {
     customerCode: shipmentItem?.customerCode || data.customerCode || "",
     tariffNo: data.tariffNo || tariffItem?.tariffNo || "",
     tariffName: data.tariffName || tariffItem?.customer || "",
     chargeableWeight,
-    totalCost: Number(data.totalCost || data.supplierCost || totals.cost || 0),
+    totalCost: canBillingCostEntry() ? Number(data.totalCost || data.supplierCost || totals.cost || 0) : 0,
     taxPercent: Number(data.taxPercent || 0),
     taxAmount: Number(data.taxAmount || totals.taxAmount || 0),
     grandTotal: Number(data.grandTotal || totals.grandTotal || 0),
