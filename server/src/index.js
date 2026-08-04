@@ -1112,15 +1112,32 @@ async function getRows(resourceName, config) {
 }
 
 async function loginUser(identifier, password) {
-  const result = await query(
-    `select user_name, email, role, account_status, branch_access, branch_view_scope, section_access,
-            can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history,
-            hr_portal_access, password
-     from app_users
-     where lower(user_name) = lower($1) or lower(email) = lower($1)
-     limit 1`,
-    [identifier]
-  );
+  let result;
+  try {
+    result = await query(
+      `select user_name, email, role, account_status, branch_access, branch_view_scope, section_access,
+              can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history,
+              hr_portal_access, password
+       from app_users
+       where lower(user_name) = lower($1) or lower(email) = lower($1)
+       limit 1`,
+      [identifier]
+    );
+  } catch (error) {
+    // Allow existing live databases to keep signing in while the optional HR
+    // migration is still being applied by the deployment service.
+    if (error?.code !== "42703") throw error;
+    result = await query(
+      `select user_name, email, role, account_status, branch_access, branch_view_scope, section_access,
+              can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history,
+              password
+       from app_users
+       where lower(user_name) = lower($1) or lower(email) = lower($1)
+       limit 1`,
+      [identifier]
+    );
+    if (result.rows[0]) result.rows[0].hr_portal_access = false;
+  }
 
   const row = result.rows[0];
   if (!row || !verifyCustomerPassword(password, row.password)) {
