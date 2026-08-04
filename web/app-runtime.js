@@ -11,6 +11,22 @@ const customerModules = [
   ["Customer Notifications", "Portal messages and activity"]
 ];
 
+const hrModules = [
+  ["HR Dashboard", "Your profile summary, leave balance, and latest announcements"],
+  ["My Profile", "Your employee profile details"],
+  ["Employee Directory", "Browse colleagues by department"],
+  ["My Leave", "Apply for leave and track your requests"],
+  ["My Payslips", "View and download your payslips"],
+  ["Announcements", "Company announcements"]
+];
+
+const hrAdminModules = [
+  ["Manage Employees", "Create and update employee profiles"],
+  ["Leave Approvals", "Review and approve or reject leave requests"],
+  ["Manage Payslips", "Issue payslips to employees"],
+  ["Post Announcement", "Publish a company announcement"]
+];
+
 const modules = [
   ["Dashboard", "Live operational summary for land freight consolidation"],
   ["Shipment / Airway", "Create, track, duplicate, and close cargo shipments and airway bills"],
@@ -185,6 +201,14 @@ function seedState() {
     unblockRequests: [],
     adminRequests: [],
     audit: [],
+    employees: [
+      { userName: "admin", employeeCode: "EMP-0001", fullName: "System Administrator", department: "Management", designation: "Administrator", joinDate: "2024-01-01", phone: "", personalEmail: "", employmentStatus: "Active", reportingManager: "", notes: "Demo employee record" }
+    ],
+    leaveRequests: [],
+    payslips: [],
+    hrAnnouncements: [
+      { id: "1", title: "Welcome to the HR Portal", body: "This is a demo announcement. Connect a database to start managing real employee records, leave requests, payslips, and announcements.", postedBy: "admin", audience: "All", pinned: true, postedAt: today }
+    ],
     settings: {
       settingsKey: "default",
       companyName: "APOLLO FREIGHT SOLUTIONS",
@@ -844,7 +868,8 @@ function user(
   canViewUpdatedHistory,
   password = "",
   notes = "Web demo user",
-  createdDate = today()
+  createdDate = today(),
+  hrPortalAccess = false
 ) {
   return {
     userName,
@@ -860,7 +885,8 @@ function user(
     canViewUpdatedHistory: isChecked(canViewUpdatedHistory),
     password,
     notes,
-    createdDate
+    createdDate,
+    hrPortalAccess: isChecked(hrPortalAccess)
   };
 }
 
@@ -947,6 +973,10 @@ function normalizeState(stored) {
     unblockRequests: Array.isArray(stored.unblockRequests) ? stored.unblockRequests : defaults.unblockRequests,
     adminRequests: Array.isArray(stored.adminRequests) ? stored.adminRequests : defaults.adminRequests,
     audit: Array.isArray(stored.audit) ? stored.audit : defaults.audit,
+    employees: Array.isArray(stored.employees) ? stored.employees : defaults.employees,
+    leaveRequests: Array.isArray(stored.leaveRequests) ? stored.leaveRequests : defaults.leaveRequests,
+    payslips: Array.isArray(stored.payslips) ? stored.payslips : defaults.payslips,
+    hrAnnouncements: Array.isArray(stored.hrAnnouncements) ? stored.hrAnnouncements : defaults.hrAnnouncements,
     settings: {
       ...defaults.settings,
       ...(stored.settings || {})
@@ -1260,9 +1290,8 @@ function boot() {
   loginForm.addEventListener("submit", handleLogin);
   loginForm.querySelectorAll("[data-login-mode-option]").forEach((button) => {
     button.addEventListener("click", () => {
-      const isCustomer = button.dataset.loginModeOption === "customer";
-      const checkbox = loginForm.querySelector("#customerLoginMode");
-      if (checkbox) checkbox.checked = isCustomer;
+      const modeField = loginForm.querySelector("#loginModeField");
+      if (modeField) modeField.value = button.dataset.loginModeOption || "company";
       loginForm.querySelectorAll("[data-login-mode-option]").forEach((option) => {
         const active = option === button;
         option.classList.toggle("is-active", active);
@@ -1459,12 +1488,21 @@ function isCustomerSession() {
   return String(currentSession()?.portal || "").toLowerCase() === "customer";
 }
 
+function isHrSession() {
+  return String(currentSession()?.portal || "").toLowerCase() === "employee";
+}
+
+function isHrAdmin() {
+  return isHrSession() && (currentSession()?.role || "").toLowerCase() === "admin";
+}
+
 function isAdminSession() {
-  return !isCustomerSession() && (currentSession()?.role || "").toLowerCase() === "admin";
+  return !isCustomerSession() && !isHrSession() && (currentSession()?.role || "").toLowerCase() === "admin";
 }
 
 function visibleModules() {
   if (isCustomerSession()) return customerModules;
+  if (isHrSession()) return isHrAdmin() ? hrModules.concat(hrAdminModules) : hrModules;
   if (isAdminSession()) return modules;
   const session = currentSession();
   const configured = String(session?.sectionAccess || "").trim();
@@ -1724,13 +1762,25 @@ async function handleLogin(event) {
   const form = new FormData(loginForm);
   const userName = String(form.get("userName") || "").trim();
   const password = String(form.get("password") || "");
-  const customerMode = Boolean(form.get("customerLoginMode"));
+  const loginMode = String(form.get("loginMode") || "company");
 
   try {
-    const loginResult = customerMode ? await attemptCustomerLogin(userName, password) : { session: await attemptApiLogin(userName, password), data: null };
-    customerPortalData = loginResult.data || null;
-    const session = loginResult.session;
-    rememberSession(session);
+    if (loginMode === "customer") {
+      const loginResult = await attemptCustomerLogin(userName, password);
+      customerPortalData = loginResult.data || null;
+      rememberSession(loginResult.session);
+    } else if (loginMode === "employee") {
+      const session = await attemptApiLogin(userName, password);
+      if (!session.hrPortalAccess) {
+        throw new Error("HR Portal access is not enabled for this account. Contact your Admin to enable it.");
+      }
+      customerPortalData = null;
+      rememberSession({ ...session, portal: "employee" });
+    } else {
+      const session = await attemptApiLogin(userName, password);
+      customerPortalData = null;
+      rememberSession(session);
+    }
     loginMessage.textContent = "";
     resetMessage.textContent = "";
     showApp();
@@ -1776,6 +1826,7 @@ function showLogin() {
 function showApp() {
   loginScreen.classList.add("is-hidden");
   appShell.classList.remove("is-hidden");
+  appShell.classList.toggle("hr-portal-theme", isHrSession());
   renderModuleNav();
   updateUserContext();
   syncFromApi();
@@ -1806,7 +1857,11 @@ async function syncFromApi() {
       unblockRequests,
       adminRequests,
       auditLog,
-      settings
+      settings,
+      employees,
+      leaveRequests,
+      payslips,
+      hrAnnouncements
     ] = await Promise.all([
       fetchJson("/api/health"),
       fetchJson("/api/shipments"),
@@ -1825,7 +1880,11 @@ async function syncFromApi() {
       fetchJson("/api/unblock-requests"),
       fetchJson("/api/admin-requests"),
       fetchJson("/api/audit"),
-      fetchJson("/api/settings")
+      fetchJson("/api/settings"),
+      fetchJson("/api/employees"),
+      fetchJson("/api/leave-requests"),
+      fetchJson("/api/payslips"),
+      fetchJson("/api/hr-announcements")
     ]);
 
     const apiMode = health.mode || (health.database === "connected" ? "database" : "demo");
@@ -1853,6 +1912,10 @@ async function syncFromApi() {
       state.unblockRequests = (unblockRequests.rows || []).map(apiUnblockRequest);
       state.adminRequests = (adminRequests.rows || []).map(apiAdminRequest);
       state.audit = (auditLog.rows || []).map(apiAudit);
+      state.employees = (employees.rows || []).map(apiEmployee);
+      state.leaveRequests = (leaveRequests.rows || []).map(apiLeaveRequest);
+      state.payslips = (payslips.rows || []).map(apiPayslip);
+      state.hrAnnouncements = (hrAnnouncements.rows || []).map(apiHrAnnouncement);
       if (settings.rows?.length) {
         state.settings = apiSettings(settings.rows[0]);
         state.dropdownOptions = {
@@ -2102,7 +2165,8 @@ function apiUser(row) {
     isChecked(row.can_view_updated_history),
     "",
     row.notes || "",
-    String(row.created_at || today()).slice(0, 10)
+    String(row.created_at || today()).slice(0, 10),
+    isChecked(row.hr_portal_access)
   );
 }
 
@@ -2148,6 +2212,66 @@ function apiAudit(row) {
   };
 }
 
+function apiEmployee(row) {
+  return {
+    userName: row.user_name,
+    employeeCode: row.employee_code || "",
+    fullName: row.full_name || "",
+    department: row.department || "",
+    designation: row.designation || "",
+    joinDate: String(row.join_date || "").slice(0, 10),
+    phone: row.phone || "",
+    personalEmail: row.personal_email || "",
+    employmentStatus: row.employment_status || "Active",
+    reportingManager: row.reporting_manager || "",
+    notes: row.notes || ""
+  };
+}
+
+function apiLeaveRequest(row) {
+  return {
+    requestNo: row.request_no,
+    userName: row.user_name,
+    employeeName: row.employee_name || "",
+    leaveType: row.leave_type || "Annual",
+    startDate: String(row.start_date || "").slice(0, 10),
+    endDate: String(row.end_date || "").slice(0, 10),
+    totalDays: Number(row.total_days || 0),
+    reason: row.reason || "",
+    status: row.status || "Pending",
+    approvedBy: row.approved_by || "",
+    approvedAt: row.approved_at || "",
+    appliedAt: row.applied_at || ""
+  };
+}
+
+function apiPayslip(row) {
+  return {
+    payslipNo: row.payslip_no,
+    userName: row.user_name,
+    employeeName: row.employee_name || "",
+    period: row.period || "",
+    grossPay: Number(row.gross_pay || 0),
+    deductions: Number(row.deductions || 0),
+    netPay: Number(row.net_pay || 0),
+    status: row.status || "Issued",
+    issuedDate: String(row.issued_date || "").slice(0, 10),
+    storageUrl: row.storage_url || ""
+  };
+}
+
+function apiHrAnnouncement(row) {
+  return {
+    id: String(row.id),
+    title: row.title || "",
+    body: row.body || "",
+    postedBy: row.posted_by || "",
+    audience: row.audience || "All",
+    pinned: Boolean(row.pinned),
+    postedAt: row.posted_at || ""
+  };
+}
+
 function apiSettings(row) {
   return {
     settingsKey: row.settings_key || state.settings.settingsKey || "default",
@@ -2176,9 +2300,9 @@ function apiSettings(row) {
 
 function render() {
   if (!visibleModules().some(([name]) => name === activeModule)) {
-    activeModule = isCustomerSession() ? "Customer Dashboard" : "Dashboard";
+    activeModule = isCustomerSession() ? "Customer Dashboard" : isHrSession() ? "HR Dashboard" : "Dashboard";
   }
-  const activeModules = isCustomerSession() ? customerModules : modules;
+  const activeModules = isCustomerSession() ? customerModules : isHrSession() ? hrModules.concat(hrAdminModules) : modules;
   const module = activeModules.find(([name]) => name === activeModule) || activeModules[0];
   pageEyebrow.textContent = "";
   pageTitle.textContent = module[0];
@@ -2216,7 +2340,17 @@ function render() {
     "Customer Shipments": renderCustomerShipments,
     "Customer Tracking": renderCustomerTracking,
     "Customer Profile": renderCustomerProfile,
-    "Customer Notifications": renderCustomerNotifications
+    "Customer Notifications": renderCustomerNotifications,
+    "HR Dashboard": renderHrDashboard,
+    "My Profile": renderHrProfile,
+    "Employee Directory": renderHrDirectory,
+    "My Leave": renderHrLeave,
+    "My Payslips": renderHrPayslips,
+    Announcements: renderHrAnnouncements,
+    "Manage Employees": renderHrAdminEmployees,
+    "Leave Approvals": renderHrAdminLeaveApprovals,
+    "Manage Payslips": renderHrAdminPayslips,
+    "Post Announcement": renderHrAdminAnnouncements
   };
   moduleContent.innerHTML = (renderers[activeModule] || renderDashboard)();
 }
@@ -2225,6 +2359,10 @@ function updateUserContext() {
   const session = currentSession() || { userName: "admin", branchAccess: "Both" };
   if (isCustomerSession()) {
     userContextText.textContent = `Customer: ${session.customerName || session.customerCode || session.userName}`;
+    return;
+  }
+  if (isHrSession()) {
+    userContextText.textContent = `Employee: ${session.userName}${isHrAdmin() ? " | HR Admin" : ""}`;
     return;
   }
   userContextText.textContent = `User: ${session.userName} | Branch: ${session.branchAccess}`;
@@ -2250,6 +2388,159 @@ function renderCustomerShipments() { return "<section class=\"split-grid wide-le
 function renderCustomerTracking() { return "<section class=\"panel\">" + panelHeader("Tracking", "Customer Portal") + table("customerShipment", portalRows("shipments"), customerShipmentColumns(), false) + "</section>"; }
 function renderCustomerProfile() { const session = currentSession() || {}; return "<section class=\"panel\">" + panelHeader("Profile", "Customer Portal") + "<form class=\"stack-form\" data-form=\"customer-profile\">" + input("customerCode", "Customer Code", session.customerCode || "", true) + input("customerName", "Customer Name", session.customerName || "", true) + input("email", "Email", session.email || "") + passwordField("password", "New Password", "") + "<button type=\"submit\">Save Profile</button></form></section>"; }
 function renderCustomerNotifications() { return "<section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Notifications", "Customer Portal") + table("customerNotification", portalRows("notifications"), customerNotificationColumns(), false) + "</article><article class=\"panel\">" + panelHeader("Activity Logs", "Customer Portal") + table("customerActivity", portalRows("activityLogs"), customerActivityColumns(), false) + "</article></section>"; }
+
+function myEmployeeRecord() {
+  return state.employees.find((row) => row.userName === currentUserName()) || null;
+}
+
+function leaveRequestColumns() {
+  return [
+    ["requestNo", "Request No"],
+    ["employeeName", "Employee"],
+    ["leaveType", "Type"],
+    ["startDate", "Start"],
+    ["endDate", "End"],
+    ["totalDays", "Days"],
+    ["status", "Status"]
+  ];
+}
+
+function payslipColumns() {
+  return [
+    ["payslipNo", "Payslip No"],
+    ["employeeName", "Employee"],
+    ["period", "Period"],
+    ["grossPay", "Gross Pay"],
+    ["deductions", "Deductions"],
+    ["netPay", "Net Pay"],
+    ["status", "Status"]
+  ];
+}
+
+function employeeColumns() {
+  return [
+    ["employeeCode", "Employee Code"],
+    ["fullName", "Full Name"],
+    ["department", "Department"],
+    ["designation", "Designation"],
+    ["employmentStatus", "Status"],
+    ["reportingManager", "Reporting Manager"]
+  ];
+}
+
+function announcementCard(row) {
+  const posted = String(row.postedAt || "").replace("T", " ").slice(0, 16);
+  return `<article class="alert${row.pinned ? " hr-announcement-pinned" : ""}"><strong>${escapeHtml(row.pinned ? "📌 " : "")}${escapeHtml(row.title)}</strong><span>${escapeHtml(row.body)}</span><small>${escapeHtml(row.postedBy)} | ${escapeHtml(posted)}</small></article>`;
+}
+
+function renderHrDashboard() {
+  const myRecord = myEmployeeRecord();
+  const myLeave = state.leaveRequests.filter((row) => row.userName === currentUserName());
+  const pendingLeave = myLeave.filter((row) => row.status === "Pending").length;
+  const approvedLeave = myLeave.filter((row) => row.status === "Approved").length;
+  const myPayslips = state.payslips.filter((row) => row.userName === currentUserName());
+  const announcements = [...state.hrAnnouncements].sort((a, b) => (b.pinned - a.pinned) || (b.postedAt || "").localeCompare(a.postedAt || ""));
+  return `<section class="kpi-grid">
+      ${kpi("My Pending Leave", pendingLeave, "Awaiting approval")}
+      ${kpi("My Approved Leave", approvedLeave, "This account")}
+      ${kpi("My Payslips", myPayslips.length, "Available to view")}
+      ${kpi("Announcements", announcements.length, "Company wide")}
+    </section>
+    <section class="split-grid">
+      <article class="panel">${panelHeader("My Profile")}
+        ${myRecord
+          ? `<p><strong>${escapeHtml(myRecord.fullName || currentUserName())}</strong></p><p>${escapeHtml(myRecord.designation || "")} ${myRecord.department ? "| " + escapeHtml(myRecord.department) : ""}</p>`
+          : empty("No employee profile on file yet. Contact HR to set one up.")}
+      </article>
+      <article class="panel">${panelHeader("Latest Announcements")}
+        ${announcements.length ? announcements.slice(0, 3).map(announcementCard).join("") : empty("No announcements yet.")}
+      </article>
+    </section>`;
+}
+
+function renderHrProfile() {
+  const myRecord = myEmployeeRecord();
+  if (!myRecord) {
+    return `<section class="panel">${panelHeader("My Profile")}${empty("No employee profile on file yet. Contact HR to set one up.")}</section>`;
+  }
+  return `<section class="panel">${panelHeader("My Profile")}
+    <div class="detail-grid">
+      ${input("employeeCode", "Employee Code", myRecord.employeeCode, true)}
+      ${input("fullName", "Full Name", myRecord.fullName, true)}
+      ${input("department", "Department", myRecord.department, true)}
+      ${input("designation", "Designation", myRecord.designation, true)}
+      ${input("joinDate", "Join Date", myRecord.joinDate, true, "date")}
+      ${input("phone", "Phone", myRecord.phone, true)}
+      ${input("personalEmail", "Personal Email", myRecord.personalEmail, true)}
+      ${input("employmentStatus", "Employment Status", myRecord.employmentStatus, true)}
+      ${input("reportingManager", "Reporting Manager", myRecord.reportingManager, true)}
+    </div>
+    <p class="empty-state">To update your profile details, contact HR.</p>
+  </section>`;
+}
+
+function renderHrDirectory() {
+  return `<section class="panel">${panelHeader("Employee Directory")}
+    ${table("employee", state.employees, employeeColumns(), false)}
+  </section>`;
+}
+
+function renderHrLeave() {
+  const myLeave = state.leaveRequests.filter((row) => row.userName === currentUserName());
+  return `<section class="panel">${panelHeader("My Leave")}
+    <div class="action-row"><button type="button" data-action="new-record" data-type="leaveRequest">Apply for Leave</button></div>
+    ${table("leaveRequest", myLeave, leaveRequestColumns(), false)}
+  </section>`;
+}
+
+function renderHrPayslips() {
+  const myPayslips = state.payslips.filter((row) => row.userName === currentUserName());
+  return `<section class="panel">${panelHeader("My Payslips")}
+    ${table("payslip", myPayslips, payslipColumns(), false)}
+  </section>`;
+}
+
+function renderHrAnnouncements() {
+  const announcements = [...state.hrAnnouncements].sort((a, b) => (b.pinned - a.pinned) || (b.postedAt || "").localeCompare(a.postedAt || ""));
+  return `<section class="panel">${panelHeader("Announcements")}
+    ${announcements.length ? announcements.map(announcementCard).join("") : empty("No announcements yet.")}
+  </section>`;
+}
+
+function renderHrAdminEmployees() {
+  if (!isHrAdmin()) return `<section class="panel">${panelHeader("Access Denied")}${empty("Only HR Admin can manage employee records.")}</section>`;
+  return `<section class="panel">${panelHeader("Manage Employees")}
+    <div class="action-row"><button type="button" data-action="new-record" data-type="employee">New Employee</button></div>
+    ${table("employee", state.employees, employeeColumns(), false)}
+    ${hrAdminDeletePanel("employee", "Employee")}
+  </section>`;
+}
+
+function renderHrAdminLeaveApprovals() {
+  if (!isHrAdmin()) return `<section class="panel">${panelHeader("Access Denied")}${empty("Only HR Admin can review leave requests.")}</section>`;
+  return `<section class="panel">${panelHeader("Leave Approvals")}
+    ${table("leaveRequest", state.leaveRequests, leaveRequestColumns(), false)}
+  </section>`;
+}
+
+function renderHrAdminPayslips() {
+  if (!isHrAdmin()) return `<section class="panel">${panelHeader("Access Denied")}${empty("Only HR Admin can manage payslips.")}</section>`;
+  return `<section class="panel">${panelHeader("Manage Payslips")}
+    <div class="action-row"><button type="button" data-action="new-record" data-type="payslip">Issue Payslip</button></div>
+    ${table("payslip", state.payslips, payslipColumns(), false)}
+    ${hrAdminDeletePanel("payslip", "Payslip")}
+  </section>`;
+}
+
+function renderHrAdminAnnouncements() {
+  if (!isHrAdmin()) return `<section class="panel">${panelHeader("Access Denied")}${empty("Only HR Admin can post announcements.")}</section>`;
+  const announcements = [...state.hrAnnouncements].sort((a, b) => (b.pinned - a.pinned) || (b.postedAt || "").localeCompare(a.postedAt || ""));
+  return `<section class="panel">${panelHeader("Post Announcement")}
+    <div class="action-row"><button type="button" data-action="new-record" data-type="hrAnnouncement">New Announcement</button></div>
+    ${announcements.length ? announcements.map(announcementCard).join("") : empty("No announcements yet.")}
+    ${hrAdminDeletePanel("hrAnnouncement", "Announcement")}
+  </section>`;
+}
 
 function portalCustomerCount() {
   return Array.isArray(state.customerUsers) ? state.customerUsers.length : 0;
@@ -2506,6 +2797,17 @@ function allUserRequests() {
 function adminDeletePanel(type, label, note = "") {
   if (!isAdminSession()) return "";
   return `<section class="panel admin-delete-panel">${panelHeader(`Delete ${label}`, "Admin Only")}
+    ${deleteSelectorMarkup(type, `${label} To Delete`)}
+    <div class="action-row">
+      <button type="button" class="danger-button" data-action="delete-record" data-type="${escapeHtml(type)}">Delete ${escapeHtml(label)}</button>
+    </div>
+    ${note ? `<p class="empty-state">${escapeHtml(note)}</p>` : ""}
+  </section>`;
+}
+
+function hrAdminDeletePanel(type, label, note = "") {
+  if (!isHrAdmin()) return "";
+  return `<section class="panel admin-delete-panel">${panelHeader(`Delete ${label}`, "HR Admin Only")}
     ${deleteSelectorMarkup(type, `${label} To Delete`)}
     <div class="action-row">
       <button type="button" class="danger-button" data-action="delete-record" data-type="${escapeHtml(type)}">Delete ${escapeHtml(label)}</button>
@@ -3308,6 +3610,17 @@ function tableRow(type, row, index, columns, showLoad = true) {
 
 
 function tableActionButton(type, id) {
+  if (type === "leaveRequest") {
+    const record = state.leaveRequests.find((row) => row.requestNo === id);
+    const isPending = String(record?.status || "").toLowerCase() === "pending";
+    const canDecide = isHrAdmin() && isPending;
+    return `<div class="row-action-group">
+      <button class="ghost-button" data-action="open" data-type="leaveRequest" data-id="${escapeHtml(id)}">Open</button>
+      ${canDecide ? `<button class="ghost-button" data-action="approve-leave-request" data-id="${escapeHtml(id)}">Approve</button>` : ""}
+      ${canDecide ? `<button class="ghost-button" data-action="reject-leave-request" data-id="${escapeHtml(id)}">Reject</button>` : ""}
+    </div>`;
+  }
+
   if (type === "load") {
     return `<button class="ghost-button" data-action="view-load" data-id="${escapeHtml(id)}">View Jobs</button>`;
   }
@@ -3948,7 +4261,11 @@ function rowId(type, row) {
     unblock: "requestNo",
     adminRequest: "requestNo",
     userRequest: "requestNo",
-    audit: "id"
+    audit: "id",
+    employee: "userName",
+    leaveRequest: "requestNo",
+    payslip: "payslipNo",
+    hrAnnouncement: "id"
   };
   const id = row[keys[type]] || "";
   return type === "userRequest" ? `${row.sourceType}:${id}` : id;
@@ -3973,7 +4290,11 @@ function collectionFor(type) {
     unblock: state.unblockRequests,
     adminRequest: state.adminRequests,
     userRequest: allUserRequests(),
-    audit: state.audit
+    audit: state.audit,
+    employee: state.employees,
+    leaveRequest: state.leaveRequests,
+    payslip: state.payslips,
+    hrAnnouncement: state.hrAnnouncements
   };
   return collections[type] || [];
 }
@@ -4014,6 +4335,16 @@ async function handleModuleClick(event) {
 
   if (action === "send-back-shipment-request") {
     sendBackShipmentRequest(id);
+    return;
+  }
+
+  if (action === "approve-leave-request") {
+    decideLeaveRequest(id, true);
+    return;
+  }
+
+  if (action === "reject-leave-request") {
+    decideLeaveRequest(id, false);
     return;
   }
 
@@ -4570,7 +4901,11 @@ function allCollectionFor(type) {
     user: state.users,
     customerUser: state.customerUsers,
     unblock: state.unblockRequests,
-    adminRequest: state.adminRequests
+    adminRequest: state.adminRequests,
+    employee: state.employees,
+    leaveRequest: state.leaveRequests,
+    payslip: state.payslips,
+    hrAnnouncement: state.hrAnnouncements
   };
   return collections[type] || collectionFor(type);
 }
@@ -4582,7 +4917,7 @@ function notifyDuplicate(id) {
 }
 
 function detailFieldControl(type, key, value, record) {
-  const readonlyKeys = new Set(["jobNo", "loadNo", "code", "tariffNo", "documentNo", "invoiceNo", "refNo", "userName", "requestNo"]);
+  const readonlyKeys = new Set(["jobNo", "loadNo", "code", "tariffNo", "documentNo", "invoiceNo", "refNo", "userName", "requestNo", "payslipNo"]);
   const options = detailFieldOptions(type, key, record);
   if (type === "shipment" && ["sell", "buyCost"].includes(key)) {
     return "";
@@ -4682,6 +5017,12 @@ function detailFieldOptions(type, key, record) {
   if (key === "supplier") return state.suppliers.map((row) => row.name);
   if (key === "shipmentNo" || key === "linkedNo" || key === "jobNo") return shipmentOptions();
   if (type === "load" && key === "jobNumbers") return [];
+  if (type === "leaveRequest" && key === "status") return ["Pending", "Approved", "Rejected", "Cancelled"];
+  if (type === "leaveRequest" && key === "leaveType") return dropdownOptions("leaveType", ["Annual", "Sick", "Unpaid", "Emergency", "Maternity/Paternity"]);
+  if (type === "payslip" && key === "status") return ["Issued", "Draft", "Paid"];
+  if (type === "employee" && key === "employmentStatus") return ["Active", "On Leave", "Inactive", "Resigned"];
+  if (type === "employee" && key === "department") return dropdownOptions("department", ["Operations", "Sales", "Finance", "HR", "Management", "IT"]);
+  if (type === "hrAnnouncement" && key === "audience") return ["All", "Management", "Operations", "Finance"];
   return common[key] || [];
 }
 
@@ -4695,7 +5036,24 @@ function branchViewScopeOptions() {
   return ["Assigned Branch Only", "All Branches"];
 }
 
+let isSavingDialogRecord = false;
+
 async function saveDialogRecord() {
+  if (isSavingDialogRecord) return;
+  isSavingDialogRecord = true;
+  const originalButtonText = dialogSave.textContent;
+  dialogSave.disabled = true;
+  dialogSave.textContent = "Saving...";
+  try {
+    await saveDialogRecordInner();
+  } finally {
+    isSavingDialogRecord = false;
+    dialogSave.disabled = false;
+    dialogSave.textContent = originalButtonText;
+  }
+}
+
+async function saveDialogRecordInner() {
   if (dialogState?.onSave) {
     await dialogState.onSave();
     return;
@@ -4766,12 +5124,18 @@ async function saveDialogRecord() {
   }
 
   const changeSummary = summarizeChanges(editing.record, updatedRecord);
+  const originalSnapshot = { ...editing.record };
   Object.assign(editing.record, updatedRecord);
   const editedType = editing.type;
   const editedId = editing.id;
-  addHistory(`Updated ${editing.type}`, editing.id, changeSummary);
   const saved = await persistRecord(editing.type, editing.record);
-  if (editedType === "load" && saved) await syncManifestShipmentStatuses(editing.record);
+  if (!saved) {
+    Object.assign(editing.record, originalSnapshot);
+    notifyDenied("Not saved", "This change could not be saved to the server. Please try again.");
+    return;
+  }
+  addHistory(`Updated ${editing.type}`, editing.id, changeSummary);
+  if (editedType === "load") await syncManifestShipmentStatuses(editing.record);
   if (editedType === "shipment") await createShipmentDocument(data, editedId);
   saveState();
   resetDialogShell();
@@ -5088,6 +5452,34 @@ function dialogConfigFor(type, mode = "") {
       saveLabel: "Create Account",
       body: customerUserDialogBody(),
       onSave: createCustomerUserAccount
+    },
+    employee: {
+      title: "New Employee Profile",
+      typeLabel: "Employee",
+      saveLabel: "Save Employee",
+      body: employeeDialogBody(),
+      onSave: createEmployee
+    },
+    leaveRequest: {
+      title: "Apply for Leave",
+      typeLabel: "Leave Request",
+      saveLabel: "Submit Leave Request",
+      body: leaveRequestDialogBody(),
+      onSave: createLeaveRequest
+    },
+    payslip: {
+      title: "Issue Payslip",
+      typeLabel: "Payslip",
+      saveLabel: "Save Payslip",
+      body: payslipDialogBody(),
+      onSave: createPayslip
+    },
+    hrAnnouncement: {
+      title: "Post Announcement",
+      typeLabel: "Announcement",
+      saveLabel: "Post Announcement",
+      body: hrAnnouncementDialogBody(),
+      onSave: createHrAnnouncement
     }
   };
 
@@ -5365,6 +5757,66 @@ function customerUserDialogBody(record) {
   `;
 }
 
+function employeeDialogBody(record) {
+  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
+  const loaded = Boolean(record);
+  const userOptions = state.users.map((row) => ({ value: row.userName, label: `${row.userName} (${row.role || "User"})` }));
+  return `
+    ${strictSelect("userName", "Login User", userOptions, fieldValue("userName"))}
+    ${input("employeeCode", "Employee Code", fieldValue("employeeCode"))}
+    ${input("fullName", "Full Name", fieldValue("fullName"))}
+    ${input("department", "Department", fieldValue("department"))}
+    ${input("designation", "Designation", fieldValue("designation"))}
+    ${input("joinDate", "Join Date", fieldValue("joinDate", today()), false, "date")}
+    ${input("phone", "Phone", fieldValue("phone"))}
+    ${input("personalEmail", "Personal Email", fieldValue("personalEmail"), false, "email")}
+    ${strictSelect("employmentStatus", "Employment Status", ["Active", "On Leave", "Inactive"], fieldValue("employmentStatus", "Active"))}
+    ${input("reportingManager", "Reporting Manager", fieldValue("reportingManager"))}
+    ${textarea("notes", "Notes", fieldValue("notes"), false, 3)}
+    ${loaded ? "" : `<p class="empty-state">Tip: turn on this user's HR Portal access from Settings &gt; User Management so they can log in with Employee Login.</p>`}
+  `;
+}
+
+function leaveRequestDialogBody(record) {
+  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
+  const employeeRecord = state.employees.find((row) => row.userName === currentUserName());
+  return `
+    <input type="hidden" name="requestNo" value="${escapeHtml(fieldValue("requestNo", nextNumber("LV", state.leaveRequests, "requestNo")))}" />
+    <input type="hidden" name="userName" value="${escapeHtml(fieldValue("userName", currentUserName()))}" />
+    ${input("employeeName", "Employee Name", fieldValue("employeeName", employeeRecord?.fullName || currentUserName()), true)}
+    ${strictSelect("leaveType", "Leave Type", ["Annual", "Sick", "Unpaid", "Emergency", "Other"], fieldValue("leaveType", "Annual"))}
+    ${input("startDate", "Start Date", fieldValue("startDate", today()), false, "date")}
+    ${input("endDate", "End Date", fieldValue("endDate", today()), false, "date")}
+    ${textarea("reason", "Reason", fieldValue("reason"), false, 3)}
+  `;
+}
+
+function payslipDialogBody(record) {
+  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
+  const userOptions = state.users.map((row) => ({ value: row.userName, label: `${row.userName}` }));
+  return `
+    <input type="hidden" name="payslipNo" value="${escapeHtml(fieldValue("payslipNo", nextNumber("PAY", state.payslips, "payslipNo")))}" />
+    ${strictSelect("userName", "Employee", userOptions, fieldValue("userName"))}
+    ${input("employeeName", "Employee Name", fieldValue("employeeName"))}
+    ${input("period", "Period (e.g. 2026-07)", fieldValue("period", new Date().toISOString().slice(0, 7)))}
+    ${input("grossPay", "Gross Pay", fieldValue("grossPay", "0"), false, "number")}
+    ${input("deductions", "Deductions", fieldValue("deductions", "0"), false, "number")}
+    ${input("netPay", "Net Pay", fieldValue("netPay", "0"), false, "number")}
+    ${strictSelect("status", "Status", ["Issued", "Paid"], fieldValue("status", "Issued"))}
+    ${input("issuedDate", "Issued Date", fieldValue("issuedDate", today()), false, "date")}
+  `;
+}
+
+function hrAnnouncementDialogBody(record) {
+  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
+  return `
+    ${input("title", "Title", fieldValue("title"))}
+    ${textarea("body", "Message", fieldValue("body"), false, 5)}
+    ${strictSelect("audience", "Audience", ["All"], fieldValue("audience", "All"))}
+    ${strictSelect("pinned", "Pin to top", ["No", "Yes"], fieldValue("pinned") === true || fieldValue("pinned") === "Yes" ? "Yes" : "No")}
+  `;
+}
+
 function userDialogBody() {
   const checkedSections = sectionAccessSet("Dashboard, Shipment / Airway, Reports");
   return `
@@ -5380,6 +5832,7 @@ function userDialogBody() {
     ${checkbox("canViewOnlySelfEntry", "User can view only self entry", true)}
     ${checkbox("canEditAllEntry", "User can edit all entry")}
     ${checkbox("canViewUpdatedHistory", "User can view updated history", true)}
+    ${checkbox("hrPortalAccess", "Allow HR Portal access (Employee Login)")}
     ${input("notes", "Notes", "Created from admin panel")}
   `;
 }
@@ -8390,6 +8843,165 @@ async function createCustomerUserAccount(data) {
   return true;
 }
 
+async function createEmployee(data) {
+  const userName = String(data.userName || "").trim();
+  if (!userName) {
+    notifyDenied("Employee not saved", "Select a login user first.");
+    return false;
+  }
+  const existing = state.employees.find((row) => row.userName === userName);
+  const record = {
+    userName,
+    employeeCode: String(data.employeeCode || "").trim(),
+    fullName: String(data.fullName || "").trim(),
+    department: String(data.department || "").trim(),
+    designation: String(data.designation || "").trim(),
+    joinDate: String(data.joinDate || "").trim(),
+    phone: String(data.phone || "").trim(),
+    personalEmail: String(data.personalEmail || "").trim(),
+    employmentStatus: String(data.employmentStatus || "Active").trim(),
+    reportingManager: String(data.reportingManager || "").trim(),
+    notes: String(data.notes || "").trim()
+  };
+  if (existing) {
+    Object.assign(existing, record);
+    const saved = await persistRecord("employee", existing);
+    if (!saved) {
+      notifyDenied("Employee not saved", "Could not save this to the server. Please try again.");
+      return false;
+    }
+  } else {
+    state.employees.unshift(record);
+    const saved = await postRecord("employee", record);
+    if (!saved) {
+      notifyDenied("Employee not saved", "Could not save this to the server. Please try again.");
+      return false;
+    }
+  }
+  addHistory("Saved employee profile", userName);
+  notifySuccess("Employee saved", userName + " was saved successfully.");
+  return true;
+}
+
+async function createLeaveRequest(data) {
+  const startDate = String(data.startDate || "").trim();
+  const endDate = String(data.endDate || "").trim();
+  if (!startDate || !endDate) {
+    notifyDenied("Leave request not submitted", "Select a start and end date first.");
+    return false;
+  }
+  if (new Date(endDate) < new Date(startDate)) {
+    notifyDenied("Leave request not submitted", "End date cannot be before the start date.");
+    return false;
+  }
+  const totalDays = Math.round((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1;
+  const requestNo = String(data.requestNo || nextNumber("LV", state.leaveRequests, "requestNo"));
+  const record = {
+    requestNo,
+    userName: String(data.userName || currentUserName()).trim(),
+    employeeName: String(data.employeeName || currentUserName()).trim(),
+    leaveType: String(data.leaveType || "Annual").trim(),
+    startDate,
+    endDate,
+    totalDays,
+    reason: String(data.reason || "").trim(),
+    status: "Pending",
+    approvedBy: "",
+    approvedAt: "",
+    appliedAt: new Date().toISOString()
+  };
+  state.leaveRequests.unshift(record);
+  const saved = await postRecord("leaveRequest", record);
+  if (!saved) {
+    notifyDenied("Leave request not submitted", "Could not save this to the server. Please try again.");
+    return false;
+  }
+  addHistory("Applied for leave", requestNo);
+  notifySuccess("Leave request submitted", `${requestNo} was submitted for approval.`);
+  return true;
+}
+
+async function decideLeaveRequest(requestNo, approve) {
+  const record = state.leaveRequests.find((row) => row.requestNo === requestNo);
+  if (!record) return;
+  if (!isHrAdmin()) {
+    notifyDenied("Not allowed", "Only HR Admin can approve or reject leave requests.");
+    return;
+  }
+  record.status = approve ? "Approved" : "Rejected";
+  record.approvedBy = currentUserName();
+  record.approvedAt = new Date().toISOString();
+  const saved = await persistRecord("leaveRequest", record);
+  if (!saved) {
+    notifyDenied("Not saved", "Could not save this to the server. Please try again.");
+    return;
+  }
+  addHistory(approve ? "Approved leave request" : "Rejected leave request", requestNo);
+  notifySuccess(approve ? "Leave approved" : "Leave rejected", requestNo);
+  saveState();
+  render();
+}
+
+async function createPayslip(data) {
+  const userName = String(data.userName || "").trim();
+  if (!userName) {
+    notifyDenied("Payslip not saved", "Select an employee first.");
+    return false;
+  }
+  const payslipNo = String(data.payslipNo || nextNumber("PAY", state.payslips, "payslipNo"));
+  if (duplicateRecordExists("payslip", payslipNo)) {
+    notifyDuplicate(payslipNo);
+    return false;
+  }
+  const record = {
+    payslipNo,
+    userName,
+    employeeName: String(data.employeeName || userName).trim(),
+    period: String(data.period || "").trim(),
+    grossPay: Number(data.grossPay || 0),
+    deductions: Number(data.deductions || 0),
+    netPay: Number(data.netPay || (Number(data.grossPay || 0) - Number(data.deductions || 0))),
+    status: String(data.status || "Issued").trim(),
+    issuedDate: String(data.issuedDate || today()).trim(),
+    storageUrl: ""
+  };
+  state.payslips.unshift(record);
+  const saved = await postRecord("payslip", record);
+  if (!saved) {
+    notifyDenied("Payslip not saved", "Could not save this to the server. Please try again.");
+    return false;
+  }
+  addHistory("Issued payslip", payslipNo);
+  notifySuccess("Payslip issued", `${payslipNo} was issued to ${record.userName}.`);
+  return true;
+}
+
+async function createHrAnnouncement(data) {
+  const title = String(data.title || "").trim();
+  if (!title) {
+    notifyDenied("Announcement not posted", "Enter a title first.");
+    return false;
+  }
+  const record = {
+    id: String(Date.now()),
+    title,
+    body: String(data.body || "").trim(),
+    postedBy: currentUserName(),
+    audience: String(data.audience || "All").trim(),
+    pinned: String(data.pinned || "No") === "Yes",
+    postedAt: new Date().toISOString()
+  };
+  state.hrAnnouncements.unshift(record);
+  const saved = await postRecord("hrAnnouncement", record);
+  if (!saved) {
+    notifyDenied("Announcement not posted", "Could not save this to the server. Please try again.");
+    return false;
+  }
+  addHistory("Posted announcement", title);
+  notifySuccess("Announcement posted", title);
+  return true;
+}
+
 async function createUser(data) {
   const userName = String(data.userName || "").trim();
   if (!userName) {
@@ -8419,12 +9031,153 @@ async function createUser(data) {
     data.canViewUpdatedHistory,
     password,
     String(data.notes || "").trim(),
-    data.createdDate || today()
+    data.createdDate || today(),
+    data.hrPortalAccess
   );
   state.users.unshift(record);
   await postRecord("user", record);
   addHistory("Created user", userName);
   notifySuccess("User created", userName + " was saved successfully.");
+  return true;
+}
+
+function nextHrNumber(prefix, collection, key) {
+  return nextNumber(prefix, collection, key);
+}
+
+async function createEmployee(data) {
+  const userName = String(data.userName || "").trim();
+  if (!userName) {
+    notifyDenied("Employee not saved", "Select a user account first.");
+    return false;
+  }
+  if (duplicateRecordExists("employee", userName)) {
+    notifyDuplicate(userName);
+    return false;
+  }
+  const record = {
+    userName,
+    employeeCode: String(data.employeeCode || "").trim(),
+    fullName: String(data.fullName || "").trim(),
+    department: String(data.department || "").trim(),
+    designation: String(data.designation || "").trim(),
+    joinDate: data.joinDate || today(),
+    phone: String(data.phone || "").trim(),
+    personalEmail: String(data.personalEmail || "").trim(),
+    employmentStatus: String(data.employmentStatus || "Active").trim(),
+    reportingManager: String(data.reportingManager || "").trim(),
+    notes: String(data.notes || "").trim()
+  };
+  state.employees.unshift(record);
+  await postRecord("employee", record);
+  addHistory("Created employee profile", userName);
+  notifySuccess("Employee saved", userName + " was saved successfully.");
+  return true;
+}
+
+async function createLeaveRequest(data) {
+  const startDate = data.startDate || today();
+  const endDate = data.endDate || startDate;
+  if (new Date(endDate) < new Date(startDate)) {
+    notifyDenied("Leave not submitted", "End date cannot be before the start date.");
+    return false;
+  }
+  const totalDays = Math.max(1, Math.round((new Date(endDate) - new Date(startDate)) / 86400000) + 1);
+  const userName = currentUserName();
+  const employeeRecord = state.employees.find((row) => row.userName === userName);
+  const record = {
+    requestNo: nextHrNumber("LV", state.leaveRequests, "requestNo"),
+    userName,
+    employeeName: employeeRecord?.fullName || userName,
+    leaveType: String(data.leaveType || "Annual").trim(),
+    startDate,
+    endDate,
+    totalDays,
+    reason: String(data.reason || "").trim(),
+    status: "Pending",
+    approvedBy: "",
+    approvedAt: "",
+    appliedAt: new Date().toISOString()
+  };
+  state.leaveRequests.unshift(record);
+  await postRecord("leaveRequest", record);
+  addHistory("Applied for leave", record.requestNo);
+  notifySuccess("Leave request submitted", `${record.requestNo} was submitted for approval.`);
+  return true;
+}
+
+async function decideLeaveRequest(requestNo, status) {
+  if (!isHrAdmin()) {
+    notifyDenied("Not allowed", "Only HR admins can approve or reject leave requests.");
+    return;
+  }
+  const record = state.leaveRequests.find((row) => row.requestNo === requestNo);
+  if (!record) return;
+  const updated = {
+    ...record,
+    status,
+    approvedBy: currentUserName(),
+    approvedAt: new Date().toISOString()
+  };
+  const saved = await persistRecord("leaveRequest", updated);
+  if (!saved) return;
+  Object.assign(record, updated);
+  addHistory(status === "Approved" ? "Approved leave request" : "Rejected leave request", requestNo);
+  notifySuccess(`Leave ${status.toLowerCase()}`, `${requestNo} was ${status.toLowerCase()}.`);
+  saveState();
+  render();
+}
+
+async function createPayslip(data) {
+  const userName = String(data.userName || "").trim();
+  if (!userName) {
+    notifyDenied("Payslip not saved", "Select an employee first.");
+    return false;
+  }
+  const employeeRecord = state.employees.find((row) => row.userName === userName);
+  const grossPay = Number(data.grossPay || 0);
+  const deductions = Number(data.deductions || 0);
+  const record = {
+    payslipNo: nextHrNumber("PAY", state.payslips, "payslipNo"),
+    userName,
+    employeeName: employeeRecord?.fullName || userName,
+    period: String(data.period || "").trim(),
+    grossPay,
+    deductions,
+    netPay: Number(data.netPay || (grossPay - deductions)),
+    status: String(data.status || "Issued").trim(),
+    issuedDate: data.issuedDate || today(),
+    storageUrl: ""
+  };
+  state.payslips.unshift(record);
+  await postRecord("payslip", record);
+  addHistory("Issued payslip", record.payslipNo);
+  notifySuccess("Payslip issued", `${record.payslipNo} was issued to ${record.employeeName}.`);
+  return true;
+}
+
+async function createHrAnnouncement(data) {
+  const title = String(data.title || "").trim();
+  if (!title) {
+    notifyDenied("Announcement not posted", "Enter a title first.");
+    return false;
+  }
+  const record = {
+    id: `new-${Date.now()}`,
+    title,
+    body: String(data.body || "").trim(),
+    postedBy: currentUserName(),
+    audience: String(data.audience || "All").trim(),
+    pinned: String(data.pinned || "No") === "Yes",
+    postedAt: new Date().toISOString()
+  };
+  state.hrAnnouncements.unshift(record);
+  const saved = await postRecord("hrAnnouncement", record);
+  if (saved && typeof saved === "object" && saved.id !== undefined) {
+    record.id = String(saved.id);
+  }
+  addHistory("Posted announcement", title);
+  notifySuccess("Announcement posted", title + " was published.");
   return true;
 }
 
@@ -8601,7 +9354,11 @@ function endpointFor(type) {
     unblock: "unblock-requests",
     adminRequest: "admin-requests",
     audit: "audit",
-    settings: "settings"
+    settings: "settings",
+    employee: "employees",
+    leaveRequest: "leave-requests",
+    payslip: "payslips",
+    hrAnnouncement: "hr-announcements"
   }[type];
 }
 
