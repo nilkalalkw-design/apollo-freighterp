@@ -11,22 +11,6 @@ const customerModules = [
   ["Customer Notifications", "Portal messages and activity"]
 ];
 
-const hrModules = [
-  ["HR Dashboard", "Your profile summary, leave balance, and latest announcements"],
-  ["My Profile", "Your employee profile details"],
-  ["Employee Directory", "Browse colleagues by department"],
-  ["My Leave", "Apply for leave and track your requests"],
-  ["My Payslips", "View and download your payslips"],
-  ["Announcements", "Company announcements"]
-];
-
-const hrAdminModules = [
-  ["Manage Employees", "Create and update employee profiles"],
-  ["Leave Approvals", "Review and approve or reject leave requests"],
-  ["Manage Payslips", "Issue payslips to employees"],
-  ["Post Announcement", "Publish a company announcement"]
-];
-
 const modules = [
   ["Dashboard", "Live operational summary for land freight consolidation"],
   ["Shipment / Airway", "Create, track, duplicate, and close cargo shipments and airway bills"],
@@ -201,14 +185,6 @@ function seedState() {
     unblockRequests: [],
     adminRequests: [],
     audit: [],
-    employees: [
-      { userName: "admin", employeeCode: "EMP-0001", fullName: "System Administrator", department: "Management", designation: "Administrator", joinDate: "2024-01-01", phone: "", personalEmail: "", employmentStatus: "Active", reportingManager: "", notes: "Demo employee record" }
-    ],
-    leaveRequests: [],
-    payslips: [],
-    hrAnnouncements: [
-      { id: "1", title: "Welcome to the HR Portal", body: "This is a demo announcement. Connect a database to start managing real employee records, leave requests, payslips, and announcements.", postedBy: "admin", audience: "All", pinned: true, postedAt: today }
-    ],
     settings: {
       settingsKey: "default",
       companyName: "APOLLO FREIGHT SOLUTIONS",
@@ -261,7 +237,6 @@ function parseJsonMeta(value) {
 function shipmentMetaNotes(data) {
   return JSON.stringify({
     shipmentDate: String(data.shipmentDate || "").trim(),
-    expectedArrivalDate: String(data.expectedArrivalDate || "").trim(),
     transportMode: String(data.transportMode || "").trim(),
     loadType: String(data.loadType || "").trim(),
     expectedArrivalDate: String(data.expectedArrivalDate || "").trim(),
@@ -424,10 +399,8 @@ function shipment(
     volumeCategory,
     chargeableDivisor,
     shipmentDate: meta.shipmentDate || "",
-    expectedArrivalDate: meta.expectedArrivalDate || "",
     transportMode: meta.transportMode || "",
     loadType: meta.loadType || "",
-    expectedArrivalDate: meta.expectedArrivalDate || "",
     customerCode: meta.customerCode || "",
     customerContactPerson: meta.customerContactPerson || "",
     customerMobile: meta.customerMobile || "",
@@ -509,6 +482,7 @@ function shipment(
     deliveryNoteNo: meta.deliveryNoteNo || "",
     ginNo: meta.ginNo || "",
     customerReference: meta.customerReference || "",
+    expectedArrivalDate: meta.expectedArrivalDate || "",
     shipmentRemarks: meta.shipmentRemarks || "",
     vehicleType: meta.vehicleType || "",
     deliveryRemarks: meta.deliveryRemarks || "",
@@ -868,8 +842,7 @@ function user(
   canViewUpdatedHistory,
   password = "",
   notes = "Web demo user",
-  createdDate = today(),
-  hrPortalAccess = false
+  createdDate = today()
 ) {
   return {
     userName,
@@ -885,8 +858,7 @@ function user(
     canViewUpdatedHistory: isChecked(canViewUpdatedHistory),
     password,
     notes,
-    createdDate,
-    hrPortalAccess: isChecked(hrPortalAccess)
+    createdDate
   };
 }
 
@@ -973,10 +945,6 @@ function normalizeState(stored) {
     unblockRequests: Array.isArray(stored.unblockRequests) ? stored.unblockRequests : defaults.unblockRequests,
     adminRequests: Array.isArray(stored.adminRequests) ? stored.adminRequests : defaults.adminRequests,
     audit: Array.isArray(stored.audit) ? stored.audit : defaults.audit,
-    employees: Array.isArray(stored.employees) ? stored.employees : defaults.employees,
-    leaveRequests: Array.isArray(stored.leaveRequests) ? stored.leaveRequests : defaults.leaveRequests,
-    payslips: Array.isArray(stored.payslips) ? stored.payslips : defaults.payslips,
-    hrAnnouncements: Array.isArray(stored.hrAnnouncements) ? stored.hrAnnouncements : defaults.hrAnnouncements,
     settings: {
       ...defaults.settings,
       ...(stored.settings || {})
@@ -1054,22 +1022,7 @@ function money(value) {
 }
 
 function today() {
-  return localDate();
-}
-
-function localDate(date = new Date()) {
-  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return offsetDate.toISOString().slice(0, 10);
-}
-
-function localDateTime(date = new Date()) {
-  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return offsetDate.toISOString().slice(0, 16).replace("T", " ");
-}
-
-function localDateTimeInput(date = new Date()) {
-  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return offsetDate.toISOString().slice(0, 16);
+  return new Date().toISOString().slice(0, 10);
 }
 
 function nextNumber(prefix, collection, field) {
@@ -1182,37 +1135,6 @@ function filteredRows(rows) {
   });
 }
 
-function shipmentStatusKey(status) { return String(status || "").trim().toLowerCase().replace(/[\s_-]+/g, " "); }
-function shipmentIsDelivered(row) { return /delivered|completed|closed|invoiced/.test(shipmentStatusKey(row.status)); }
-function shipmentIsCancelled(row) { return /cancelled|returned|damaged/.test(shipmentStatusKey(row.status)); }
-function shipmentHasArrived(row) { return shipmentIsDelivered(row) || /arrived|destination warehouse|out for delivery/.test(shipmentStatusKey(row.status)); }
-function shipmentDateValue(value) { const date = new Date(`${String(value || "").slice(0, 10)}T00:00:00`); return Number.isNaN(date.getTime()) ? null : date; }
-function shipmentDelayAlerts(row) {
-  if (shipmentIsDelivered(row) || shipmentIsCancelled(row)) return [];
-  const todayDate = new Date(); todayDate.setHours(0, 0, 0, 0);
-  const alerts = [];
-  const arrivalDate = row.expectedArrivalDate || row.arrivalDate || (Number(row.transitDays || 0) ? (() => { const start = shipmentDateValue(row.shipmentDate || row.bookingDate); if (!start) return ""; start.setDate(start.getDate() + Number(row.transitDays)); return start.toISOString().slice(0, 10); })() : "");
-  [["Arrival Overdue", arrivalDate, shipmentHasArrived(row)], ["Delivery Overdue", row.expectedDeliveryDate || row.deliveryDate, false]].forEach(([kind, dueDate, reached]) => {
-    const due = shipmentDateValue(dueDate);
-    if (!reached && due && due < todayDate) alerts.push({ kind, due: String(dueDate).slice(0, 10), days: Math.max(1, Math.round((todayDate - due) / 86400000)) });
-  });
-  return alerts;
-}
-function shipmentStatusIcon(status) {
-  const icons = { "shipment created":"📝", "booking confirmed":"✅", "pickup scheduled":"📅", "driver assigned":"👨‍✈️", "pickup started":"🚚", "pickup completed":"📦", "warehouse received":"🏢", "warehouse processing":"📋", "customs submitted":"📄", "customs inspection":"🔍", "customs cleared":"🛃", "waiting for flight":"⏳", "flight departed":"✈️", "vessel departed":"🚢", "train departed":"🚆", "in transit":"🚛", "border crossed":"🌍", "arrived at destination":"📍", "destination warehouse":"🏬", "out for delivery":"🚐", "delivery attempt":"🚪", "delivered":"🎉", "proof of delivery uploaded":"📷", "completed":"✔️", "delayed":"⏰", "on hold":"⏸️", "exception":"⚠️", "damaged cargo":"📦⚠️", "returned":"↩️", "cancelled":"❌" };
-  const key = shipmentStatusKey(status); return icons[key] || (key.includes("delivered") ? "🎉" : key.includes("transit") ? "🚛" : "📦");
-}
-function shipmentVisualState(row) {
-  const alerts = shipmentDelayAlerts(row);
-  if (shipmentIsCancelled(row)) return { key: "cancelled", label: "Cancelled", icon: "❌" };
-  if (alerts.some((alert) => alert.kind === "Delivery Overdue")) return { key: "delivery-overdue", label: "Delivery Overdue", icon: "🚩" };
-  if (alerts.some((alert) => alert.kind === "Arrival Overdue")) return { key: "arrival-overdue", label: "Arrival Overdue", icon: "🚩" };
-  if (/delayed|on hold|exception/.test(shipmentStatusKey(row.status))) return { key: "delayed", label: "Delayed", icon: "⏰" };
-  if (shipmentIsDelivered(row)) return { key: "delivered", label: "Delivered", icon: "✅" };
-  if (/in transit|dispatched|departed/.test(shipmentStatusKey(row.status))) return { key: "in-transit", label: "In Transit", icon: "🚚" };
-  return { key: "on-time", label: "On Time", icon: "●" };
-}
-
 function maybePlayAdminNotification() {
   const pending = pendingRequestCount();
   if (isAdminSession() && lastPendingNotificationCount > 0 && pending > lastPendingNotificationCount) {
@@ -1241,7 +1163,7 @@ function playBeep() {
 }
 
 async function addHistory(action, reference, details = "") {
-  const record = audit(localDateTime(), currentUserName(), action, reference, details);
+  const record = audit(new Date().toISOString().slice(0, 16).replace("T", " "), currentUserName(), action, reference, details);
   state.audit.unshift(record);
   saveState();
   const saved = await postRecord("audit", record);
@@ -1249,6 +1171,29 @@ async function addHistory(action, reference, details = "") {
     record.id = String(saved.id);
     saveState();
   }
+}
+
+function shipmentStatusKey(status) { return String(status || "").trim().toLowerCase().replace(/[\s_-]+/g, " "); }
+function shipmentIsDelivered(row) { return /delivered|completed|closed|invoiced/.test(shipmentStatusKey(row.status)); }
+function shipmentIsCancelled(row) { return /cancelled|returned|damaged/.test(shipmentStatusKey(row.status)); }
+function shipmentHasArrived(row) { return shipmentIsDelivered(row) || /arrived|destination warehouse|out for delivery/.test(shipmentStatusKey(row.status)); }
+function shipmentDateValue(value) { const date = new Date(`${String(value || "").slice(0, 10)}T00:00:00`); return Number.isNaN(date.getTime()) ? null : date; }
+
+function shipmentDelayAlerts(row) {
+  if (shipmentIsDelivered(row) || shipmentIsCancelled(row)) return [];
+  const todayDate = new Date(); todayDate.setHours(0, 0, 0, 0);
+  const alerts = [];
+  const arrivalDate = row.expectedArrivalDate || "";
+  [["Arrival Overdue", arrivalDate, shipmentHasArrived(row)]].forEach(([kind, dueDate, reached]) => {
+    const due = shipmentDateValue(dueDate);
+    if (!reached && due && due < todayDate) alerts.push({ kind, due: String(dueDate).slice(0, 10), days: Math.max(1, Math.round((todayDate - due) / 86400000)) });
+  });
+  return alerts;
+}
+
+function shipmentDelayAlertMarkup(alerts) {
+  if (!alerts.length) return "";
+  return `<div class="shipment-delay-alerts">${alerts.map((alert) => `<article class="shipment-delay-alert"><span>🚩</span><div><strong>${escapeHtml(alert.kind)}</strong><p>Expected: ${escapeHtml(alert.due)}</p><p>${escapeHtml(`${alert.days} ${alert.days === 1 ? "Day" : "Days"} Late`)}</p></div></article>`).join("")}</div>`;
 }
 
 function recalculateLoad(loadItem) {
@@ -1290,8 +1235,9 @@ function boot() {
   loginForm.addEventListener("submit", handleLogin);
   loginForm.querySelectorAll("[data-login-mode-option]").forEach((button) => {
     button.addEventListener("click", () => {
-      const modeField = loginForm.querySelector("#loginModeField");
-      if (modeField) modeField.value = button.dataset.loginModeOption || "company";
+      const isCustomer = button.dataset.loginModeOption === "customer";
+      const checkbox = loginForm.querySelector("#customerLoginMode");
+      if (checkbox) checkbox.checked = isCustomer;
       loginForm.querySelectorAll("[data-login-mode-option]").forEach((option) => {
         const active = option === button;
         option.classList.toggle("is-active", active);
@@ -1488,21 +1434,12 @@ function isCustomerSession() {
   return String(currentSession()?.portal || "").toLowerCase() === "customer";
 }
 
-function isHrSession() {
-  return String(currentSession()?.portal || "").toLowerCase() === "employee";
-}
-
-function isHrAdmin() {
-  return isHrSession() && (currentSession()?.role || "").toLowerCase() === "admin";
-}
-
 function isAdminSession() {
-  return !isCustomerSession() && !isHrSession() && (currentSession()?.role || "").toLowerCase() === "admin";
+  return !isCustomerSession() && (currentSession()?.role || "").toLowerCase() === "admin";
 }
 
 function visibleModules() {
   if (isCustomerSession()) return customerModules;
-  if (isHrSession()) return isHrAdmin() ? hrModules.concat(hrAdminModules) : hrModules;
   if (isAdminSession()) return modules;
   const session = currentSession();
   const configured = String(session?.sectionAccess || "").trim();
@@ -1762,25 +1699,13 @@ async function handleLogin(event) {
   const form = new FormData(loginForm);
   const userName = String(form.get("userName") || "").trim();
   const password = String(form.get("password") || "");
-  const loginMode = String(form.get("loginMode") || "company");
+  const customerMode = Boolean(form.get("customerLoginMode"));
 
   try {
-    if (loginMode === "customer") {
-      const loginResult = await attemptCustomerLogin(userName, password);
-      customerPortalData = loginResult.data || null;
-      rememberSession(loginResult.session);
-    } else if (loginMode === "employee") {
-      const session = await attemptApiLogin(userName, password);
-      if (!session.hrPortalAccess) {
-        throw new Error("HR Portal access is not enabled for this account. Contact your Admin to enable it.");
-      }
-      customerPortalData = null;
-      rememberSession({ ...session, portal: "employee" });
-    } else {
-      const session = await attemptApiLogin(userName, password);
-      customerPortalData = null;
-      rememberSession(session);
-    }
+    const loginResult = customerMode ? await attemptCustomerLogin(userName, password) : { session: await attemptApiLogin(userName, password), data: null };
+    customerPortalData = loginResult.data || null;
+    const session = loginResult.session;
+    rememberSession(session);
     loginMessage.textContent = "";
     resetMessage.textContent = "";
     showApp();
@@ -1826,7 +1751,6 @@ function showLogin() {
 function showApp() {
   loginScreen.classList.add("is-hidden");
   appShell.classList.remove("is-hidden");
-  appShell.classList.toggle("hr-portal-theme", isHrSession());
   renderModuleNav();
   updateUserContext();
   syncFromApi();
@@ -1857,11 +1781,7 @@ async function syncFromApi() {
       unblockRequests,
       adminRequests,
       auditLog,
-      settings,
-      employees,
-      leaveRequests,
-      payslips,
-      hrAnnouncements
+      settings
     ] = await Promise.all([
       fetchJson("/api/health"),
       fetchJson("/api/shipments"),
@@ -1880,11 +1800,7 @@ async function syncFromApi() {
       fetchJson("/api/unblock-requests"),
       fetchJson("/api/admin-requests"),
       fetchJson("/api/audit"),
-      fetchJson("/api/settings"),
-      fetchJson("/api/employees"),
-      fetchJson("/api/leave-requests"),
-      fetchJson("/api/payslips"),
-      fetchJson("/api/hr-announcements")
+      fetchJson("/api/settings")
     ]);
 
     const apiMode = health.mode || (health.database === "connected" ? "database" : "demo");
@@ -1912,10 +1828,6 @@ async function syncFromApi() {
       state.unblockRequests = (unblockRequests.rows || []).map(apiUnblockRequest);
       state.adminRequests = (adminRequests.rows || []).map(apiAdminRequest);
       state.audit = (auditLog.rows || []).map(apiAudit);
-      state.employees = (employees.rows || []).map(apiEmployee);
-      state.leaveRequests = (leaveRequests.rows || []).map(apiLeaveRequest);
-      state.payslips = (payslips.rows || []).map(apiPayslip);
-      state.hrAnnouncements = (hrAnnouncements.rows || []).map(apiHrAnnouncement);
       if (settings.rows?.length) {
         state.settings = apiSettings(settings.rows[0]);
         state.dropdownOptions = {
@@ -2091,16 +2003,7 @@ function apiShipmentStatusHistory(row) {
     invoiceStatus: row.invoice_status || "",
     notes: row.notes || "",
     updatedBy: row.updated_by || "",
-    updatedAt: row.updated_at || new Date().toISOString(),
-    fromLocation: row.from_location || row.fromLocation || row.from || "",
-    toLocation: row.to_location || row.toLocation || row.to || "",
-    location: row.location || "",
-    carrier: row.carrier || "",
-    vehicleNo: row.vehicle_no || row.vehicleNo || "",
-    flightNo: row.flight_no || row.flightNo || "",
-    vessel: row.vessel || row.vessel_name || "",
-    departure: row.departure || row.departure_at || "",
-    arrival: row.arrival || row.arrival_at || ""
+    updatedAt: row.updated_at || new Date().toISOString()
   };
 }
 
@@ -2165,8 +2068,7 @@ function apiUser(row) {
     isChecked(row.can_view_updated_history),
     "",
     row.notes || "",
-    String(row.created_at || today()).slice(0, 10),
-    isChecked(row.hr_portal_access)
+    String(row.created_at || today()).slice(0, 10)
   );
 }
 
@@ -2212,66 +2114,6 @@ function apiAudit(row) {
   };
 }
 
-function apiEmployee(row) {
-  return {
-    userName: row.user_name,
-    employeeCode: row.employee_code || "",
-    fullName: row.full_name || "",
-    department: row.department || "",
-    designation: row.designation || "",
-    joinDate: String(row.join_date || "").slice(0, 10),
-    phone: row.phone || "",
-    personalEmail: row.personal_email || "",
-    employmentStatus: row.employment_status || "Active",
-    reportingManager: row.reporting_manager || "",
-    notes: row.notes || ""
-  };
-}
-
-function apiLeaveRequest(row) {
-  return {
-    requestNo: row.request_no,
-    userName: row.user_name,
-    employeeName: row.employee_name || "",
-    leaveType: row.leave_type || "Annual",
-    startDate: String(row.start_date || "").slice(0, 10),
-    endDate: String(row.end_date || "").slice(0, 10),
-    totalDays: Number(row.total_days || 0),
-    reason: row.reason || "",
-    status: row.status || "Pending",
-    approvedBy: row.approved_by || "",
-    approvedAt: row.approved_at || "",
-    appliedAt: row.applied_at || ""
-  };
-}
-
-function apiPayslip(row) {
-  return {
-    payslipNo: row.payslip_no,
-    userName: row.user_name,
-    employeeName: row.employee_name || "",
-    period: row.period || "",
-    grossPay: Number(row.gross_pay || 0),
-    deductions: Number(row.deductions || 0),
-    netPay: Number(row.net_pay || 0),
-    status: row.status || "Issued",
-    issuedDate: String(row.issued_date || "").slice(0, 10),
-    storageUrl: row.storage_url || ""
-  };
-}
-
-function apiHrAnnouncement(row) {
-  return {
-    id: String(row.id),
-    title: row.title || "",
-    body: row.body || "",
-    postedBy: row.posted_by || "",
-    audience: row.audience || "All",
-    pinned: Boolean(row.pinned),
-    postedAt: row.posted_at || ""
-  };
-}
-
 function apiSettings(row) {
   return {
     settingsKey: row.settings_key || state.settings.settingsKey || "default",
@@ -2300,9 +2142,9 @@ function apiSettings(row) {
 
 function render() {
   if (!visibleModules().some(([name]) => name === activeModule)) {
-    activeModule = isCustomerSession() ? "Customer Dashboard" : isHrSession() ? "HR Dashboard" : "Dashboard";
+    activeModule = isCustomerSession() ? "Customer Dashboard" : "Dashboard";
   }
-  const activeModules = isCustomerSession() ? customerModules : isHrSession() ? hrModules.concat(hrAdminModules) : modules;
+  const activeModules = isCustomerSession() ? customerModules : modules;
   const module = activeModules.find(([name]) => name === activeModule) || activeModules[0];
   pageEyebrow.textContent = "";
   pageTitle.textContent = module[0];
@@ -2340,17 +2182,7 @@ function render() {
     "Customer Shipments": renderCustomerShipments,
     "Customer Tracking": renderCustomerTracking,
     "Customer Profile": renderCustomerProfile,
-    "Customer Notifications": renderCustomerNotifications,
-    "HR Dashboard": renderHrDashboard,
-    "My Profile": renderHrProfile,
-    "Employee Directory": renderHrDirectory,
-    "My Leave": renderHrLeave,
-    "My Payslips": renderHrPayslips,
-    Announcements: renderHrAnnouncements,
-    "Manage Employees": renderHrAdminEmployees,
-    "Leave Approvals": renderHrAdminLeaveApprovals,
-    "Manage Payslips": renderHrAdminPayslips,
-    "Post Announcement": renderHrAdminAnnouncements
+    "Customer Notifications": renderCustomerNotifications
   };
   moduleContent.innerHTML = (renderers[activeModule] || renderDashboard)();
 }
@@ -2359,10 +2191,6 @@ function updateUserContext() {
   const session = currentSession() || { userName: "admin", branchAccess: "Both" };
   if (isCustomerSession()) {
     userContextText.textContent = `Customer: ${session.customerName || session.customerCode || session.userName}`;
-    return;
-  }
-  if (isHrSession()) {
-    userContextText.textContent = `Employee: ${session.userName}${isHrAdmin() ? " | HR Admin" : ""}`;
     return;
   }
   userContextText.textContent = `User: ${session.userName} | Branch: ${session.branchAccess}`;
@@ -2388,159 +2216,6 @@ function renderCustomerShipments() { return "<section class=\"split-grid wide-le
 function renderCustomerTracking() { return "<section class=\"panel\">" + panelHeader("Tracking", "Customer Portal") + table("customerShipment", portalRows("shipments"), customerShipmentColumns(), false) + "</section>"; }
 function renderCustomerProfile() { const session = currentSession() || {}; return "<section class=\"panel\">" + panelHeader("Profile", "Customer Portal") + "<form class=\"stack-form\" data-form=\"customer-profile\">" + input("customerCode", "Customer Code", session.customerCode || "", true) + input("customerName", "Customer Name", session.customerName || "", true) + input("email", "Email", session.email || "") + passwordField("password", "New Password", "") + "<button type=\"submit\">Save Profile</button></form></section>"; }
 function renderCustomerNotifications() { return "<section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Notifications", "Customer Portal") + table("customerNotification", portalRows("notifications"), customerNotificationColumns(), false) + "</article><article class=\"panel\">" + panelHeader("Activity Logs", "Customer Portal") + table("customerActivity", portalRows("activityLogs"), customerActivityColumns(), false) + "</article></section>"; }
-
-function myEmployeeRecord() {
-  return state.employees.find((row) => row.userName === currentUserName()) || null;
-}
-
-function leaveRequestColumns() {
-  return [
-    ["requestNo", "Request No"],
-    ["employeeName", "Employee"],
-    ["leaveType", "Type"],
-    ["startDate", "Start"],
-    ["endDate", "End"],
-    ["totalDays", "Days"],
-    ["status", "Status"]
-  ];
-}
-
-function payslipColumns() {
-  return [
-    ["payslipNo", "Payslip No"],
-    ["employeeName", "Employee"],
-    ["period", "Period"],
-    ["grossPay", "Gross Pay"],
-    ["deductions", "Deductions"],
-    ["netPay", "Net Pay"],
-    ["status", "Status"]
-  ];
-}
-
-function employeeColumns() {
-  return [
-    ["employeeCode", "Employee Code"],
-    ["fullName", "Full Name"],
-    ["department", "Department"],
-    ["designation", "Designation"],
-    ["employmentStatus", "Status"],
-    ["reportingManager", "Reporting Manager"]
-  ];
-}
-
-function announcementCard(row) {
-  const posted = String(row.postedAt || "").replace("T", " ").slice(0, 16);
-  return `<article class="alert${row.pinned ? " hr-announcement-pinned" : ""}"><strong>${escapeHtml(row.pinned ? "📌 " : "")}${escapeHtml(row.title)}</strong><span>${escapeHtml(row.body)}</span><small>${escapeHtml(row.postedBy)} | ${escapeHtml(posted)}</small></article>`;
-}
-
-function renderHrDashboard() {
-  const myRecord = myEmployeeRecord();
-  const myLeave = state.leaveRequests.filter((row) => row.userName === currentUserName());
-  const pendingLeave = myLeave.filter((row) => row.status === "Pending").length;
-  const approvedLeave = myLeave.filter((row) => row.status === "Approved").length;
-  const myPayslips = state.payslips.filter((row) => row.userName === currentUserName());
-  const announcements = [...state.hrAnnouncements].sort((a, b) => (b.pinned - a.pinned) || (b.postedAt || "").localeCompare(a.postedAt || ""));
-  return `<section class="kpi-grid">
-      ${kpi("My Pending Leave", pendingLeave, "Awaiting approval")}
-      ${kpi("My Approved Leave", approvedLeave, "This account")}
-      ${kpi("My Payslips", myPayslips.length, "Available to view")}
-      ${kpi("Announcements", announcements.length, "Company wide")}
-    </section>
-    <section class="split-grid">
-      <article class="panel">${panelHeader("My Profile")}
-        ${myRecord
-          ? `<p><strong>${escapeHtml(myRecord.fullName || currentUserName())}</strong></p><p>${escapeHtml(myRecord.designation || "")} ${myRecord.department ? "| " + escapeHtml(myRecord.department) : ""}</p>`
-          : empty("No employee profile on file yet. Contact HR to set one up.")}
-      </article>
-      <article class="panel">${panelHeader("Latest Announcements")}
-        ${announcements.length ? announcements.slice(0, 3).map(announcementCard).join("") : empty("No announcements yet.")}
-      </article>
-    </section>`;
-}
-
-function renderHrProfile() {
-  const myRecord = myEmployeeRecord();
-  if (!myRecord) {
-    return `<section class="panel">${panelHeader("My Profile")}${empty("No employee profile on file yet. Contact HR to set one up.")}</section>`;
-  }
-  return `<section class="panel">${panelHeader("My Profile")}
-    <div class="detail-grid">
-      ${input("employeeCode", "Employee Code", myRecord.employeeCode, true)}
-      ${input("fullName", "Full Name", myRecord.fullName, true)}
-      ${input("department", "Department", myRecord.department, true)}
-      ${input("designation", "Designation", myRecord.designation, true)}
-      ${input("joinDate", "Join Date", myRecord.joinDate, true, "date")}
-      ${input("phone", "Phone", myRecord.phone, true)}
-      ${input("personalEmail", "Personal Email", myRecord.personalEmail, true)}
-      ${input("employmentStatus", "Employment Status", myRecord.employmentStatus, true)}
-      ${input("reportingManager", "Reporting Manager", myRecord.reportingManager, true)}
-    </div>
-    <p class="empty-state">To update your profile details, contact HR.</p>
-  </section>`;
-}
-
-function renderHrDirectory() {
-  return `<section class="panel">${panelHeader("Employee Directory")}
-    ${table("employee", state.employees, employeeColumns(), false)}
-  </section>`;
-}
-
-function renderHrLeave() {
-  const myLeave = state.leaveRequests.filter((row) => row.userName === currentUserName());
-  return `<section class="panel">${panelHeader("My Leave")}
-    <div class="action-row"><button type="button" data-action="new-record" data-type="leaveRequest">Apply for Leave</button></div>
-    ${table("leaveRequest", myLeave, leaveRequestColumns(), false)}
-  </section>`;
-}
-
-function renderHrPayslips() {
-  const myPayslips = state.payslips.filter((row) => row.userName === currentUserName());
-  return `<section class="panel">${panelHeader("My Payslips")}
-    ${table("payslip", myPayslips, payslipColumns(), false)}
-  </section>`;
-}
-
-function renderHrAnnouncements() {
-  const announcements = [...state.hrAnnouncements].sort((a, b) => (b.pinned - a.pinned) || (b.postedAt || "").localeCompare(a.postedAt || ""));
-  return `<section class="panel">${panelHeader("Announcements")}
-    ${announcements.length ? announcements.map(announcementCard).join("") : empty("No announcements yet.")}
-  </section>`;
-}
-
-function renderHrAdminEmployees() {
-  if (!isHrAdmin()) return `<section class="panel">${panelHeader("Access Denied")}${empty("Only HR Admin can manage employee records.")}</section>`;
-  return `<section class="panel">${panelHeader("Manage Employees")}
-    <div class="action-row"><button type="button" data-action="new-record" data-type="employee">New Employee</button></div>
-    ${table("employee", state.employees, employeeColumns(), false)}
-    ${hrAdminDeletePanel("employee", "Employee")}
-  </section>`;
-}
-
-function renderHrAdminLeaveApprovals() {
-  if (!isHrAdmin()) return `<section class="panel">${panelHeader("Access Denied")}${empty("Only HR Admin can review leave requests.")}</section>`;
-  return `<section class="panel">${panelHeader("Leave Approvals")}
-    ${table("leaveRequest", state.leaveRequests, leaveRequestColumns(), false)}
-  </section>`;
-}
-
-function renderHrAdminPayslips() {
-  if (!isHrAdmin()) return `<section class="panel">${panelHeader("Access Denied")}${empty("Only HR Admin can manage payslips.")}</section>`;
-  return `<section class="panel">${panelHeader("Manage Payslips")}
-    <div class="action-row"><button type="button" data-action="new-record" data-type="payslip">Issue Payslip</button></div>
-    ${table("payslip", state.payslips, payslipColumns(), false)}
-    ${hrAdminDeletePanel("payslip", "Payslip")}
-  </section>`;
-}
-
-function renderHrAdminAnnouncements() {
-  if (!isHrAdmin()) return `<section class="panel">${panelHeader("Access Denied")}${empty("Only HR Admin can post announcements.")}</section>`;
-  const announcements = [...state.hrAnnouncements].sort((a, b) => (b.pinned - a.pinned) || (b.postedAt || "").localeCompare(a.postedAt || ""));
-  return `<section class="panel">${panelHeader("Post Announcement")}
-    <div class="action-row"><button type="button" data-action="new-record" data-type="hrAnnouncement">New Announcement</button></div>
-    ${announcements.length ? announcements.map(announcementCard).join("") : empty("No announcements yet.")}
-    ${hrAdminDeletePanel("hrAnnouncement", "Announcement")}
-  </section>`;
-}
 
 function portalCustomerCount() {
   return Array.isArray(state.customerUsers) ? state.customerUsers.length : 0;
@@ -2797,17 +2472,6 @@ function allUserRequests() {
 function adminDeletePanel(type, label, note = "") {
   if (!isAdminSession()) return "";
   return `<section class="panel admin-delete-panel">${panelHeader(`Delete ${label}`, "Admin Only")}
-    ${deleteSelectorMarkup(type, `${label} To Delete`)}
-    <div class="action-row">
-      <button type="button" class="danger-button" data-action="delete-record" data-type="${escapeHtml(type)}">Delete ${escapeHtml(label)}</button>
-    </div>
-    ${note ? `<p class="empty-state">${escapeHtml(note)}</p>` : ""}
-  </section>`;
-}
-
-function hrAdminDeletePanel(type, label, note = "") {
-  if (!isHrAdmin()) return "";
-  return `<section class="panel admin-delete-panel">${panelHeader(`Delete ${label}`, "HR Admin Only")}
     ${deleteSelectorMarkup(type, `${label} To Delete`)}
     <div class="action-row">
       <button type="button" class="danger-button" data-action="delete-record" data-type="${escapeHtml(type)}">Delete ${escapeHtml(label)}</button>
@@ -3077,7 +2741,8 @@ function shipmentStatusRowMarkup(row, index, columns, expandedJob) {
       return `<td>${cellHtml("shipment", key, row, index)}</td>`;
     })
     .join("");
-  const mainRow = `<tr class="${isExpanded ? "is-expanded" : ""}">${cells}</tr>`;
+  const isOverdue = shipmentDelayAlerts(row).length > 0;
+  const mainRow = `<tr class="${isExpanded ? "is-expanded" : ""} ${isOverdue ? "shipment-row-arrival-overdue" : ""}">${cells}</tr>`;
   return isExpanded ? mainRow + shipmentStatusExpandRowMarkup(row, columns.length) : mainRow;
 }
 
@@ -3085,13 +2750,26 @@ function shipmentStatusExpandRowMarkup(row, colSpan) {
   const jobNo = row.jobNo;
   const history = (state.shipmentStatusHistory || [])
     .filter((entry) => entry.jobNo === jobNo)
-    .sort((left, right) => new Date(left.updatedAt || 0) - new Date(right.updatedAt || 0));
+    .sort((left, right) => new Date(right.updatedAt || 0) - new Date(left.updatedAt || 0));
+  const historyRows = history.length
+    ? history
+        .map(
+          (entry) => `<tr>
+            <td>${escapeHtml(String(entry.updatedAt || "").slice(0, 10))}</td>
+            <td>${escapeHtml(entry.status)}</td>
+            <td>${escapeHtml(entry.notes || "")}</td>
+            <td>${escapeHtml(entry.updatedBy || "")}</td>
+          </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="4">${empty("No status history yet for this shipment.")}</td></tr>`;
   return `<tr class="status-expand-row"><td colspan="${colSpan}">
     <div class="status-expand-panel">
       <div class="status-expand-panel-header">
         <h4>Update Status - ${escapeHtml(jobNo)}</h4>
         <button type="button" class="ghost-button" data-action="toggle-status-row" data-id="${escapeHtml(jobNo)}">Collapse ▲</button>
       </div>
+      ${shipmentDelayAlertMarkup(shipmentDelayAlerts(row))}
       <form data-form="status" class="inline-status-form">
         <input type="hidden" name="jobNo" value="${escapeHtml(jobNo)}" />
         ${select("status", "Status", statusOptions(), row.status)}
@@ -3105,58 +2783,10 @@ function shipmentStatusExpandRowMarkup(row, colSpan) {
           <button type="button" class="secondary-button" data-action="send-status-email-row" data-id="${escapeHtml(jobNo)}">Send Update</button>
         </div>
       </form>
-      ${shipmentJourneyTimeline(history, row)}
+      <h4>Tracking History (newest first)</h4>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Status</th><th>Manual Remark</th><th>Updated By</th></tr></thead><tbody>${historyRows}</tbody></table></div>
     </div>
   </td></tr>`;
-}
-
-function shipmentJourneyTimeline(history, shipmentItem = {}) {
-  const alerts = shipmentDelayAlerts(shipmentItem);
-  if (!history.length) {
-    return `<section class="shipment-journey"><div class="shipment-journey-heading"><div><p class="eyebrow">Shipment Journey</p><h4>Tracking Timeline</h4></div></div>${shipmentDelayAlertMarkup(alerts)}${empty("No status history yet for this shipment.")}</section>`;
-  }
-  return `<section class="shipment-journey">
-    <div class="shipment-journey-heading"><div><p class="eyebrow">Shipment Journey</p><h4>Tracking Timeline</h4><p class="empty-state">Oldest to newest</p></div></div>
-    ${shipmentDelayAlertMarkup(alerts)}
-    <div class="shipment-timeline">${history.map((entry, index) => shipmentTimelineCard(entry, index, history.length)).join("")}</div>
-  </section>`;
-}
-
-function shipmentTimelineCard(entry, index, total) {
-  const status = String(entry.status || "Status update");
-  const normalizedStatus = status.toLowerCase();
-  const tone = /cancel|reject|block|returned|damaged/.test(normalizedStatus) ? "cancelled" : /delay|hold|exception|inspection|waiting/.test(normalizedStatus) ? "delayed" : index === total - 1 ? "current" : "completed";
-  const details = [
-    ["From", entry.fromLocation],
-    ["To", entry.toLocation],
-    ["Location", entry.location],
-    ["Carrier", entry.carrier],
-    ["Vehicle No.", entry.vehicleNo],
-    ["Flight No.", entry.flightNo],
-    ["Vessel", entry.vessel],
-    ["Departure", entry.departure],
-    ["Arrival", entry.arrival]
-  ].filter(([, value]) => String(value || "").trim());
-  return `<article class="shipment-timeline-card ${tone}">
-    <div class="shipment-timeline-rail" aria-hidden="true"><span class="shipment-timeline-dot">${shipmentStatusIcon(status)}</span>${index < total - 1 ? '<span class="shipment-timeline-line"></span>' : ""}</div>
-    <div class="shipment-timeline-content">
-      <div class="shipment-timeline-title"><h5>${escapeHtml(status)}</h5><span class="shipment-timeline-state">${tone === "current" ? "Current" : tone === "cancelled" ? "Cancelled" : tone === "delayed" ? "Attention" : "Completed"}</span></div>
-      <div class="shipment-timeline-meta"><span><b>Date &amp; Time</b>${escapeHtml(formatShipmentTimelineDate(entry.updatedAt))}</span>${entry.updatedBy ? `<span><b>Updated By</b>${escapeHtml(entry.updatedBy)}</span>` : ""}</div>
-      ${details.length ? `<div class="shipment-timeline-details">${details.map(([label, value]) => `<span><b>${escapeHtml(label)}</b>${escapeHtml(value)}</span>`).join("")}</div>` : ""}
-      ${entry.notes ? `<p class="shipment-timeline-remark"><b>Remark</b>${escapeHtml(entry.notes)}</p>` : ""}
-    </div>
-  </article>`;
-}
-
-function shipmentDelayAlertMarkup(alerts) {
-  if (!alerts.length) return "";
-  return `<div class="shipment-delay-alerts">${alerts.map((alert) => `<article class="shipment-delay-alert"><span>🚩</span><div><strong>${escapeHtml(alert.kind)}</strong><p>Expected: ${escapeHtml(formatShipmentTimelineDate(alert.due))}</p><p>${escapeHtml(`${alert.days} ${alert.days === 1 ? "Day" : "Days"} Late`)}</p></div></article>`).join("")}</div>`;
-}
-
-function formatShipmentTimelineDate(value) {
-  const date = new Date(value || "");
-  if (Number.isNaN(date.getTime())) return String(value || "-");
-  return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
 function renderReports() {
@@ -3604,23 +3234,12 @@ function safeTable(type, rows, columns, fallbackText) {
 function tableRow(type, row, index, columns, showLoad = true) {
   const id = rowId(type, row);
   const actionCell = showLoad ? `<td>${tableActionButton(type, id)}</td>` : "";
-  const rowClass = type === "shipment" ? `shipment-row-${shipmentVisualState(row).key}` : "";
+  const rowClass = type === "shipment" && shipmentDelayAlerts(row).length ? "shipment-row-arrival-overdue" : "";
   return `<tr class="${rowClass}">${columns.map(([key]) => `<td>${cellHtml(type, key, row, index)}</td>`).join("")}${actionCell}</tr>`;
 }
 
 
 function tableActionButton(type, id) {
-  if (type === "leaveRequest") {
-    const record = state.leaveRequests.find((row) => row.requestNo === id);
-    const isPending = String(record?.status || "").toLowerCase() === "pending";
-    const canDecide = isHrAdmin() && isPending;
-    return `<div class="row-action-group">
-      <button class="ghost-button" data-action="open" data-type="leaveRequest" data-id="${escapeHtml(id)}">Open</button>
-      ${canDecide ? `<button class="ghost-button" data-action="approve-leave-request" data-id="${escapeHtml(id)}">Approve</button>` : ""}
-      ${canDecide ? `<button class="ghost-button" data-action="reject-leave-request" data-id="${escapeHtml(id)}">Reject</button>` : ""}
-    </div>`;
-  }
-
   if (type === "load") {
     return `<button class="ghost-button" data-action="view-load" data-id="${escapeHtml(id)}">View Jobs</button>`;
   }
@@ -3809,8 +3428,7 @@ function cellHtml(type, key, row, index = 0) {
   if (key === "truckDetails") return escapeHtml([row.vehicleNo, row.driverName, row.driverMobile].filter(Boolean).join(" / "));
   if (type === "shipment" && (key === "jobNo" || key === "airwayBillNo")) {
     const value = display(row[key]);
-    const visual = key === "jobNo" ? shipmentVisualState(row) : null;
-    return `${visual ? `<span class="shipment-register-indicator ${escapeHtml(visual.key)}" title="${escapeHtml(visual.label)}">${visual.icon}</span>` : ""}<button type="button" class="table-inline-link" data-shipment-open data-shipment-id="${escapeHtml(row.jobNo || "")}" data-shipment-field="${escapeHtml(key)}" aria-label="Open shipment ${escapeHtml(String(value))}">${escapeHtml(value)}</button>`;
+    return `<button type="button" class="table-inline-link" data-shipment-open data-shipment-id="${escapeHtml(row.jobNo || "")}" data-shipment-field="${escapeHtml(key)}" aria-label="Open shipment ${escapeHtml(String(value))}">${escapeHtml(value)}</button>`;
   }
 
   if (["status", "podStatus", "invoiceStatus", "accountStatus", "manifestStatus"].includes(key)) {
@@ -3913,15 +3531,7 @@ function optionLabel(option) {
 
 function dropdownOptions(key, defaults = []) {
   const saved = Array.isArray(state.dropdownOptions?.[key]) ? state.dropdownOptions[key] : [];
-  const seen = new Set();
-  return [...defaults, ...saved]
-    .map((item) => String(item || "").trim())
-    .filter((item) => {
-      const normalized = item.toLowerCase();
-      if (!normalized || seen.has(normalized)) return false;
-      seen.add(normalized);
-      return true;
-    });
+  return [...new Set([...defaults, ...saved].map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
 function selectEditable(name, label, optionKey, defaults = [], selected = "") {
@@ -4261,11 +3871,7 @@ function rowId(type, row) {
     unblock: "requestNo",
     adminRequest: "requestNo",
     userRequest: "requestNo",
-    audit: "id",
-    employee: "userName",
-    leaveRequest: "requestNo",
-    payslip: "payslipNo",
-    hrAnnouncement: "id"
+    audit: "id"
   };
   const id = row[keys[type]] || "";
   return type === "userRequest" ? `${row.sourceType}:${id}` : id;
@@ -4290,11 +3896,7 @@ function collectionFor(type) {
     unblock: state.unblockRequests,
     adminRequest: state.adminRequests,
     userRequest: allUserRequests(),
-    audit: state.audit,
-    employee: state.employees,
-    leaveRequest: state.leaveRequests,
-    payslip: state.payslips,
-    hrAnnouncement: state.hrAnnouncements
+    audit: state.audit
   };
   return collections[type] || [];
 }
@@ -4335,16 +3937,6 @@ async function handleModuleClick(event) {
 
   if (action === "send-back-shipment-request") {
     sendBackShipmentRequest(id);
-    return;
-  }
-
-  if (action === "approve-leave-request") {
-    decideLeaveRequest(id, true);
-    return;
-  }
-
-  if (action === "reject-leave-request") {
-    decideLeaveRequest(id, false);
     return;
   }
 
@@ -4901,11 +4493,7 @@ function allCollectionFor(type) {
     user: state.users,
     customerUser: state.customerUsers,
     unblock: state.unblockRequests,
-    adminRequest: state.adminRequests,
-    employee: state.employees,
-    leaveRequest: state.leaveRequests,
-    payslip: state.payslips,
-    hrAnnouncement: state.hrAnnouncements
+    adminRequest: state.adminRequests
   };
   return collections[type] || collectionFor(type);
 }
@@ -4917,7 +4505,7 @@ function notifyDuplicate(id) {
 }
 
 function detailFieldControl(type, key, value, record) {
-  const readonlyKeys = new Set(["jobNo", "loadNo", "code", "tariffNo", "documentNo", "invoiceNo", "refNo", "userName", "requestNo", "payslipNo"]);
+  const readonlyKeys = new Set(["jobNo", "loadNo", "code", "tariffNo", "documentNo", "invoiceNo", "refNo", "userName", "requestNo"]);
   const options = detailFieldOptions(type, key, record);
   if (type === "shipment" && ["sell", "buyCost"].includes(key)) {
     return "";
@@ -5017,12 +4605,6 @@ function detailFieldOptions(type, key, record) {
   if (key === "supplier") return state.suppliers.map((row) => row.name);
   if (key === "shipmentNo" || key === "linkedNo" || key === "jobNo") return shipmentOptions();
   if (type === "load" && key === "jobNumbers") return [];
-  if (type === "leaveRequest" && key === "status") return ["Pending", "Approved", "Rejected", "Cancelled"];
-  if (type === "leaveRequest" && key === "leaveType") return dropdownOptions("leaveType", ["Annual", "Sick", "Unpaid", "Emergency", "Maternity/Paternity"]);
-  if (type === "payslip" && key === "status") return ["Issued", "Draft", "Paid"];
-  if (type === "employee" && key === "employmentStatus") return ["Active", "On Leave", "Inactive", "Resigned"];
-  if (type === "employee" && key === "department") return dropdownOptions("department", ["Operations", "Sales", "Finance", "HR", "Management", "IT"]);
-  if (type === "hrAnnouncement" && key === "audience") return ["All", "Management", "Operations", "Finance"];
   return common[key] || [];
 }
 
@@ -5036,24 +4618,7 @@ function branchViewScopeOptions() {
   return ["Assigned Branch Only", "All Branches"];
 }
 
-let isSavingDialogRecord = false;
-
 async function saveDialogRecord() {
-  if (isSavingDialogRecord) return;
-  isSavingDialogRecord = true;
-  const originalButtonText = dialogSave.textContent;
-  dialogSave.disabled = true;
-  dialogSave.textContent = "Saving...";
-  try {
-    await saveDialogRecordInner();
-  } finally {
-    isSavingDialogRecord = false;
-    dialogSave.disabled = false;
-    dialogSave.textContent = originalButtonText;
-  }
-}
-
-async function saveDialogRecordInner() {
   if (dialogState?.onSave) {
     await dialogState.onSave();
     return;
@@ -5124,18 +4689,12 @@ async function saveDialogRecordInner() {
   }
 
   const changeSummary = summarizeChanges(editing.record, updatedRecord);
-  const originalSnapshot = { ...editing.record };
   Object.assign(editing.record, updatedRecord);
   const editedType = editing.type;
   const editedId = editing.id;
-  const saved = await persistRecord(editing.type, editing.record);
-  if (!saved) {
-    Object.assign(editing.record, originalSnapshot);
-    notifyDenied("Not saved", "This change could not be saved to the server. Please try again.");
-    return;
-  }
   addHistory(`Updated ${editing.type}`, editing.id, changeSummary);
-  if (editedType === "load") await syncManifestShipmentStatuses(editing.record);
+  const saved = await persistRecord(editing.type, editing.record);
+  if (editedType === "load" && saved) await syncManifestShipmentStatuses(editing.record);
   if (editedType === "shipment") await createShipmentDocument(data, editedId);
   saveState();
   resetDialogShell();
@@ -5297,7 +4856,7 @@ function openPodDialog(jobNo = "") {
       ${input("receivedBy", "Goods Received By", shipmentItem.receivedBy || "")}
       ${input("receiverPhone", "Receiver Telephone Number", shipmentItem.receiverPhone || "")}
       ${input("receiverSignature", "Receiver Signature", shipmentItem.receiverSignature || "")}
-      ${input("deliveryDatetime", "Delivery Date & Time", shipmentItem.deliveryDatetime || localDateTimeInput(), false, "datetime-local")}
+      ${input("deliveryDatetime", "Delivery Date & Time", shipmentItem.deliveryDatetime || new Date().toISOString().slice(0, 16), false, "datetime-local")}
     `,
     saveLabel: "Mark Delivered + Upload POD",
     async onSave() {
@@ -5452,34 +5011,6 @@ function dialogConfigFor(type, mode = "") {
       saveLabel: "Create Account",
       body: customerUserDialogBody(),
       onSave: createCustomerUserAccount
-    },
-    employee: {
-      title: "New Employee Profile",
-      typeLabel: "Employee",
-      saveLabel: "Save Employee",
-      body: employeeDialogBody(),
-      onSave: createEmployee
-    },
-    leaveRequest: {
-      title: "Apply for Leave",
-      typeLabel: "Leave Request",
-      saveLabel: "Submit Leave Request",
-      body: leaveRequestDialogBody(),
-      onSave: createLeaveRequest
-    },
-    payslip: {
-      title: "Issue Payslip",
-      typeLabel: "Payslip",
-      saveLabel: "Save Payslip",
-      body: payslipDialogBody(),
-      onSave: createPayslip
-    },
-    hrAnnouncement: {
-      title: "Post Announcement",
-      typeLabel: "Announcement",
-      saveLabel: "Post Announcement",
-      body: hrAnnouncementDialogBody(),
-      onSave: createHrAnnouncement
     }
   };
 
@@ -5757,66 +5288,6 @@ function customerUserDialogBody(record) {
   `;
 }
 
-function employeeDialogBody(record) {
-  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
-  const loaded = Boolean(record);
-  const userOptions = state.users.map((row) => ({ value: row.userName, label: `${row.userName} (${row.role || "User"})` }));
-  return `
-    ${strictSelect("userName", "Login User", userOptions, fieldValue("userName"))}
-    ${input("employeeCode", "Employee Code", fieldValue("employeeCode"))}
-    ${input("fullName", "Full Name", fieldValue("fullName"))}
-    ${input("department", "Department", fieldValue("department"))}
-    ${input("designation", "Designation", fieldValue("designation"))}
-    ${input("joinDate", "Join Date", fieldValue("joinDate", today()), false, "date")}
-    ${input("phone", "Phone", fieldValue("phone"))}
-    ${input("personalEmail", "Personal Email", fieldValue("personalEmail"), false, "email")}
-    ${strictSelect("employmentStatus", "Employment Status", ["Active", "On Leave", "Inactive"], fieldValue("employmentStatus", "Active"))}
-    ${input("reportingManager", "Reporting Manager", fieldValue("reportingManager"))}
-    ${textarea("notes", "Notes", fieldValue("notes"), false, 3)}
-    ${loaded ? "" : `<p class="empty-state">Tip: turn on this user's HR Portal access from Settings &gt; User Management so they can log in with Employee Login.</p>`}
-  `;
-}
-
-function leaveRequestDialogBody(record) {
-  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
-  const employeeRecord = state.employees.find((row) => row.userName === currentUserName());
-  return `
-    <input type="hidden" name="requestNo" value="${escapeHtml(fieldValue("requestNo", nextNumber("LV", state.leaveRequests, "requestNo")))}" />
-    <input type="hidden" name="userName" value="${escapeHtml(fieldValue("userName", currentUserName()))}" />
-    ${input("employeeName", "Employee Name", fieldValue("employeeName", employeeRecord?.fullName || currentUserName()), true)}
-    ${strictSelect("leaveType", "Leave Type", ["Annual", "Sick", "Unpaid", "Emergency", "Other"], fieldValue("leaveType", "Annual"))}
-    ${input("startDate", "Start Date", fieldValue("startDate", today()), false, "date")}
-    ${input("endDate", "End Date", fieldValue("endDate", today()), false, "date")}
-    ${textarea("reason", "Reason", fieldValue("reason"), false, 3)}
-  `;
-}
-
-function payslipDialogBody(record) {
-  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
-  const userOptions = state.users.map((row) => ({ value: row.userName, label: `${row.userName}` }));
-  return `
-    <input type="hidden" name="payslipNo" value="${escapeHtml(fieldValue("payslipNo", nextNumber("PAY", state.payslips, "payslipNo")))}" />
-    ${strictSelect("userName", "Employee", userOptions, fieldValue("userName"))}
-    ${input("employeeName", "Employee Name", fieldValue("employeeName"))}
-    ${input("period", "Period (e.g. 2026-07)", fieldValue("period", new Date().toISOString().slice(0, 7)))}
-    ${input("grossPay", "Gross Pay", fieldValue("grossPay", "0"), false, "number")}
-    ${input("deductions", "Deductions", fieldValue("deductions", "0"), false, "number")}
-    ${input("netPay", "Net Pay", fieldValue("netPay", "0"), false, "number")}
-    ${strictSelect("status", "Status", ["Issued", "Paid"], fieldValue("status", "Issued"))}
-    ${input("issuedDate", "Issued Date", fieldValue("issuedDate", today()), false, "date")}
-  `;
-}
-
-function hrAnnouncementDialogBody(record) {
-  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
-  return `
-    ${input("title", "Title", fieldValue("title"))}
-    ${textarea("body", "Message", fieldValue("body"), false, 5)}
-    ${strictSelect("audience", "Audience", ["All"], fieldValue("audience", "All"))}
-    ${strictSelect("pinned", "Pin to top", ["No", "Yes"], fieldValue("pinned") === true || fieldValue("pinned") === "Yes" ? "Yes" : "No")}
-  `;
-}
-
 function userDialogBody() {
   const checkedSections = sectionAccessSet("Dashboard, Shipment / Airway, Reports");
   return `
@@ -5832,7 +5303,6 @@ function userDialogBody() {
     ${checkbox("canViewOnlySelfEntry", "User can view only self entry", true)}
     ${checkbox("canEditAllEntry", "User can edit all entry")}
     ${checkbox("canViewUpdatedHistory", "User can view updated history", true)}
-    ${checkbox("hrPortalAccess", "Allow HR Portal access (Employee Login)")}
     ${input("notes", "Notes", "Created from admin panel")}
   `;
 }
@@ -6052,16 +5522,7 @@ function fetchAwbAndRefillForm() {
 
 function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
   const typedValue = String(airwayBillNo || sourceRecord.airwayBillNo || sourceRecord.jobNo || "").trim();
-  const prefillRecord = { ...sourceRecord };
-  // The source is only used as a template.  The saved record must be a new shipment,
-  // while retaining the fetched AWB/Bill of Lading as its reference.
-  prefillRecord.entryMode = "shipment";
-  prefillRecord.jobNo = nextShipmentNumber();
-  prefillRecord.airwayBillNo = typedValue;
-  prefillRecord.bookingDate = today();
-  prefillRecord.shipmentDate = today();
-  prefillRecord.branch = normalizeBranchName(branch || defaultUserBranch());
-
+  const prefillRecord = { ...sourceRecord, entryMode: "shipment", jobNo: nextShipmentNumber(), airwayBillNo: typedValue, bookingDate: today(), shipmentDate: today(), branch: normalizeBranchName(branch || defaultUserBranch()) };
   editing = null;
   dialogState = null;
   const saveFetchedShipment = async () => {
@@ -6092,10 +5553,7 @@ function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
     return;
   }
   openDialog({
-    title: "New Shipment (from Airway Bill)",
-    typeLabel: "Shipment",
-    saveLabel: "Create Shipment",
-    body: shipmentDialogBody("shipment", prefillRecord),
+    title: "New Shipment (from Airway Bill)", typeLabel: "Shipment", saveLabel: "Create Shipment", body: shipmentDialogBody("shipment", prefillRecord),
     onSave: saveFetchedShipment,
     afterOpen: () => {
       bindShipmentDirectionDialog();
@@ -8843,125 +8301,6 @@ async function createCustomerUserAccount(data) {
   return true;
 }
 
-async function createLeaveRequest(data) {
-  const startDate = String(data.startDate || "").trim();
-  const endDate = String(data.endDate || "").trim();
-  if (!startDate || !endDate) {
-    notifyDenied("Leave request not submitted", "Select a start and end date first.");
-    return false;
-  }
-  if (new Date(endDate) < new Date(startDate)) {
-    notifyDenied("Leave request not submitted", "End date cannot be before the start date.");
-    return false;
-  }
-  const totalDays = Math.round((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1;
-  const requestNo = String(data.requestNo || nextNumber("LV", state.leaveRequests, "requestNo"));
-  const record = {
-    requestNo,
-    userName: String(data.userName || currentUserName()).trim(),
-    employeeName: String(data.employeeName || currentUserName()).trim(),
-    leaveType: String(data.leaveType || "Annual").trim(),
-    startDate,
-    endDate,
-    totalDays,
-    reason: String(data.reason || "").trim(),
-    status: "Pending",
-    approvedBy: "",
-    approvedAt: "",
-    appliedAt: new Date().toISOString()
-  };
-  state.leaveRequests.unshift(record);
-  const saved = await postRecord("leaveRequest", record);
-  if (!saved) {
-    notifyDenied("Leave request not submitted", "Could not save this to the server. Please try again.");
-    return false;
-  }
-  addHistory("Applied for leave", requestNo);
-  notifySuccess("Leave request submitted", `${requestNo} was submitted for approval.`);
-  return true;
-}
-
-async function decideLeaveRequest(requestNo, approve) {
-  const record = state.leaveRequests.find((row) => row.requestNo === requestNo);
-  if (!record) return;
-  if (!isHrAdmin()) {
-    notifyDenied("Not allowed", "Only HR Admin can approve or reject leave requests.");
-    return;
-  }
-  record.status = approve ? "Approved" : "Rejected";
-  record.approvedBy = currentUserName();
-  record.approvedAt = new Date().toISOString();
-  const saved = await persistRecord("leaveRequest", record);
-  if (!saved) {
-    notifyDenied("Not saved", "Could not save this to the server. Please try again.");
-    return;
-  }
-  addHistory(approve ? "Approved leave request" : "Rejected leave request", requestNo);
-  notifySuccess(approve ? "Leave approved" : "Leave rejected", requestNo);
-  saveState();
-  render();
-}
-
-async function createPayslip(data) {
-  const userName = String(data.userName || "").trim();
-  if (!userName) {
-    notifyDenied("Payslip not saved", "Select an employee first.");
-    return false;
-  }
-  const payslipNo = String(data.payslipNo || nextNumber("PAY", state.payslips, "payslipNo"));
-  if (duplicateRecordExists("payslip", payslipNo)) {
-    notifyDuplicate(payslipNo);
-    return false;
-  }
-  const record = {
-    payslipNo,
-    userName,
-    employeeName: String(data.employeeName || userName).trim(),
-    period: String(data.period || "").trim(),
-    grossPay: Number(data.grossPay || 0),
-    deductions: Number(data.deductions || 0),
-    netPay: Number(data.netPay || (Number(data.grossPay || 0) - Number(data.deductions || 0))),
-    status: String(data.status || "Issued").trim(),
-    issuedDate: String(data.issuedDate || today()).trim(),
-    storageUrl: ""
-  };
-  state.payslips.unshift(record);
-  const saved = await postRecord("payslip", record);
-  if (!saved) {
-    notifyDenied("Payslip not saved", "Could not save this to the server. Please try again.");
-    return false;
-  }
-  addHistory("Issued payslip", payslipNo);
-  notifySuccess("Payslip issued", `${payslipNo} was issued to ${record.userName}.`);
-  return true;
-}
-
-async function createHrAnnouncement(data) {
-  const title = String(data.title || "").trim();
-  if (!title) {
-    notifyDenied("Announcement not posted", "Enter a title first.");
-    return false;
-  }
-  const record = {
-    id: String(Date.now()),
-    title,
-    body: String(data.body || "").trim(),
-    postedBy: currentUserName(),
-    audience: String(data.audience || "All").trim(),
-    pinned: String(data.pinned || "No") === "Yes",
-    postedAt: new Date().toISOString()
-  };
-  state.hrAnnouncements.unshift(record);
-  const saved = await postRecord("hrAnnouncement", record);
-  if (!saved) {
-    notifyDenied("Announcement not posted", "Could not save this to the server. Please try again.");
-    return false;
-  }
-  addHistory("Posted announcement", title);
-  notifySuccess("Announcement posted", title);
-  return true;
-}
-
 async function createUser(data) {
   const userName = String(data.userName || "").trim();
   if (!userName) {
@@ -8991,153 +8330,12 @@ async function createUser(data) {
     data.canViewUpdatedHistory,
     password,
     String(data.notes || "").trim(),
-    data.createdDate || today(),
-    data.hrPortalAccess
+    data.createdDate || today()
   );
   state.users.unshift(record);
   await postRecord("user", record);
   addHistory("Created user", userName);
   notifySuccess("User created", userName + " was saved successfully.");
-  return true;
-}
-
-function nextHrNumber(prefix, collection, key) {
-  return nextNumber(prefix, collection, key);
-}
-
-async function createEmployee(data) {
-  const userName = String(data.userName || "").trim();
-  if (!userName) {
-    notifyDenied("Employee not saved", "Select a user account first.");
-    return false;
-  }
-  if (duplicateRecordExists("employee", userName)) {
-    notifyDuplicate(userName);
-    return false;
-  }
-  const record = {
-    userName,
-    employeeCode: String(data.employeeCode || "").trim(),
-    fullName: String(data.fullName || "").trim(),
-    department: String(data.department || "").trim(),
-    designation: String(data.designation || "").trim(),
-    joinDate: data.joinDate || today(),
-    phone: String(data.phone || "").trim(),
-    personalEmail: String(data.personalEmail || "").trim(),
-    employmentStatus: String(data.employmentStatus || "Active").trim(),
-    reportingManager: String(data.reportingManager || "").trim(),
-    notes: String(data.notes || "").trim()
-  };
-  state.employees.unshift(record);
-  await postRecord("employee", record);
-  addHistory("Created employee profile", userName);
-  notifySuccess("Employee saved", userName + " was saved successfully.");
-  return true;
-}
-
-async function createLeaveRequest(data) {
-  const startDate = data.startDate || today();
-  const endDate = data.endDate || startDate;
-  if (new Date(endDate) < new Date(startDate)) {
-    notifyDenied("Leave not submitted", "End date cannot be before the start date.");
-    return false;
-  }
-  const totalDays = Math.max(1, Math.round((new Date(endDate) - new Date(startDate)) / 86400000) + 1);
-  const userName = currentUserName();
-  const employeeRecord = state.employees.find((row) => row.userName === userName);
-  const record = {
-    requestNo: nextHrNumber("LV", state.leaveRequests, "requestNo"),
-    userName,
-    employeeName: employeeRecord?.fullName || userName,
-    leaveType: String(data.leaveType || "Annual").trim(),
-    startDate,
-    endDate,
-    totalDays,
-    reason: String(data.reason || "").trim(),
-    status: "Pending",
-    approvedBy: "",
-    approvedAt: "",
-    appliedAt: new Date().toISOString()
-  };
-  state.leaveRequests.unshift(record);
-  await postRecord("leaveRequest", record);
-  addHistory("Applied for leave", record.requestNo);
-  notifySuccess("Leave request submitted", `${record.requestNo} was submitted for approval.`);
-  return true;
-}
-
-async function decideLeaveRequest(requestNo, status) {
-  if (!isHrAdmin()) {
-    notifyDenied("Not allowed", "Only HR admins can approve or reject leave requests.");
-    return;
-  }
-  const record = state.leaveRequests.find((row) => row.requestNo === requestNo);
-  if (!record) return;
-  const updated = {
-    ...record,
-    status,
-    approvedBy: currentUserName(),
-    approvedAt: new Date().toISOString()
-  };
-  const saved = await persistRecord("leaveRequest", updated);
-  if (!saved) return;
-  Object.assign(record, updated);
-  addHistory(status === "Approved" ? "Approved leave request" : "Rejected leave request", requestNo);
-  notifySuccess(`Leave ${status.toLowerCase()}`, `${requestNo} was ${status.toLowerCase()}.`);
-  saveState();
-  render();
-}
-
-async function createPayslip(data) {
-  const userName = String(data.userName || "").trim();
-  if (!userName) {
-    notifyDenied("Payslip not saved", "Select an employee first.");
-    return false;
-  }
-  const employeeRecord = state.employees.find((row) => row.userName === userName);
-  const grossPay = Number(data.grossPay || 0);
-  const deductions = Number(data.deductions || 0);
-  const record = {
-    payslipNo: nextHrNumber("PAY", state.payslips, "payslipNo"),
-    userName,
-    employeeName: employeeRecord?.fullName || userName,
-    period: String(data.period || "").trim(),
-    grossPay,
-    deductions,
-    netPay: Number(data.netPay || (grossPay - deductions)),
-    status: String(data.status || "Issued").trim(),
-    issuedDate: data.issuedDate || today(),
-    storageUrl: ""
-  };
-  state.payslips.unshift(record);
-  await postRecord("payslip", record);
-  addHistory("Issued payslip", record.payslipNo);
-  notifySuccess("Payslip issued", `${record.payslipNo} was issued to ${record.employeeName}.`);
-  return true;
-}
-
-async function createHrAnnouncement(data) {
-  const title = String(data.title || "").trim();
-  if (!title) {
-    notifyDenied("Announcement not posted", "Enter a title first.");
-    return false;
-  }
-  const record = {
-    id: `new-${Date.now()}`,
-    title,
-    body: String(data.body || "").trim(),
-    postedBy: currentUserName(),
-    audience: String(data.audience || "All").trim(),
-    pinned: String(data.pinned || "No") === "Yes",
-    postedAt: new Date().toISOString()
-  };
-  state.hrAnnouncements.unshift(record);
-  const saved = await postRecord("hrAnnouncement", record);
-  if (saved && typeof saved === "object" && saved.id !== undefined) {
-    record.id = String(saved.id);
-  }
-  addHistory("Posted announcement", title);
-  notifySuccess("Announcement posted", title + " was published.");
   return true;
 }
 
@@ -9314,11 +8512,7 @@ function endpointFor(type) {
     unblock: "unblock-requests",
     adminRequest: "admin-requests",
     audit: "audit",
-    settings: "settings",
-    employee: "employees",
-    leaveRequest: "leave-requests",
-    payslip: "payslips",
-    hrAnnouncement: "hr-announcements"
+    settings: "settings"
   }[type];
 }
 
@@ -9618,16 +8812,12 @@ async function updateStatus(data) {
     return false;
   }
 
-  const newStatus = String(data.status || shipmentItem.status).trim();
+  const newStatus = data.status || shipmentItem.status;
   const oldStatus = shipmentItem.status;
-  if (newStatus.toLowerCase() === String(oldStatus || "").trim().toLowerCase()) {
-    notifyDenied("Status already selected", `${jobNo} is already ${oldStatus}. Choose a different status to create a new journey update.`);
-    return false;
-  }
   const remark = data.notes || "";
   const entryDate = data.date || today();
   shipmentItem.status = newStatus;
-  if (newStatus.trim().toLowerCase() === "dispatched" && data.expectedArrivalDate) {
+  if (String(newStatus).trim().toLowerCase() === "dispatched" && data.expectedArrivalDate) {
     shipmentItem.expectedArrivalDate = data.expectedArrivalDate;
   }
   shipmentItem.notes = shipmentMetaNotes(shipmentItem);
@@ -9645,7 +8835,7 @@ async function updateStatus(data) {
   state.shipmentStatusHistory.unshift(historyEntry);
   await postRecord("statusHistory", historyEntry);
 
-  const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}${shipmentItem.expectedArrivalDate ? ` | expected arrival: ${shipmentItem.expectedArrivalDate}` : ""}`;
+  const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}`;
   addHistory("Updated shipment status", `${jobNo} -> ${newStatus}`, statusDetails);
   notifySuccess("Status updated", `${jobNo} is now ${newStatus}.`);
   state.ui.expandedStatusJob = jobNo;

@@ -44,10 +44,9 @@
               <div class="login-mode-switch" role="group" aria-label="Login mode">
                 <button type="button" class="login-mode-button is-active" data-login-mode-option="company" aria-pressed="true">Company Portal</button>
                 <button type="button" class="login-mode-button" data-login-mode-option="customer" aria-pressed="false">Customer Portal</button>
-                <button type="button" class="login-mode-button" data-login-mode-option="employee" aria-pressed="false">Employee Login</button>
               </div>
-              <input id="loginModeField" type="hidden" name="loginMode" value="company" />
-              <p class="login-mode-help">Choose Customer Portal to sign in with the customer user ID created in Company Portal, or Employee Login to access the HR Portal with your existing company user ID.</p>
+              <input id="customerLoginMode" type="checkbox" name="customerLoginMode" value="customer" class="is-hidden" aria-hidden="true" tabindex="-1" />
+              <p class="login-mode-help">Choose Customer Portal to sign in with the customer user ID created in Company Portal.</p>
               <p id="loginMessage" class="form-message" role="status"></p>
               <button type="submit">Login</button>
             </form>

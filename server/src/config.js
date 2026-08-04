@@ -5,23 +5,18 @@ const crypto = require("crypto");
 dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 
 const port = Number.parseInt(process.env.PORT || "4000", 10);
+const defaultAllowedOrigin = (process.env.NODE_ENV || "development") === "production" ? "https://apollo-freighterp.vercel.app" : "*";
 const databaseSources = [
   ["NEON_DATABASE_URL", process.env.NEON_DATABASE_URL],
   ["DATABASE_URL", process.env.DATABASE_URL],
   ["POSTGRES_URL", process.env.POSTGRES_URL],
   ["POSTGRESQL_URL", process.env.POSTGRESQL_URL],
   ["PG_CONNECTION_STRING", process.env.PG_CONNECTION_STRING],
-  ["RENDER_DATABASE_URL", process.env.RENDER_DATABASE_URL],
-  ["CLOUD_SQL_DATABASE_URL", process.env.CLOUD_SQL_DATABASE_URL]
+  ["RENDER_DATABASE_URL", process.env.RENDER_DATABASE_URL]
 ];
 const databaseConfig = databaseSources.find(([, value]) => typeof value === "string" && value.trim());
 const databaseUrlValue = databaseConfig?.[1]?.trim() || "";
-const isCloudSqlSocket = /[?&]host=%2Fcloudsql%2F|[?&]host=\/cloudsql\//.test(databaseUrlValue);
 const databaseHost = (() => {
-  if (isCloudSqlSocket) {
-    const match = databaseUrlValue.match(/host=([^&]+)/);
-    return match ? decodeURIComponent(match[1]) : "cloudsql";
-  }
   try {
     return databaseUrlValue ? new URL(databaseUrlValue).hostname : "";
   } catch {
@@ -29,10 +24,7 @@ const databaseHost = (() => {
   }
 })();
 const isNeonDatabase = databaseHost.includes("neon.tech");
-// One Cloud Run service now serves both the app and the API from the same origin, so CORS is no
-// longer the write-protection boundary (the login-token middleware is) - default to allowing any
-// origin, still fully overridable via ALLOWED_ORIGIN if you want to lock it down later.
-const allowedOrigins = (process.env.ALLOWED_ORIGIN || "*")
+const allowedOrigins = (process.env.ALLOWED_ORIGIN || defaultAllowedOrigin)
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
@@ -55,7 +47,6 @@ module.exports = {
   databaseUrlSource: databaseConfig?.[0] || "",
   databaseHost,
   isNeonDatabase,
-  isCloudSqlSocket,
   allowedOrigins,
   customerPortalSecret,
   autoMigrate: process.env.AUTO_MIGRATE !== "false"
