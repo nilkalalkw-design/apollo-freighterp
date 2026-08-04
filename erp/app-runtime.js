@@ -8843,46 +8843,6 @@ async function createCustomerUserAccount(data) {
   return true;
 }
 
-async function createEmployee(data) {
-  const userName = String(data.userName || "").trim();
-  if (!userName) {
-    notifyDenied("Employee not saved", "Select a login user first.");
-    return false;
-  }
-  const existing = state.employees.find((row) => row.userName === userName);
-  const record = {
-    userName,
-    employeeCode: String(data.employeeCode || "").trim(),
-    fullName: String(data.fullName || "").trim(),
-    department: String(data.department || "").trim(),
-    designation: String(data.designation || "").trim(),
-    joinDate: String(data.joinDate || "").trim(),
-    phone: String(data.phone || "").trim(),
-    personalEmail: String(data.personalEmail || "").trim(),
-    employmentStatus: String(data.employmentStatus || "Active").trim(),
-    reportingManager: String(data.reportingManager || "").trim(),
-    notes: String(data.notes || "").trim()
-  };
-  if (existing) {
-    Object.assign(existing, record);
-    const saved = await persistRecord("employee", existing);
-    if (!saved) {
-      notifyDenied("Employee not saved", "Could not save this to the server. Please try again.");
-      return false;
-    }
-  } else {
-    state.employees.unshift(record);
-    const saved = await postRecord("employee", record);
-    if (!saved) {
-      notifyDenied("Employee not saved", "Could not save this to the server. Please try again.");
-      return false;
-    }
-  }
-  addHistory("Saved employee profile", userName);
-  notifySuccess("Employee saved", userName + " was saved successfully.");
-  return true;
-}
-
 async function createLeaveRequest(data) {
   const startDate = String(data.startDate || "").trim();
   const endDate = String(data.endDate || "").trim();
