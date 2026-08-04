@@ -5,7 +5,7 @@ const fs = require("fs");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const path = require("path");
-const { allowedOrigins, autoMigrate, customerPortalSecret, databaseHost, databaseUrl, databaseUrlSource, isNeonDatabase, port } = require("./config");
+const { allowedOrigins, autoMigrate, customerPortalSecret, databaseHost, databaseUrl, databaseUrlSource, isCloudSqlSocket, isNeonDatabase, port } = require("./config");
 const { query, testConnection } = require("./db");
 const { runMigrations } = require("./migrate");
 
@@ -222,6 +222,35 @@ const demoRows = {
     }
   ],
   audit: [],
+  employees: [
+    {
+      id: 1,
+      user_name: "admin",
+      employee_code: "EMP-0001",
+      full_name: "System Administrator",
+      department: "Management",
+      designation: "Administrator",
+      join_date: "2024-01-01",
+      phone: "",
+      personal_email: "",
+      employment_status: "Active",
+      reporting_manager: "",
+      notes: "Demo employee record"
+    }
+  ],
+  "leave-requests": [],
+  payslips: [],
+  "hr-announcements": [
+    {
+      id: 1,
+      title: "Welcome to the HR Portal",
+      body: "This is a demo announcement. Connect a database to start managing real employee records, leave requests, payslips, and announcements.",
+      posted_by: "admin",
+      audience: "All",
+      pinned: true,
+      posted_at: new Date().toISOString()
+    }
+  ],
   settings: [
     {
       id: 1,
@@ -701,6 +730,7 @@ const resources = {
       field("can_view_only_self_entry", ["canViewOnlySelfEntry", "can_view_only_self_entry"]),
       field("can_edit_all_entry", ["canEditAllEntry", "can_edit_all_entry"]),
       field("can_view_updated_history", ["canViewUpdatedHistory", "can_view_updated_history"]),
+      field("hr_portal_access", ["hrPortalAccess", "hr_portal_access"]),
       field("notes")
     ]
   },
@@ -905,6 +935,73 @@ const resources = {
       field("column_layout_json", ["columnLayoutJson", "column_layout_json"]),
       field("dropdown_options", ["dropdownOptionsJson", "dropdown_options"])
     ]
+  },
+  employees: {
+    table: "employees",
+    key: "user_name",
+    order: "created_at desc",
+    fields: [
+      field("user_name", ["userName", "user_name"], true),
+      field("employee_code", ["employeeCode", "employee_code"]),
+      field("full_name", ["fullName", "full_name"], true),
+      field("department"),
+      field("designation"),
+      field("join_date", ["joinDate", "join_date"]),
+      field("phone"),
+      field("personal_email", ["personalEmail", "personal_email"]),
+      field("employment_status", ["employmentStatus", "employment_status"]),
+      field("reporting_manager", ["reportingManager", "reporting_manager"]),
+      field("notes")
+    ]
+  },
+  "leave-requests": {
+    table: "leave_requests",
+    key: "request_no",
+    order: "applied_at desc",
+    fields: [
+      field("request_no", ["requestNo", "request_no"], true),
+      field("user_name", ["userName", "user_name"], true),
+      field("employee_name", ["employeeName", "employee_name"]),
+      field("leave_type", ["leaveType", "leave_type"]),
+      field("start_date", ["startDate", "start_date"], true),
+      field("end_date", ["endDate", "end_date"], true),
+      field("total_days", ["totalDays", "total_days"]),
+      field("reason"),
+      field("status"),
+      field("approved_by", ["approvedBy", "approved_by"]),
+      field("approved_at", ["approvedAt", "approved_at"]),
+      field("applied_at", ["appliedAt", "applied_at"])
+    ]
+  },
+  payslips: {
+    table: "payslips",
+    key: "payslip_no",
+    order: "created_at desc",
+    fields: [
+      field("payslip_no", ["payslipNo", "payslip_no"], true),
+      field("user_name", ["userName", "user_name"], true),
+      field("employee_name", ["employeeName", "employee_name"]),
+      field("period"),
+      field("gross_pay", ["grossPay", "gross_pay"]),
+      field("deductions"),
+      field("net_pay", ["netPay", "net_pay"]),
+      field("status"),
+      field("issued_date", ["issuedDate", "issued_date"]),
+      field("storage_url", ["storageUrl", "storage_url"])
+    ]
+  },
+  "hr-announcements": {
+    table: "hr_announcements",
+    key: "id",
+    order: "pinned desc, posted_at desc",
+    fields: [
+      field("title", ["title"], true),
+      field("body"),
+      field("posted_by", ["postedBy", "posted_by"]),
+      field("audience"),
+      field("pinned"),
+      field("posted_at", ["postedAt", "posted_at"])
+    ]
   }
 };
 
@@ -1017,7 +1114,8 @@ async function getRows(resourceName, config) {
 async function loginUser(identifier, password) {
   const result = await query(
     `select user_name, email, role, account_status, branch_access, branch_view_scope, section_access,
-            can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history, password
+            can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history,
+            hr_portal_access, password
      from app_users
      where lower(user_name) = lower($1) or lower(email) = lower($1)
      limit 1`,
@@ -1337,6 +1435,7 @@ app.get("/api/health", async (_request, response) => {
       databaseUrlSource: runtimeStatus.databaseUrlSource,
       databaseHost,
       isNeonDatabase,
+      isCloudSqlSocket,
       allowedOrigins,
       autoMigrate: runtimeStatus.autoMigrate,
       migration: runtimeStatus.migration,
@@ -1355,6 +1454,7 @@ app.get("/api/health", async (_request, response) => {
       databaseUrlSource: runtimeStatus.databaseUrlSource,
       databaseHost,
       isNeonDatabase,
+      isCloudSqlSocket,
       allowedOrigins,
       autoMigrate: runtimeStatus.autoMigrate,
       migration: runtimeStatus.migration,
@@ -1405,6 +1505,7 @@ app.post("/api/login", loginRateLimiter, async (request, response, next) => {
         canViewOnlySelfEntry: row.can_view_only_self_entry,
         canEditAllEntry: row.can_edit_all_entry,
         canViewUpdatedHistory: row.can_view_updated_history,
+        hrPortalAccess: Boolean(row.hr_portal_access),
         token: signCustomerToken({ userName: row.user_name, role: row.role, portal: "app", exp: Date.now() + APP_TOKEN_TTL_MS })
       }
     });
@@ -1420,6 +1521,7 @@ app.post("/api/login", loginRateLimiter, async (request, response, next) => {
             branchAccess: "Both",
             branchViewScope: "All Branches",
             sectionAccess: "All",
+            hrPortalAccess: true,
             token: signCustomerToken({ userName: "admin", role: "Admin", portal: "app", exp: Date.now() + APP_TOKEN_TTL_MS })
           }
         });

@@ -20,6 +20,15 @@
   --shadow: 0 24px 56px rgba(18, 32, 47, 0.14);
 }
 
+.hr-portal-theme {
+  --accent: #0f9d78;
+  --accent-deep: #0c7f61;
+  --nav: #0b2a24;
+  --nav-soft: #123c33;
+  --green-soft: #e8f7f1;
+  --green-text: #0c7f61;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -66,6 +75,13 @@ button:hover {
 
 button:active {
   transform: translateY(0);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  filter: none;
+  transform: none;
 }
 
 input,
@@ -300,7 +316,7 @@ label {
 }
 .login-mode-switch {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -545,8 +561,9 @@ label {
 
 .toast-stack {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   z-index: 100;
   display: grid;
   gap: 10px;
@@ -1239,6 +1256,15 @@ th {
 
 .alert strong {
   color: var(--red-text);
+}
+
+.hr-announcement-pinned {
+  border-color: var(--accent);
+  background: var(--green-soft);
+}
+
+.hr-announcement-pinned strong {
+  color: var(--green-text);
 }
 
 .alert span,
