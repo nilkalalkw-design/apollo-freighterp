@@ -818,7 +818,7 @@ function invoiceDialogBody(record = {}) {
     (canBillingSalesEntry() ? input('revenue', 'Revenue', revenue, true, 'number') : '') +
     (canBillingCostEntry() ? input('supplierCost', 'Cost', supplierCost, false, 'number') + input('totalCost', 'Total Cost', supplierCost, true, 'number') : '') +
     (canBillingSalesEntry() ? input('taxAmount', 'Tax Amount', totals.taxAmount, true, 'number') + input('grandTotal', 'Grand Total', totals.grandTotal, true, 'number') : '') +
-    (canBillingSalesEntry() && canBillingCostEntry() ? input('grossProfit', 'Gross Profit', totals.grossProfit, true, 'number') + input('profitPercent', 'Profit %', totals.profitPercent, true, 'number') : '') +
+    (canBillingSalesEntry() && canBillingCostEntry() && canViewProfitMargin() ? input('grossProfit', 'Gross Profit', totals.grossProfit, true, 'number') + input('profitPercent', 'Profit %', totals.profitPercent, true, 'number') : '') +
     select('status', 'Status', ['Draft', 'Approved', 'Sent', 'Paid', 'Overdue'], record.status || 'Draft') +
     input('date', 'Date', record.date || today(), false, 'date') +
     '<input type="hidden" name="invoiceLinesJson" value="' + escapeHtml(record.invoiceLinesJson || JSON.stringify(lines)) + '" />' +
@@ -1498,7 +1498,8 @@ function isHrSession() {
 }
 
 function isHrAdmin() {
-  return isHrSession() && (currentSession()?.role || "").toLowerCase() === "admin";
+  const role = (currentSession()?.role || "").toLowerCase();
+  return isHrSession() && (role === "admin" || role === "hr");
 }
 
 function isAdminSession() {
@@ -1557,6 +1558,11 @@ function canBillingSalesEntry() {
 function canBillingCostEntry() {
   const session = currentSession() || {};
   return isAdminSession() || session.canBillingCostEntry === undefined || isChecked(session.canBillingCostEntry);
+}
+
+function canViewProfitMargin() {
+  const role = String(currentSession()?.role || "").toLowerCase();
+  return isAdminSession() || role === "billing";
 }
 
 function canViewAllBranches() {
@@ -2181,7 +2187,9 @@ function apiUser(row) {
     "",
     row.notes || "",
     String(row.created_at || today()).slice(0, 10),
-    isChecked(row.hr_portal_access)
+    isChecked(row.hr_portal_access),
+    row.can_billing_sales_entry === undefined ? true : isChecked(row.can_billing_sales_entry),
+    row.can_billing_cost_entry === undefined ? true : isChecked(row.can_billing_cost_entry)
   );
 }
 
@@ -2605,7 +2613,7 @@ function renderDashboard() {
       ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
       ${kpi("Customer Portal", portalCustomerCount(), "Customer users", "customer-portal")}
       ${kpi("Month Revenue", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0), 0)), "Invoiced total", "month-revenue")}
-      ${kpi("Gross Profit", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0) - Number(row.supplierCost || 0), 0)), "Invoiced revenue minus cost", "gross-profit")}
+      ${canViewProfitMargin() ? kpi("Gross Profit", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0) - Number(row.supplierCost || 0), 0)), "Invoiced revenue minus cost", "gross-profit") : ""}
     </section>
     <section class="split-grid single-panel dashboard-shipment-register">
       <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:dashboard")}</article>
@@ -3197,9 +3205,9 @@ function renderReports() {
   return `
     <section class="kpi-grid">
       ${kpi("Filtered Shipments", rows.length, "Current report scope")}
-      ${kpi("Revenue", money(revenue), "Sell total")}
-      ${kpi("Supplier Cost", money(cost), "Buy total")}
-      ${kpi("Margin", money(revenue - cost), "Revenue minus cost")}
+      ${canBillingSalesEntry() ? kpi("Revenue", money(revenue), "Sell total") : ""}
+      ${canBillingCostEntry() ? kpi("Supplier Cost", money(cost), "Buy total") : ""}
+      ${canViewProfitMargin() && canBillingSalesEntry() && canBillingCostEntry() ? kpi("Margin", money(revenue - cost), "Revenue minus cost") : ""}
     </section>
     <section class="panel">${panelHeader("Report Preview and Export", "Reports")}
       <div class="report-toolbar">
@@ -3207,7 +3215,7 @@ function renderReports() {
         ${select("reportFormat", "Preview As", ["PDF", "Excel CSV"], state.ui.reportFormat || "PDF")}
         <button type="button" data-action="preview-report">Preview Report</button>
         <button type="button" class="secondary-button" data-action="export-report" ${preview ? "" : "disabled"}>Export Report</button>
-        <button type="button" class="secondary-button" data-action="margin-report">Margin Summary</button>
+        ${canViewProfitMargin() && canBillingSalesEntry() && canBillingCostEntry() ? `<button type="button" class="secondary-button" data-action="margin-report">Margin Summary</button>` : ""}
       </div>
       ${preview ? reportPreviewPanel(preview) : `<div class="report-preview-empty"><p class="empty-state">Preview the report first, then export once the page layout looks correct.</p></div>`}
     </section>`;
@@ -3522,11 +3530,11 @@ function chargeSummary(shipmentNo) {
 function summaryCard(summary) {
   return `<div class="summary-card">
     <h3>${escapeHtml(summary.shipmentNo || "Shipment Summary")}</h3>
-    <p><span>Freight Cost</span><strong>${money(summary.freightCost)}</strong></p>
+    ${canBillingCostEntry() ? `<p><span>Freight Cost</span><strong>${money(summary.freightCost)}</strong></p>
     <p><span>Additional Charges</span><strong>${money(summary.additionalCharges)}</strong></p>
-    <p><span>Total Cost</span><strong>${money(summary.totalCost)}</strong></p>
-    <p><span>Sell Amount</span><strong>${money(summary.sellAmount)}</strong></p>
-    <p><span>Net Profit</span><strong>${money(summary.netProfit)}</strong></p>
+    <p><span>Total Cost</span><strong>${money(summary.totalCost)}</strong></p>` : ""}
+    ${canBillingSalesEntry() ? `<p><span>Sell Amount</span><strong>${money(summary.sellAmount)}</strong></p>` : ""}
+    ${canViewProfitMargin() && canBillingCostEntry() && canBillingSalesEntry() ? `<p><span>Net Profit</span><strong>${money(summary.netProfit)}</strong></p>` : ""}
   </div>`;
 }
 
@@ -4021,7 +4029,7 @@ function statusOptions() {
 }
 
 function roleOptions() {
-  return dropdownOptions("role", ["Admin", "Operations", "Billing", "Management", "Read-only"]);
+  return dropdownOptions("role", ["Admin", "Operations", "Billing", "HR", "Management", "Read-only"]);
 }
 
 function accountStatusOptions() {
@@ -4126,7 +4134,7 @@ function invoiceColumns() {
   return configurableColumns("invoice", defaultColumnLayouts().invoice).filter(([key]) => {
     if (key === "revenue") return canBillingSalesEntry();
     if (key === "supplierCost" || key === "totalCost") return canBillingCostEntry();
-    if (key === "grossProfit" || key === "profitPercent") return canBillingCostEntry() && canBillingSalesEntry();
+    if (key === "grossProfit" || key === "profitPercent") return canBillingCostEntry() && canBillingSalesEntry() && canViewProfitMargin();
     return true;
   });
 }
@@ -4507,6 +4515,10 @@ async function handleModuleClick(event) {
   }
 
   if (action === "margin-report") {
+    if (!canViewProfitMargin() || !canBillingSalesEntry() || !canBillingCostEntry()) {
+      notifyDenied("Not allowed", "You do not have permission to view profit margin.");
+      return;
+    }
     const margin = filteredRows(visibleRows(state.shipments)).reduce((sum, row) => sum + Number(row.sell || 0) - Number(row.buyCost || 0), 0);
     window.alert(`Current margin: ${money(margin)}`);
     return;
@@ -4830,12 +4842,62 @@ function openRecord(type, id, presetRecord) {
         if (String(data.password || "").trim()) {
           payload.password = data.password;
         }
+        const saved = await persistRecord("customerUser", payload);
+        if (!saved) {
+          notifyDenied("Not saved", "This account could not be saved to the server. Please try again.");
+          return;
+        }
         state.customerUsers = state.customerUsers.map((row) => rowId("customerUser", row) === id ? updatedRecord : row);
-        await persistRecord("customerUser", payload);
         saveState();
         recordDialog.close();
         render();
         notifySuccess("Account updated", `${id} was updated successfully.`);
+      }
+    });
+    return;
+  }
+
+  if (type === "user") {
+    editing = { type, id, record };
+    dialogState = null;
+    openDialog({
+      title: `User - ${id}`,
+      typeLabel: "User",
+      saveLabel: "Save Changes",
+      body: userDialogBody(record),
+      onSave: async () => {
+        const data = collectFormValues(dialogBody.closest("form"));
+        const updatedRecord = {
+          ...record,
+          email: data.email || record.email || "",
+          role: data.role || record.role || "Operations",
+          accountStatus: data.accountStatus || record.accountStatus || "Active",
+          branchAccess: data.branchAccess || record.branchAccess || "",
+          branchViewScope: normalizeBranchViewScope(data.branchViewScope || record.branchViewScope),
+          sectionAccess: data.sectionAccess || record.sectionAccess || "",
+          canViewAllEntry: isChecked(data.canViewAllEntry),
+          canViewOnlySelfEntry: isChecked(data.canViewOnlySelfEntry),
+          canEditAllEntry: isChecked(data.canEditAllEntry),
+          canViewUpdatedHistory: isChecked(data.canViewUpdatedHistory),
+          canBillingSalesEntry: isChecked(data.canBillingSalesEntry),
+          canBillingCostEntry: isChecked(data.canBillingCostEntry),
+          hrPortalAccess: isChecked(data.hrPortalAccess),
+          notes: data.notes || record.notes || ""
+        };
+        const payload = { ...updatedRecord };
+        if (String(data.password || "").trim()) {
+          payload.password = data.password;
+        }
+        const saved = await persistRecord("user", payload);
+        if (!saved) {
+          notifyDenied("Not saved", "This user could not be saved to the server. Please try again.");
+          return;
+        }
+        state.users = state.users.map((row) => rowId("user", row) === id ? updatedRecord : row);
+        saveState();
+        recordDialog.close();
+        render();
+        notifySuccess("User updated", `${id} was updated successfully.`);
       }
     });
     return;
@@ -4867,8 +4929,8 @@ function openRecord(type, id, presetRecord) {
           supplierCost: canBillingCostEntry() ? Number(data.supplierCost || data.totalCost || record.supplierCost || 0) : Number(record.supplierCost || 0),
           totalCost: canBillingCostEntry() ? Number(data.totalCost || record.totalCost || data.supplierCost || 0) : Number(record.totalCost || 0),
           taxAmount: canBillingSalesEntry() ? Number(data.taxAmount || record.taxAmount || 0) : Number(record.taxAmount || 0),
-          grossProfit: canBillingSalesEntry() && canBillingCostEntry() ? Number(data.grossProfit || record.grossProfit || 0) : Number(record.grossProfit || 0),
-          profitPercent: canBillingSalesEntry() && canBillingCostEntry() ? Number(data.profitPercent || record.profitPercent || 0) : Number(record.profitPercent || 0),
+          grossProfit: canBillingSalesEntry() && canBillingCostEntry() && canViewProfitMargin() ? Number(data.grossProfit || record.grossProfit || 0) : Number(record.grossProfit || 0),
+          profitPercent: canBillingSalesEntry() && canBillingCostEntry() && canViewProfitMargin() ? Number(data.profitPercent || record.profitPercent || 0) : Number(record.profitPercent || 0),
           grandTotal: canBillingSalesEntry() ? Number(data.grandTotal || record.grandTotal || 0) : Number(record.grandTotal || 0),
           status: data.status || record.status || "Draft",
           date: data.date || record.date || today(),
@@ -5852,26 +5914,28 @@ function hrAnnouncementDialogBody(record) {
   `;
 }
 
-function userDialogBody() {
-  const checkedSections = sectionAccessSet("Dashboard, Shipment / Airway, Reports");
+function userDialogBody(record) {
+  const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
+  const loaded = Boolean(record);
+  const checkedSections = sectionAccessSet(fieldValue("sectionAccess", "Dashboard, Shipment / Airway, Reports"));
   return `
-    ${input("userName", "User Name", "")}
-    ${passwordField("password", "Password", "")}
-    ${input("email", "Email", "", false, "email")}
-    ${select("role", "User Role", roleOptions(), "Operations")}
-    ${select("accountStatus", "User Account", accountStatusOptions(), "Active")}
-    ${select("branchAccess", "Branch Access", branchAccessOptions(), branchOptions()[0])}
-    ${select("branchViewScope", "View Scope", branchViewScopeOptions(), "Assigned Branch Only")}
-    ${sectionAccessCheckboxes(checkedSections)}
-    ${checkbox("canViewAllEntry", "User can view all entry")}
-    ${checkbox("canViewOnlySelfEntry", "User can view only self entry", true)}
-    ${checkbox("canEditAllEntry", "User can edit all entry")}
-    ${checkbox("canViewUpdatedHistory", "User can view updated history", true)}
-    <p class="field-group-label">Billing / Invoices Permissions</p>
-    ${checkbox("canBillingSalesEntry", "Allow Sales Entry (selling data)")}
-    ${checkbox("canBillingCostEntry", "Allow Cost Entry (cost data)")}
-    ${checkbox("hrPortalAccess", "Allow HR Portal access (Employee Login)")}
-    ${input("notes", "Notes", "Created from admin panel")}
+    ${input("userName", "User Name", fieldValue("userName"), loaded)}
+    ${passwordField("password", loaded ? "Reset Password (leave blank to keep current)" : "Password", "")}
+    ${input("email", "Email", fieldValue("email"), false, "email")}
+    ${select("role", "User Role", roleOptions(), fieldValue("role", "Operations"))}
+    ${select("accountStatus", "User Account", accountStatusOptions(), fieldValue("accountStatus", "Active"))}
+    ${select("branchAccess", "Branch Access", branchAccessOptions(), fieldValue("branchAccess", branchOptions()[0]))}
+    ${select("branchViewScope", "View Scope", branchViewScopeOptions(), fieldValue("branchViewScope", "Assigned Branch Only"))}
+    ${sectionAccessCheckboxes(checkedSections, {
+      billingSalesChecked: loaded ? isChecked(fieldValue("canBillingSalesEntry", true)) : true,
+      billingCostChecked: loaded ? isChecked(fieldValue("canBillingCostEntry", true)) : true,
+      hrPortalChecked: isChecked(fieldValue("hrPortalAccess", false))
+    })}
+    ${checkbox("canViewAllEntry", "User can view all entry", isChecked(fieldValue("canViewAllEntry", false)))}
+    ${checkbox("canViewOnlySelfEntry", "User can view only self entry", loaded ? isChecked(fieldValue("canViewOnlySelfEntry", true)) : true)}
+    ${checkbox("canEditAllEntry", "User can edit all entry", isChecked(fieldValue("canEditAllEntry", false)))}
+    ${checkbox("canViewUpdatedHistory", "User can view updated history", loaded ? isChecked(fieldValue("canViewUpdatedHistory", true)) : true)}
+    ${input("notes", "Notes", fieldValue("notes", "Created from admin panel"))}
   `;
 }
 
@@ -5884,10 +5948,24 @@ function changePasswordDialogBody() {
   `;
 }
 
-function sectionAccessCheckboxes(checkedSections = new Set()) {
+function sectionAccessCheckboxes(checkedSections = new Set(), options = {}) {
+  const { billingSalesChecked = true, billingCostChecked = true, hrPortalChecked = false } = options;
   return `<fieldset class="section-access-grid">
     <legend>Menu Access Permissions</legend>
-    ${modules.map(([name]) => checkbox("sectionAccessList", name, checkedSections.has(name), name)).join("")}
+    ${modules.map(([name]) => {
+      const row = checkbox("sectionAccessList", name, checkedSections.has(name), name);
+      if (name === "Billing / Invoices") {
+        return row + `<div class="permission-sub-options">
+          ${checkbox("canBillingSalesEntry", "Allow Sales Entry (selling data)", billingSalesChecked)}
+          ${checkbox("canBillingCostEntry", "Allow Cost Entry (cost data)", billingCostChecked)}
+        </div>`;
+      }
+      return row;
+    }).join("")}
+    <div class="checkbox-field permission-group-label"><span>Employee Portal</span></div>
+    <div class="permission-sub-options">
+      ${checkbox("hrPortalAccess", "Allow HR Portal access (Employee Login)", hrPortalChecked)}
+    </div>
   </fieldset>`;
 }
 
@@ -6917,12 +6995,12 @@ function invoiceLineTable(lines, canEditCost) {
 
 function invoicePreviewSummary(summary) {
   return '<section class="summary-card invoice-summary">' +
-    '<div><span>Revenue</span><strong data-invoice-summary="revenue">' + money(summary.revenue) + '</strong></div>' +
-    '<div><span>Cost</span><strong data-invoice-summary="cost">' + money(summary.cost) + '</strong></div>' +
-    '<div><span>Tax</span><strong data-invoice-summary="taxAmount">' + money(summary.taxAmount) + '</strong></div>' +
-    '<div><span>Gross Profit</span><strong data-invoice-summary="grossProfit">' + money(summary.grossProfit) + '</strong></div>' +
-    '<div><span>Profit %</span><strong data-invoice-summary="profitPercent">' + money(summary.profitPercent) + '%</strong></div>' +
-    '<div><span>Grand Total</span><strong data-invoice-summary="grandTotal">' + money(summary.grandTotal) + '</strong></div>' +
+    (canBillingSalesEntry() ? '<div><span>Revenue</span><strong data-invoice-summary="revenue">' + money(summary.revenue) + '</strong></div>' : '') +
+    (canBillingCostEntry() ? '<div><span>Cost</span><strong data-invoice-summary="cost">' + money(summary.cost) + '</strong></div>' : '') +
+    (canBillingSalesEntry() ? '<div><span>Tax</span><strong data-invoice-summary="taxAmount">' + money(summary.taxAmount) + '</strong></div>' : '') +
+    (canViewProfitMargin() && canBillingSalesEntry() && canBillingCostEntry() ? '<div><span>Gross Profit</span><strong data-invoice-summary="grossProfit">' + money(summary.grossProfit) + '</strong></div>' : '') +
+    (canViewProfitMargin() && canBillingSalesEntry() && canBillingCostEntry() ? '<div><span>Profit %</span><strong data-invoice-summary="profitPercent">' + money(summary.profitPercent) + '%</strong></div>' : '') +
+    (canBillingSalesEntry() ? '<div><span>Grand Total</span><strong data-invoice-summary="grandTotal">' + money(summary.grandTotal) + '</strong></div>' : '') +
   '</section>';
 }
 
@@ -9130,10 +9208,16 @@ async function createShipment(data) {
     notifyDenied("Shipment not saved", "The shipment could not be saved. Check the connection and try again before generating a TCN.");
     return false;
   }
-  state.shipments.unshift(record);
-  await createShipmentDocument(data, data.jobNo);
-  addHistory("Created shipment", data.jobNo);
-  notifySuccess("Shipment created", data.jobNo + " was saved successfully.");
+  const finalRecord = typeof saved === "object" ? apiShipment(saved) : record;
+  const renumbered = finalRecord.jobNo && finalRecord.jobNo !== data.jobNo;
+  state.shipments.unshift(finalRecord);
+  await createShipmentDocument(data, finalRecord.jobNo);
+  addHistory("Created shipment", finalRecord.jobNo);
+  if (renumbered) {
+    notifySuccess("Shipment created", `${data.jobNo} was already taken by another user's shipment saved moments earlier, so this one was saved as ${finalRecord.jobNo} instead.`);
+  } else {
+    notifySuccess("Shipment created", finalRecord.jobNo + " was saved successfully.");
+  }
   return true;
 }
 
