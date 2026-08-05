@@ -1354,6 +1354,32 @@ th {
   text-transform: uppercase;
 }
 
+.permission-sub-options {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: -2px 0 4px 24px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--accent);
+  background: var(--blue-soft);
+  border-radius: 6px;
+}
+
+.permission-group-label {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.permission-group-label span {
+  font-weight: 800;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
 .dropdown-menu {
   position: absolute;
   z-index: 9999;
