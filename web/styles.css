@@ -1916,6 +1916,50 @@ tr.shipment-row-cancelled td { background: #f2f3f5; }
   min-width: 0;
 }
 
+.branch-sequence-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.branch-sequence-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+}
+
+.branch-sequence-table th,
+.branch-sequence-table td {
+  padding: 13px;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  vertical-align: top;
+  text-align: left;
+}
+
+.branch-sequence-table th:last-child,
+.branch-sequence-table td:last-child {
+  border-right: 0;
+}
+
+.branch-sequence-table th {
+  background: #f5f8fc;
+  color: var(--ink);
+}
+
+.branch-sequence-table label {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.branch-sequence-table label:last-child {
+  margin-bottom: 0;
+}
+
 .job-list-main {
   display: grid;
   gap: 8px;

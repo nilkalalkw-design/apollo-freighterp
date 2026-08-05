@@ -3299,11 +3299,21 @@ function renderSettings() {
         ${settingsOpen ? `<form class="stack-form" data-form="settings">
           ${input("companyName", "Company Name", state.settings.companyName)}
           ${input("companyLogoUrl", "Company Logo URL", state.settings.companyLogoUrl || "")}
-          <div class="detail-grid">
-            ${input("kuwaitShipmentNumberFormat", "Kuwait HO Shipment Number Format", state.settings.kuwaitShipmentNumberFormat || "AFS-#####/MM/KWI/{SERVICE}")}
-            ${input("dubaiShipmentNumberFormat", "Dubai Shipment Number Format", state.settings.dubaiShipmentNumberFormat || "AFS-#####/MM/DBX/{SERVICE}")}
-            ${input("kuwaitShipmentSerialStart", "Kuwait HO Next Shipment Serial", state.settings.kuwaitShipmentSerialStart || "1", false, "number")}
-            ${input("dubaiShipmentSerialStart", "Dubai Next Shipment Serial", state.settings.dubaiShipmentSerialStart || "1", false, "number")}
+          <div class="branch-sequence-table-wrap">
+            <table class="branch-sequence-table">
+              <thead><tr><th>Sequence Name</th><th>Kuwait HO</th><th>Dubai</th></tr></thead>
+              <tbody><tr>
+                <td><strong>Job No</strong></td>
+                <td>
+                  <label>Format<input name="kuwaitShipmentNumberFormat" value="${escapeHtml(state.settings.kuwaitShipmentNumberFormat || "AFS-#####/MM/KWI/{SERVICE}")}" /></label>
+                  <label>Next Serial<input name="kuwaitShipmentSerialStart" type="number" min="1" value="${escapeHtml(state.settings.kuwaitShipmentSerialStart || "1")}" /></label>
+                </td>
+                <td>
+                  <label>Format<input name="dubaiShipmentNumberFormat" value="${escapeHtml(state.settings.dubaiShipmentNumberFormat || "AFS-#####/MM/DBX/{SERVICE}")}" /></label>
+                  <label>Next Serial<input name="dubaiShipmentSerialStart" type="number" min="1" value="${escapeHtml(state.settings.dubaiShipmentSerialStart || "1")}" /></label>
+                </td>
+              </tr></tbody>
+            </table>
           </div>
           <p class="empty-state">Use <strong>#####</strong> for serial number, <strong>MM</strong> for month, and <strong>{SERVICE}</strong> for the service type selected in the shipment panel.</p>
           ${input("invoiceNumberFormat", "Invoice Number Format", state.settings.invoiceNumberFormat)}
