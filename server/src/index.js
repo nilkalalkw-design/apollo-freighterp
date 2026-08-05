@@ -1246,6 +1246,15 @@ async function prepareRecordForConfig(config, body) {
 
   return prepared;
 }
+function bumpTrailingNumber(value) {
+  const text = String(value || "");
+  const match = text.match(/^(.*?)(\d+)(\D*)$/);
+  if (!match) return `${text}-1`;
+  const [, prefix, digits, suffix] = match;
+  const next = String(Number(digits) + 1).padStart(digits.length, "0");
+  return `${prefix}${next}${suffix}`;
+}
+
 async function insertRow(config, body) {
   body = await prepareRecordForConfig(config, body);
   const { columns, values } = collectValues(config, body);
@@ -1257,31 +1266,55 @@ async function insertRow(config, body) {
     throw error;
   }
 
-  const placeholders = values.map((_, index) => `$${index + 1}`);
+  // Two people can open "New Shipment" at nearly the same moment and both get shown the same
+  // next job number. Rather than reject the second person's whole submission and make them
+  // re-enter everything, automatically bump the number and retry a few times - this is the only
+  // table where that's currently a reported problem.
+  const autoRenumberColumn = config.table === "shipments" ? "job_no" : null;
+  const maxAttempts = autoRenumberColumn ? 6 : 1;
 
-  try {
-    const result = await query(
-      `insert into ${config.table} (${columns.join(", ")})
-       values (${placeholders.join(", ")})
-       returning ${columnsFor(config)}`,
-      values
-    );
-    return result.rows[0];
-  } catch (error) {
-    if (error.code === "23505") {
-      const keyIndex = config.key ? columns.indexOf(config.key) : -1;
-      const keyValue = keyIndex >= 0 ? values[keyIndex] : "";
-      const duplicateError = new Error(
-        keyValue
-          ? `${keyValue} already exists. Choose a different number and try again.`
-          : "A record with this value already exists. Choose a different number and try again."
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const placeholders = values.map((_, index) => `$${index + 1}`);
+    try {
+      const result = await query(
+        `insert into ${config.table} (${columns.join(", ")})
+         values (${placeholders.join(", ")})
+         returning ${columnsFor(config)}`,
+        values
       );
-      duplicateError.status = 409;
-      throw duplicateError;
+      return result.rows[0];
+    } catch (error) {
+      if (error.code === "23505" && autoRenumberColumn && attempt < maxAttempts) {
+        const colIndex = columns.indexOf(autoRenumberColumn);
+        if (colIndex !== -1) {
+          const oldValue = values[colIndex];
+          const newValue = bumpTrailingNumber(oldValue);
+          values[colIndex] = newValue;
+          // Airway-entry shipments use the same value for job_no and airway_bill_no - keep them matched.
+          const awbIndex = columns.indexOf("airway_bill_no");
+          if (awbIndex !== -1 && values[awbIndex] === oldValue) {
+            values[awbIndex] = newValue;
+          }
+          continue;
+        }
+      }
+
+      if (error.code === "23505") {
+        const keyIndex = config.key ? columns.indexOf(config.key) : -1;
+        const keyValue = keyIndex >= 0 ? values[keyIndex] : "";
+        const duplicateError = new Error(
+          keyValue
+            ? `${keyValue} already exists. Choose a different number and try again.`
+            : "A record with this value already exists. Choose a different number and try again."
+        );
+        duplicateError.status = 409;
+        throw duplicateError;
+      }
+      throw error;
     }
-    throw error;
   }
 }
+
 
 async function updateRow(config, id, body) {
   if (!config.key) {
