@@ -16,5 +16,7 @@ services:
         value: https://apollo-freighterp.vercel.app
       - key: AUTO_MIGRATE
         value: "true"
+      - key: CUSTOMER_PORTAL_SECRET
+        generateValue: true
       - key: NEON_DATABASE_URL
         sync: false
