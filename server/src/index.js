@@ -918,6 +918,8 @@ const resources = {
       field("company_name", ["companyName", "company_name"]),
       field("company_logo_url", ["companyLogoUrl", "company_logo_url"]),
       field("shipment_number_format", ["shipmentNumberFormat", "shipment_number_format"]),
+      field("kuwait_shipment_number_format", ["kuwaitShipmentNumberFormat", "kuwait_shipment_number_format"]),
+      field("dubai_shipment_number_format", ["dubaiShipmentNumberFormat", "dubai_shipment_number_format"]),
       field("invoice_number_format", ["invoiceNumberFormat", "invoice_number_format"]),
       field("consolidation_number_format", ["consolidationNumberFormat", "consolidation_number_format"]),
       field("tcn_number_format", ["tcnNumberFormat", "tcn_number_format"]),

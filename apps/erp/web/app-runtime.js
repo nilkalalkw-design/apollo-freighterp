@@ -216,6 +216,8 @@ function seedState() {
       companyName: "APOLLO FREIGHT SOLUTIONS",
       companyLogoUrl: "",
       shipmentNumberFormat: "AFS-SI###",
+      kuwaitShipmentNumberFormat: "AFS-#####/MM/KWI/{SERVICE}",
+      dubaiShipmentNumberFormat: "AFS-#####/MM/DBX/{SERVICE}",
       invoiceNumberFormat: "INV-YY###",
       consolidationNumberFormat: "CON-YY###",
       tcnNumberFormat: "TCN-YY###",
@@ -1097,7 +1099,8 @@ function configuredNumber(format, collection, field, fallbackPrefix) {
 
   const fullYear = new Date().getFullYear().toString();
   const year = new Date().getFullYear().toString().slice(-2);
-  const resolvedFormat = normalizedFormat.replaceAll("YYYY", fullYear).replaceAll("YY", year);
+  const month = String(new Date().getMonth() + 1).padStart(2, "0");
+  const resolvedFormat = normalizedFormat.replaceAll("YYYY", fullYear).replaceAll("YY", year).replaceAll("MM", month);
   const hashPattern = resolvedFormat.match(/#+/);
   if (!hashPattern) return nextNumber(fallbackPrefix, collection, field);
 
@@ -1117,8 +1120,37 @@ function configuredNumber(format, collection, field, fallbackPrefix) {
     .replace(/#+/, String(max + 1).padStart(digits, "0"));
 }
 
-function nextShipmentNumber() {
-  return configuredNumber(state.settings.shipmentNumberFormat, state.shipments, "jobNo", "AFS");
+function shipmentNumberFormatForBranch(branch) {
+  return normalizeBranchName(branch) === "Dubai"
+    ? state.settings.dubaiShipmentNumberFormat || "AFS-#####/MM/DBX/{SERVICE}"
+    : state.settings.kuwaitShipmentNumberFormat || "AFS-#####/MM/KWI/{SERVICE}";
+}
+
+function nextShipmentNumber(branch = defaultUserBranch(), service = "") {
+  const normalizedBranch = normalizeBranchName(branch);
+  const serviceCode = String(service || "").trim().toUpperCase();
+  const format = shipmentNumberFormatForBranch(normalizedBranch);
+  const fullYear = new Date().getFullYear().toString();
+  const year = fullYear.slice(-2);
+  const month = String(new Date().getMonth() + 1).padStart(2, "0");
+  const resolvedFormat = String(format).replaceAll("YYYY", fullYear).replaceAll("YY", year).replaceAll("MM", month);
+  const hashPattern = resolvedFormat.match(/#+/);
+  if (!hashPattern) return configuredNumber(state.settings.shipmentNumberFormat, state.shipments, "jobNo", "AFS");
+
+  const digits = hashPattern[0].length;
+  const prefix = resolvedFormat.slice(0, hashPattern.index);
+  const suffix = resolvedFormat.slice(hashPattern.index + digits);
+  const suffixPattern = escapeRegex(suffix).replace("\\{SERVICE\\}", "[A-Za-z0-9]+") || "";
+  const numberPattern = new RegExp(`^${escapeRegex(prefix)}(\\d{${digits},})${suffixPattern}$`, "i");
+  const max = state.shipments
+    .filter((item) => normalizeBranchName(item.branch || "") === normalizedBranch)
+    .map((item) => String(item.jobNo || "").match(numberPattern))
+    .map((match) => match ? Number(match[1]) || 0 : 0)
+    .reduce((highest, value) => Math.max(highest, value), 0);
+
+  return resolvedFormat
+    .replace(/#+/, String(max + 1).padStart(digits, "0"))
+    .replaceAll("{SERVICE}", serviceCode);
 }
 
 function nextInvoiceNumber() {
@@ -2301,6 +2333,8 @@ function apiSettings(row) {
     companyName: row.company_name || state.settings.companyName,
     companyLogoUrl: row.company_logo_url || state.settings.companyLogoUrl || "",
     shipmentNumberFormat: row.shipment_number_format || state.settings.shipmentNumberFormat,
+    kuwaitShipmentNumberFormat: row.kuwait_shipment_number_format || state.settings.kuwaitShipmentNumberFormat || "AFS-#####/MM/KWI/{SERVICE}",
+    dubaiShipmentNumberFormat: row.dubai_shipment_number_format || state.settings.dubaiShipmentNumberFormat || "AFS-#####/MM/DBX/{SERVICE}",
     invoiceNumberFormat: row.invoice_number_format || state.settings.invoiceNumberFormat,
     consolidationNumberFormat: row.consolidation_number_format || state.settings.consolidationNumberFormat,
     tcnNumberFormat: row.tcn_number_format || state.settings.tcnNumberFormat,
@@ -3254,7 +3288,11 @@ function renderSettings() {
         ${settingsOpen ? `<form class="stack-form" data-form="settings">
           ${input("companyName", "Company Name", state.settings.companyName)}
           ${input("companyLogoUrl", "Company Logo URL", state.settings.companyLogoUrl || "")}
-          ${input("shipmentNumberFormat", "Shipment Number Format", state.settings.shipmentNumberFormat)}
+          <div class="detail-grid">
+            ${input("kuwaitShipmentNumberFormat", "Kuwait HO Shipment Number Format", state.settings.kuwaitShipmentNumberFormat || "AFS-#####/MM/KWI/{SERVICE}")}
+            ${input("dubaiShipmentNumberFormat", "Dubai Shipment Number Format", state.settings.dubaiShipmentNumberFormat || "AFS-#####/MM/DBX/{SERVICE}")}
+          </div>
+          <p class="empty-state">Use <strong>#####</strong> for serial number, <strong>MM</strong> for month, and <strong>{SERVICE}</strong> for the service type selected in the shipment panel.</p>
           ${input("invoiceNumberFormat", "Invoice Number Format", state.settings.invoiceNumberFormat)}
           ${input("consolidationNumberFormat", "Consolidation Number Format", state.settings.consolidationNumberFormat)}
           ${input("tcnNumberFormat", "TCN Number Format", state.settings.tcnNumberFormat)}
@@ -3270,7 +3308,7 @@ function renderSettings() {
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
           ${select("branches", "Branches", branchOptions(), normalizeBranchName(state.settings.branches || branchOptions()[0]))}
           ${select("allowGlobalShipmentQuickSearch", "Allow 'Open by Number' to search all branches", ["No", "Yes"], state.settings.allowGlobalShipmentQuickSearch || "No")}
-          <p class="empty-state">Next shipment: ${escapeHtml(nextShipmentNumber())} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())} | quotation: ${escapeHtml(nextQuotationNumber())}</p>
+          <p class="empty-state">Next Kuwait shipment: ${escapeHtml(nextShipmentNumber("Kuwait HO", "LI"))} | Next Dubai shipment: ${escapeHtml(nextShipmentNumber("Dubai", "SI"))} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())} | quotation: ${escapeHtml(nextQuotationNumber())}</p>
           <button type="submit">Save Company Settings</button>
         </form>` : `<p class="empty-state">Open settings to update number formats, branches, and invoice/POD controls.</p>`}
       </article>
@@ -6105,7 +6143,15 @@ function consolidationShipmentPicker(initialJobs = "", currentLoadNo = "") {
 function bindShipmentDirectionDialog() {
   const directionSelect = dialogBody.querySelector("[name='shipmentDirection']");
   const serviceSelect = dialogBody.querySelector("[name='shipmentService']");
+  const branchSelect = dialogBody.querySelector("[name='branch']");
+  const jobNoField = dialogBody.querySelector("[name='jobNo']");
   if (!directionSelect || !serviceSelect) return;
+
+  const refreshShipmentNumber = () => {
+    const entryMode = dialogBody.querySelector("[name='entryMode']")?.value || "shipment";
+    if (entryMode !== "shipment" || !jobNoField || jobNoField.readOnly) return;
+    jobNoField.value = nextShipmentNumber(branchSelect?.value || defaultUserBranch(), serviceSelect.value);
+  };
 
   const rebuildServiceOptions = (preserveValue) => {
     const options = shipmentServiceOptions(directionSelect.value);
@@ -6114,8 +6160,14 @@ function bindShipmentDirectionDialog() {
     serviceSelect.innerHTML = blankOption + options.map((option) => `<option value="${escapeHtml(option)}" ${option === keepValue ? "selected" : ""}>${escapeHtml(option)}</option>`).join("");
   };
 
-  directionSelect.addEventListener("change", () => rebuildServiceOptions(null));
+  directionSelect.addEventListener("change", () => {
+    rebuildServiceOptions(null);
+    refreshShipmentNumber();
+  });
+  serviceSelect.addEventListener("change", refreshShipmentNumber);
+  branchSelect?.addEventListener("change", refreshShipmentNumber);
   rebuildServiceOptions(serviceSelect.value);
+  refreshShipmentNumber();
 }
 
 function bindShipmentCustomerTariffs() {
