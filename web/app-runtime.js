@@ -218,6 +218,8 @@ function seedState() {
       shipmentNumberFormat: "AFS-SI###",
       kuwaitShipmentNumberFormat: "AFS-#####/MM/KWI/{SERVICE}",
       dubaiShipmentNumberFormat: "AFS-#####/MM/DBX/{SERVICE}",
+      kuwaitShipmentSerialStart: "1",
+      dubaiShipmentSerialStart: "1",
       invoiceNumberFormat: "INV-YY###",
       consolidationNumberFormat: "CON-YY###",
       tcnNumberFormat: "TCN-YY###",
@@ -1126,6 +1128,13 @@ function shipmentNumberFormatForBranch(branch) {
     : state.settings.kuwaitShipmentNumberFormat || "AFS-#####/MM/KWI/{SERVICE}";
 }
 
+function shipmentSerialStartForBranch(branch) {
+  const raw = normalizeBranchName(branch) === "Dubai"
+    ? state.settings.dubaiShipmentSerialStart
+    : state.settings.kuwaitShipmentSerialStart;
+  return Math.max(1, Number(raw) || 1);
+}
+
 function nextShipmentNumber(branch = defaultUserBranch(), service = "") {
   const normalizedBranch = normalizeBranchName(branch);
   const serviceCode = String(service || "").trim().toUpperCase();
@@ -1146,7 +1155,7 @@ function nextShipmentNumber(branch = defaultUserBranch(), service = "") {
     .filter((item) => normalizeBranchName(item.branch || "") === normalizedBranch)
     .map((item) => String(item.jobNo || "").match(numberPattern))
     .map((match) => match ? Number(match[1]) || 0 : 0)
-    .reduce((highest, value) => Math.max(highest, value), 0);
+    .reduce((highest, value) => Math.max(highest, value), shipmentSerialStartForBranch(normalizedBranch) - 1);
 
   return resolvedFormat
     .replace(/#+/, String(max + 1).padStart(digits, "0"))
@@ -2335,6 +2344,8 @@ function apiSettings(row) {
     shipmentNumberFormat: row.shipment_number_format || state.settings.shipmentNumberFormat,
     kuwaitShipmentNumberFormat: row.kuwait_shipment_number_format || state.settings.kuwaitShipmentNumberFormat || "AFS-#####/MM/KWI/{SERVICE}",
     dubaiShipmentNumberFormat: row.dubai_shipment_number_format || state.settings.dubaiShipmentNumberFormat || "AFS-#####/MM/DBX/{SERVICE}",
+    kuwaitShipmentSerialStart: row.kuwait_shipment_serial_start || state.settings.kuwaitShipmentSerialStart || "1",
+    dubaiShipmentSerialStart: row.dubai_shipment_serial_start || state.settings.dubaiShipmentSerialStart || "1",
     invoiceNumberFormat: row.invoice_number_format || state.settings.invoiceNumberFormat,
     consolidationNumberFormat: row.consolidation_number_format || state.settings.consolidationNumberFormat,
     tcnNumberFormat: row.tcn_number_format || state.settings.tcnNumberFormat,
@@ -3291,6 +3302,8 @@ function renderSettings() {
           <div class="detail-grid">
             ${input("kuwaitShipmentNumberFormat", "Kuwait HO Shipment Number Format", state.settings.kuwaitShipmentNumberFormat || "AFS-#####/MM/KWI/{SERVICE}")}
             ${input("dubaiShipmentNumberFormat", "Dubai Shipment Number Format", state.settings.dubaiShipmentNumberFormat || "AFS-#####/MM/DBX/{SERVICE}")}
+            ${input("kuwaitShipmentSerialStart", "Kuwait HO Next Shipment Serial", state.settings.kuwaitShipmentSerialStart || "1", false, "number")}
+            ${input("dubaiShipmentSerialStart", "Dubai Next Shipment Serial", state.settings.dubaiShipmentSerialStart || "1", false, "number")}
           </div>
           <p class="empty-state">Use <strong>#####</strong> for serial number, <strong>MM</strong> for month, and <strong>{SERVICE}</strong> for the service type selected in the shipment panel.</p>
           ${input("invoiceNumberFormat", "Invoice Number Format", state.settings.invoiceNumberFormat)}

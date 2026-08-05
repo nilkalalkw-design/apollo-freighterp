@@ -920,6 +920,8 @@ const resources = {
       field("shipment_number_format", ["shipmentNumberFormat", "shipment_number_format"]),
       field("kuwait_shipment_number_format", ["kuwaitShipmentNumberFormat", "kuwait_shipment_number_format"]),
       field("dubai_shipment_number_format", ["dubaiShipmentNumberFormat", "dubai_shipment_number_format"]),
+      field("kuwait_shipment_serial_start", ["kuwaitShipmentSerialStart", "kuwait_shipment_serial_start"]),
+      field("dubai_shipment_serial_start", ["dubaiShipmentSerialStart", "dubai_shipment_serial_start"]),
       field("invoice_number_format", ["invoiceNumberFormat", "invoice_number_format"]),
       field("consolidation_number_format", ["consolidationNumberFormat", "consolidation_number_format"]),
       field("tcn_number_format", ["tcnNumberFormat", "tcn_number_format"]),
