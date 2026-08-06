@@ -7360,7 +7360,7 @@ function invoicePreviewMeta(shipmentItem, tariffItem) {
 function invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, canEditCost = true) {
   const selectedWeight = shipmentItem ? effectiveChargeableWeightForShipment(shipmentItem) : null;
   var summary = invoiceTotals(lines, taxPercent);
-  return '<section class="invoice-preview-shell">' +
+  return '<section class="invoice-preview-shell" data-invoice-preview-ready>' +
     invoicePreviewMeta(shipmentItem, tariffItem) +
     (tariffItem ? tariffPreviewHtml([tariffItem], 'Select a tariff to view full details.', selectedWeight) : '<p class="empty-state">Select a tariff to view full details.</p>') +
     invoicePreviewSummary(summary) +
@@ -7596,7 +7596,7 @@ function bindInvoiceShipmentTariff() {
     if (tariffSnapshotField) tariffSnapshotField.value = JSON.stringify(tariffItem || {});
     if (invoiceSnapshotField) invoiceSnapshotField.value = JSON.stringify(invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent));
     if (previewContainer) {
-      if (renderPreview || !previewContainer.querySelector('[data-invoice-summary="revenue"]')) {
+      if (renderPreview || !previewContainer.querySelector('[data-invoice-preview-ready]')) {
         renderInvoicePreview(shipmentItem, tariffItem, taxPercent);
       } else {
         updateInvoicePreviewSummary(summary);
