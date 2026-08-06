@@ -5,7 +5,7 @@ const fs = require("fs");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const path = require("path");
-const { allowedOrigins, autoMigrate, customerPortalSecret, databaseHost, databaseUrl, databaseUrlSource, isCloudSqlSocket, isNeonDatabase, port } = require("./config");
+const { allowedOrigins, autoMigrate, configuredSecret, databaseHost, databaseUrl, databaseUrlSource, isCloudSqlSocket, isNeonDatabase, port } = require("./config");
 const { query, testConnection } = require("./db");
 const { runMigrations } = require("./migrate");
 
@@ -19,10 +19,55 @@ const runtimeStatus = {
   databaseConfigured: Boolean(databaseUrl),
   databaseUrlSource: databaseUrlSource || "missing",
   migration: autoMigrate ? "pending" : "disabled",
+  loginSecret: configuredSecret ? "configured" : "pending",
   startupError: databaseUrl
     ? ""
     : "No database connection string was found. Set DATABASE_URL or one of the supported PostgreSQL aliases."
 };
+
+// The token signing secret. Starts as whatever was explicitly configured (may be empty) and is
+// resolved to a stable value by ensurePortalSecret() before the server starts accepting requests -
+// see the comment in config.js for why this can no longer be a fresh random value per process.
+let customerPortalSecret = configuredSecret || "";
+
+async function ensurePortalSecret() {
+  if (customerPortalSecret) return customerPortalSecret;
+
+  try {
+    const existing = await query("select secret_value from system_secrets where secret_key = $1 limit 1", [
+      "customer_portal_secret"
+    ]);
+    if (existing.rows[0]?.secret_value) {
+      customerPortalSecret = existing.rows[0].secret_value;
+      runtimeStatus.loginSecret = "persisted";
+      return customerPortalSecret;
+    }
+
+    const generated = crypto.randomBytes(32).toString("hex");
+    // ON CONFLICT DO NOTHING: if another instance is cold-starting at the same moment and wins the
+    // race to insert first, we don't want to clobber its value - we want to converge on whichever
+    // one landed first, so every instance ends up signing/verifying with the same secret.
+    await query(
+      "insert into system_secrets (secret_key, secret_value) values ($1, $2) on conflict (secret_key) do nothing",
+      ["customer_portal_secret", generated]
+    );
+    const finalRow = await query("select secret_value from system_secrets where secret_key = $1 limit 1", [
+      "customer_portal_secret"
+    ]);
+    customerPortalSecret = finalRow.rows[0]?.secret_value || generated;
+    runtimeStatus.loginSecret = "persisted";
+    return customerPortalSecret;
+  } catch (error) {
+    console.warn(
+      `Could not persist a login secret to the database (${error.message}). Falling back to a per-process ` +
+      "secret - existing sessions will need to log in again after every restart until CUSTOMER_PORTAL_SECRET " +
+      "is set or the database/system_secrets table is reachable."
+    );
+    customerPortalSecret = customerPortalSecret || crypto.randomBytes(32).toString("hex");
+    runtimeStatus.loginSecret = "unstable";
+    return customerPortalSecret;
+  }
+}
 
 // Simple in-memory rate limiter for auth-sensitive endpoints. Deliberately dependency-free and
 // generous (won't interfere with normal usage/testing) - it only slows down rapid brute-force attempts.
@@ -1508,7 +1553,7 @@ app.get("/api/health", async (_request, response) => {
       allowedOrigins,
       autoMigrate: runtimeStatus.autoMigrate,
       migration: runtimeStatus.migration,
-      missingTables: readiness.missingTables,
+      loginSecret: runtimeStatus.loginSecret,
       startupError: ready ? runtimeStatus.startupError : runtimeStatus.startupError || `Missing tables: ${readiness.missingTables.join(", ")}`,
       error: ready ? "" : runtimeStatus.startupError || `Missing tables: ${readiness.missingTables.join(", ")}`,
       serverTime: db.server_time
@@ -1527,6 +1572,7 @@ app.get("/api/health", async (_request, response) => {
       allowedOrigins,
       autoMigrate: runtimeStatus.autoMigrate,
       migration: runtimeStatus.migration,
+      loginSecret: runtimeStatus.loginSecret,
       startupError: runtimeStatus.startupError,
       error: error.message
     });
@@ -2059,6 +2105,11 @@ async function start() {
       console.warn(`Database migration skipped: ${error.message}`);
     }
   }
+
+  // Must resolve to a stable value before the server accepts any requests - if this ran lazily on
+  // first login instead, a burst of concurrent logins right after a cold start could each generate
+  // their own secret and race each other.
+  await ensurePortalSecret();
 
   app.listen(port, () => {
     console.log(`ApolloFreightERP server running on port ${port}`);
