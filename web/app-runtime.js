@@ -5560,29 +5560,91 @@ function openPodDialog(jobNo = "") {
     typeLabel: "POD",
     body: `
       ${selectFrom("jobNo", "Shipment No", shipmentOptions(), shipmentItem.jobNo || "")}
-      ${input("deliveryNoteNo", "Delivery Note No", shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber())}
-      ${input("ginNo", "GIN Number", shipmentItem.ginNo || "")}
-      ${input("customerReference", "Customer Reference", shipmentItem.customerReference || "")}
-      ${textarea("deliveryRemarks", "Delivery Remarks / Coordinates", shipmentItem.deliveryRemarks || "", false, 3)}
-      ${input("pocName", "POC Name", shipmentItem.pocName || shipmentItem.deliveryContactPerson || "")}
-      ${input("pocMobile", "POC Mobile Number", shipmentItem.pocMobile || shipmentItem.deliveryMobile || "")}
-      ${input("additionalContact", "Additional Contact Person", shipmentItem.additionalContact || "")}
-      ${input("preparedBy", "Prepared By", shipmentItem.preparedBy || currentUserName())}
-      ${input("deliveredBy", "Delivered By", shipmentItem.deliveredBy || shipmentItem.driverName || "")}
-      ${input("receivedBy", "Goods Received By", shipmentItem.receivedBy || "")}
-      ${input("receiverPhone", "Receiver Telephone Number", shipmentItem.receiverPhone || "")}
-      ${input("receiverSignature", "Receiver Signature", shipmentItem.receiverSignature || "")}
-      ${input("deliveryDatetime", "Delivery Date & Time", shipmentItem.deliveryDatetime || localDateTimeInput(), false, "datetime-local")}
+      <div data-pod-shipment-fields>${podShipmentFields(shipmentItem)}</div>
     `,
     saveLabel: "Mark Delivered + Upload POD",
     async onSave() {
       const data = collectFormValues(dialogBody.closest("form"));
-      await updatePod(data);
+      const saved = await updatePod(data);
+      if (!saved) return;
       saveState();
       recordDialog.close();
       render();
-    }
+    },
+    afterOpen: bindPodShipmentDialog
   });
+}
+
+function podShipmentFields(shipmentItem = {}) {
+  return `
+    ${input("deliveryNoteNo", "Delivery Note No", shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber())}
+    ${input("ginNo", "GIN Number", shipmentItem.ginNo || "")}
+    ${input("customerReference", "Customer Reference", shipmentItem.customerReference || "")}
+    ${textarea("deliveryRemarks", "Delivery Remarks / Coordinates", shipmentItem.deliveryRemarks || "", false, 3)}
+    ${input("pocName", "POC Name", shipmentItem.pocName || shipmentItem.deliveryContactPerson || "")}
+    ${input("pocMobile", "POC Mobile Number", shipmentItem.pocMobile || shipmentItem.deliveryMobile || "")}
+    ${input("additionalContact", "Additional Contact Person", shipmentItem.additionalContact || "")}
+    ${input("preparedBy", "Prepared By", shipmentItem.preparedBy || currentUserName())}
+    ${input("deliveredBy", "Delivered By", shipmentItem.deliveredBy || shipmentItem.driverName || "")}
+    ${input("receivedBy", "Goods Received By", shipmentItem.receivedBy || "")}
+    ${input("receiverPhone", "Receiver Telephone Number", shipmentItem.receiverPhone || "")}
+    ${input("receiverSignature", "Receiver Signature", shipmentItem.receiverSignature || "")}
+    ${input("deliveryDatetime", "Delivery Date & Time", shipmentItem.deliveryDatetime || localDateTimeInput(), false, "datetime-local")}
+  `;
+}
+
+function bindPodShipmentDialog() {
+  const shipmentField = dialogBody.querySelector("[name='jobNo']");
+  const details = dialogBody.querySelector("[data-pod-shipment-fields]");
+  if (!shipmentField || !details) return;
+  const refreshShipmentDetails = () => {
+    const shipmentItem = state.shipments.find((row) => row.jobNo === String(shipmentField.value || "").trim());
+    if (!shipmentItem) return;
+    details.innerHTML = podShipmentFields(shipmentItem);
+    dialogTitle.textContent = `POD / Delivery - ${shipmentItem.jobNo}`;
+  };
+  shipmentField.addEventListener("change", refreshShipmentDetails);
+  shipmentField.addEventListener("input", refreshShipmentDetails);
+}
+
+async function updatePod(data) {
+  const jobNo = String(data.jobNo || "").trim();
+  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
+  if (!shipmentItem) {
+    notifyDenied("Shipment not found", "Select a valid shipment in the POD form.");
+    return false;
+  }
+
+  const updatedShipment = {
+    ...shipmentItem,
+    status: "Delivered",
+    podStatus: "Uploaded",
+    deliveryNoteNo: String(data.deliveryNoteNo || shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber()).trim(),
+    ginNo: String(data.ginNo || "").trim(),
+    customerReference: String(data.customerReference || shipmentItem.customerReference || "").trim(),
+    deliveryRemarks: String(data.deliveryRemarks || "").trim(),
+    pocName: String(data.pocName || "").trim(),
+    pocMobile: String(data.pocMobile || "").trim(),
+    additionalContact: String(data.additionalContact || "").trim(),
+    preparedBy: String(data.preparedBy || currentUserName()).trim(),
+    deliveredBy: String(data.deliveredBy || "").trim(),
+    receivedBy: String(data.receivedBy || "").trim(),
+    receiverPhone: String(data.receiverPhone || "").trim(),
+    receiverSignature: String(data.receiverSignature || "").trim(),
+    deliveryDatetime: String(data.deliveryDatetime || localDateTimeInput()).trim()
+  };
+
+  const saved = await persistRecord("shipment", updatedShipment);
+  if (!saved) {
+    notifyDenied("POD not saved", "The delivery update could not be saved. Please try again.");
+    return false;
+  }
+
+  Object.assign(shipmentItem, updatedShipment);
+  addHistory("Saved POD / Delivery", updatedShipment.jobNo);
+  openPrintableDocument(podDocumentHtml(updatedShipment));
+  notifySuccess("POD saved", `${updatedShipment.deliveryNoteNo} was created for ${updatedShipment.jobNo}.`);
+  return true;
 }
 
 function openAdminRequestDialog(record) {
