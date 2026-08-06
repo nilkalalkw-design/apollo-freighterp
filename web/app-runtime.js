@@ -353,7 +353,6 @@ function shipmentMetaNotes(data) {
     deliveryNoteNo: String(data.deliveryNoteNo || "").trim(),
     ginNo: String(data.ginNo || "").trim(),
     customerReference: String(data.customerReference || "").trim(),
-    brandTag: String(data.brandTag || "").trim(),
     shipmentRemarks: String(data.shipmentRemarks || "").trim(),
     vehicleType: String(data.vehicleType || "").trim(),
     deliveryRemarks: String(data.deliveryRemarks || "").trim(),
@@ -516,7 +515,6 @@ function shipment(
     deliveryNoteNo: meta.deliveryNoteNo || "",
     ginNo: meta.ginNo || "",
     customerReference: meta.customerReference || "",
-    brandTag: meta.brandTag || "",
     shipmentRemarks: meta.shipmentRemarks || "",
     vehicleType: meta.vehicleType || "",
     deliveryRemarks: meta.deliveryRemarks || "",
@@ -5804,7 +5802,6 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${selectEditable("origin", "Origin", "origin", ["Kuwait City"], fieldValue("origin"))}
       ${selectEditable("destination", "Destination", "destination", ["Riyadh"], fieldValue("destination"))}
       ${input("customerReference", "Customer Reference", fieldValue("customerReference"))}
-      ${input("brandTag", "Brand / Client Tag (shown on POD)", fieldValue("brandTag"))}
       ${textarea("shipmentRemarks", "Remarks", fieldValue("shipmentRemarks"), false, 2)}
       ${select("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
       ${input("salesPerson", "Sales Person", fieldValue("salesPerson", currentUserName()))}
@@ -7926,64 +7923,43 @@ function shipmentDocumentHtml(record) {
 
 function podDocumentHtml(record) {
   const deliveryNo = record.deliveryNoteNo || `POD-${record.jobNo}`;
-  const consigneeName = record.consigneeName || record.customer || "";
-  const consigneeAddress = record.consigneeAddress || record.deliveryAddress || "";
-  const awbOrJob = record.airwayBillNo || record.jobNo || "";
-  const remarksLines = [
-    record.deliveryRemarks,
-    record.pieces ? `${record.pieces} PKGS / CARTONS` : "",
-    record.deliveryAddress,
-    record.pocMobile || record.deliveryMobile
-  ].filter((line) => String(line || "").trim());
-
   return documentShell(
     `POD ${deliveryNo}`,
     "CARGO DELIVERY NOTE",
     deliveryNo,
     record.deliveryDatetime || today(),
     `
-      <section class="pod-masthead">
-        <div class="pod-consignee">
-          <strong>${escapeHtml(consigneeName)}</strong>
-          ${consigneeAddress ? `<span>${escapeHtml(consigneeAddress).replace(/\n/g, "<br />")}</span>` : ""}
-        </div>
-        ${record.brandTag ? `<div class="pod-brand-tag">${escapeHtml(record.brandTag)}</div>` : ""}
+      <section class="document-summary">
+        <div><span>File Reference Number</span><strong>${escapeHtml(deliveryNo)}</strong><small>${escapeHtml(record.customer || "")}</small></div>
+        <div><span>QR Reference</span>${qrMarkup(deliveryNo)}<small>${escapeHtml(record.jobNo)}</small></div>
       </section>
-      ${documentBlock("Reference", [
-        ["Our Reference", record.tcnNumber],
-        ["Your Reference", record.customerReference]
+      ${documentBlock("Shipment Information", [
+        ["From", record.origin || record.pickupLocation],
+        ["To", record.destination || record.deliveryLocation],
+        ["Airway Bill / Bill of Lading", record.airwayBillNo],
+        ["Shipment Number (SHPT#)", record.jobNo],
+        ["GIN Number", record.ginNo],
+        ["Customer Reference", record.customerReference]
       ])}
-      <section class="pod-awb">
-        <span>Airway Bill / Bill of Lading</span>
-        <strong>${escapeHtml(awbOrJob)}</strong>
-      </section>
-      <section class="pod-cargo-row">
-        <div><span>Pcs</span><strong>${escapeHtml(record.pieces || "")}</strong></div>
-        <div><span>Weight (Kgs)</span><strong>${record.actualKg ? money(record.actualKg) : "-"}</strong></div>
-        <div><span>From</span><strong>${escapeHtml(record.origin || record.pickupLocation || "")}</strong></div>
-        <div><span>To</span><strong>${escapeHtml(record.destination || record.deliveryLocation || "")}</strong></div>
-      </section>
-      <h2>Nature Of Goods</h2>
-      <p class="pod-goods">${escapeHtml(record.natureOfGoods || "-")}</p>
-      <h2>Delivery Remarks / Co-Ordinates</h2>
-      <section class="pod-remarks">
-        ${remarksLines.length ? remarksLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("") : `<p class="pod-remarks-empty">-</p>`}
-      </section>
-      <p class="acknowledgement">${escapeHtml(record.customsCheckedNote || "Shipment was opened and checked by customs")}</p>
-      <p class="acknowledgement">Any discrepancies should be notified within 24 hours of receiving the goods</p>
-      <p class="acknowledgement">This is to confirm that goods have been received in good order / condition</p>
+      ${documentBlock("Cargo Details", [
+        ["Number of Pieces", record.pieces],
+        ["Weight (Kgs)", money(record.actualKg)],
+        ["Vehicle Type", record.vehicleType],
+        ["Nature of Goods", record.natureOfGoods]
+      ])}
+      ${documentBlock("Delivery Information", [
+        ["Delivery Remarks / Coordinates", record.deliveryRemarks],
+        ["POC Name", record.pocName || record.deliveryContactPerson],
+        ["POC Mobile Number", record.pocMobile || record.deliveryMobile],
+        ["Additional Contact Person", record.additionalContact]
+      ])}
       <section class="delivery-signatures">
+        <div><span>Prepared By</span><strong>${escapeHtml(record.preparedBy || currentUserName())}</strong><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || new Date().toLocaleString())}</em></div>
         <div><span>Delivered By</span><strong>${escapeHtml(record.deliveredBy || record.driverName || "")}</strong><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || "")}</em></div>
-        <div><span>Prepared By</span><strong>${escapeHtml(record.preparedBy || currentUserName())}</strong><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || "")}</em></div>
-        <div>
-          <span>Goods Received By</span>
-          <small>Name :</small><em>${escapeHtml(record.receivedBy || "")}</em>
-          <small>Telephone no :</small><em>${escapeHtml(record.receiverPhone || "")}</em>
-          <small>Date :</small><em>${escapeHtml(record.deliveryDatetime || "")}</em>
-          <small>Sign :</small><b>${escapeHtml(record.receiverSignature || " ")}</b>
-        </div>
+        <div><span>Goods Received By</span><strong>${escapeHtml(record.receivedBy || "")}</strong><small>Telephone Number</small><em>${escapeHtml(record.receiverPhone || "")}</em><small>Signature</small><b>${escapeHtml(record.receiverSignature || " ")}</b><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || "")}</em></div>
       </section>
-      <p class="footer-note">Thank you for Choosing Apollo Freight Solution - Kuwait</p>
+      <p class="acknowledgement">This is to confirm that goods have been received in good order and condition. Any discrepancy must be notified within 24 hours from the time of receipt.</p>
+      <p class="acknowledgement">Shipment was opened and checked by customs</p>
     `,
     { compact: true, qrValue: deliveryNo, hideDefaultSignatures: true }
   );
@@ -8410,23 +8386,6 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
         .delivery-signatures span, .delivery-signatures small { display: block; color: #5d6c7b; text-transform: uppercase; font-size: 11px; font-weight: 800; margin-top: 8px; }
         .delivery-signatures strong, .delivery-signatures em, .delivery-signatures b { display: block; min-height: 22px; margin-top: 6px; color: #172033; font-style: normal; }
         .acknowledgement { border: 1px solid #d96f16; padding: 10px 12px; margin: 12px 0 0; font-size: 12px; color: #172033; }
-        .pod-masthead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
-        .pod-consignee strong { display: block; font-size: 18px; color: #111; }
-        .pod-consignee span { display: block; margin-top: 4px; font-size: 12px; color: #5d6c7b; line-height: 1.4; }
-        .pod-brand-tag { font-size: 20px; font-weight: 800; color: #d96f16; white-space: nowrap; }
-        .pod-awb { border: 1px solid #d96f16; padding: 10px 12px; margin-top: 4px; }
-        .pod-awb span { display: block; color: #5d6c7b; text-transform: uppercase; font-size: 11px; font-weight: 800; }
-        .pod-awb strong { display: block; margin-top: 6px; font-size: 22px; color: #172033; }
-        .pod-cargo-row { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #d96f16; margin-top: 12px; }
-        .pod-cargo-row div { padding: 9px; border-right: 1px solid #d96f16; }
-        .pod-cargo-row div:last-child { border-right: 0; }
-        .pod-cargo-row span { display: block; color: #5d6c7b; text-transform: uppercase; font-size: 10px; font-weight: 800; }
-        .pod-cargo-row strong { display: block; margin-top: 6px; font-size: 15px; color: #172033; }
-        .pod-goods { font-size: 15px; font-weight: 700; color: #172033; margin: 0 0 12px; }
-        .pod-remarks { border: 1px solid #d96f16; padding: 10px 12px; margin-bottom: 4px; min-height: 60px; }
-        .pod-remarks p { margin: 0 0 4px; font-size: 12px; color: #172033; }
-        .pod-remarks p:last-child { margin-bottom: 0; }
-        .pod-remarks-empty { color: #a3adb8; }
         .tcn-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid #d96f16; margin-bottom: 10px; }
         .tcn-grid div, .tcn-two-col div { min-height: 62px; padding: 9px; border-right: 1px solid #d96f16; overflow-wrap: anywhere; }
         .tcn-grid div:last-child, .tcn-two-col div:last-child { border-right: 0; }
