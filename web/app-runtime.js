@@ -3880,6 +3880,104 @@ function filteredAuditRows() {
   });
 }
 
+// Composite audit references look like "AFS-2605001 -> Delivered" (status change) or
+// "LOAD-0001 - Booked (5 shipments)" (manifest sync) - the underlying reference number itself
+// never contains " -> " or " - ", so cutting at the first occurrence of either isolates it cleanly
+// and lets every audit entry for the same shipment/record group together regardless of which
+// action logged it.
+function auditReferenceKey(reference) {
+  const text = String(reference || "").trim();
+  if (!text) return "";
+  const arrowIndex = text.indexOf(" -> ");
+  const dashIndex = text.indexOf(" - ");
+  let cut = text.length;
+  if (arrowIndex !== -1) cut = Math.min(cut, arrowIndex);
+  if (dashIndex !== -1) cut = Math.min(cut, dashIndex);
+  return text.slice(0, cut).trim() || text;
+}
+
+// Audit "details" strings are written as "field: before -> after | field2: before2 -> after2"
+// (see summarizeChanges, updateStatus, updatePod). This recovers both sides for a before/after
+// table. Segments without a "->" (plain notes like "remark: ...") are not changes and are skipped.
+function parseChangeDetailPairs(details) {
+  return String(details || "")
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const colonIndex = item.indexOf(":");
+      if (colonIndex === -1) return null;
+      const field = item.slice(0, colonIndex).trim();
+      const valuePart = item.slice(colonIndex + 1).trim();
+      const arrowIndex = valuePart.indexOf("->");
+      if (!field || arrowIndex === -1) return null;
+      return {
+        field,
+        before: valuePart.slice(0, arrowIndex).trim(),
+        after: valuePart.slice(arrowIndex + 2).trim()
+      };
+    })
+    .filter(Boolean);
+}
+
+// Full history for a reference, oldest first, regardless of the summary list's current date/text
+// filters - opening a shipment's audit trail should always show everything ever done to it.
+function auditHistoryForReference(referenceKey) {
+  return state.audit
+    .filter((row) => auditReferenceKey(row.reference) === referenceKey)
+    .slice()
+    .sort((a, b) => String(a.dateTime || "").localeCompare(String(b.dateTime || "")));
+}
+
+function auditDetailEntryMarkup(entry, position) {
+  const pairs = parseChangeDetailPairs(entry.details);
+  const changesMarkup = pairs.length
+    ? `<table class="audit-change-table"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>${pairs
+        .map(
+          (pair) =>
+            `<tr><td>${escapeHtml(pair.field)}</td><td>${escapeHtml(pair.before || "-")}</td><td>${escapeHtml(pair.after || "-")}</td></tr>`
+        )
+        .join("")}</tbody></table>`
+    : entry.details
+      ? `<p class="audit-change-note">${escapeHtml(entry.details)}</p>`
+      : `<p class="audit-change-note audit-change-note-empty">No field-level changes recorded for this entry.</p>`;
+
+  return `<div class="audit-detail-entry">
+    <div class="audit-detail-entry-head">
+      <span class="audit-detail-entry-index">${position}</span>
+      <div class="audit-detail-entry-heading">
+        <strong>${escapeHtml(entry.action || "Update")}</strong>
+        <span class="audit-detail-entry-meta">${escapeHtml(entry.dateTime || "")} &middot; by ${escapeHtml(entry.user || "Unknown")}</span>
+      </div>
+    </div>
+    ${changesMarkup}
+  </div>`;
+}
+
+function openAuditDetailDialog(referenceKey) {
+  if (!isAdminSession()) return;
+  if (!referenceKey) {
+    notifyDenied("No reference", "This audit entry has no reference to look up.");
+    return;
+  }
+  const entries = auditHistoryForReference(referenceKey);
+  if (!entries.length) {
+    notifyDenied("Not found", `No audit history found for ${referenceKey}.`);
+    return;
+  }
+  const items = entries.map((entry, index) => auditDetailEntryMarkup(entry, index + 1)).join("");
+  openDialog({
+    title: `Audit Trail - ${referenceKey}`,
+    typeLabel: "Audit",
+    body: `<div class="audit-detail-list">${items}</div>`,
+    saveLabel: "Close",
+    singleColumn: true,
+    onSave() {
+      recordDialog.close();
+    }
+  });
+}
+
 function pendingRequestCount() {
   return state.adminRequests.filter((row) => row.status === "Pending").length + state.unblockRequests.filter((row) => row.status === "Pending").length;
 }
@@ -3898,6 +3996,12 @@ function badge(value) {
 
 function cellHtml(type, key, row, index = 0) {
   if (key === "slNo") return escapeHtml(index + 1);
+  if (type === "audit" && key === "auditNumber") {
+    const auditId = String(row.id || "").trim();
+    if (!auditId) return `<span class="audit-details-empty" title="Still saving - refresh in a moment">Pending</span>`;
+    const label = `AUD-${auditId}`;
+    return `<button type="button" class="table-inline-link" data-audit-open data-audit-ref="${escapeHtml(auditReferenceKey(row.reference))}" aria-label="Open audit trail for ${escapeHtml(String(row.reference || ""))}">${escapeHtml(label)}</button>`;
+  }
   if (type === "audit" && key === "details") {
     const value = String(row.details || "");
     if (!value) return `<span class="audit-details-empty">-</span>`;
@@ -4238,7 +4342,14 @@ function userRequestColumns() {
 }
 
 function auditColumns() {
-  return [["dateTime", "Date Time"], ["user", "User"], ["action", "Action"], ["reference", "Reference"], ["details", "Details"]];
+  return [
+    ["slNo", "Sr. No."],
+    ["auditNumber", "Audit No."],
+    ["dateTime", "Date Time"],
+    ["reference", "Reference"],
+    ["action", "Action"],
+    ["user", "Updated By"]
+  ];
 }
 
 function auditTableMarkup(rows) {
@@ -4664,6 +4775,12 @@ function handleColumnResizeStart(event) {
 }
 
 function handleModuleLinkClick(event) {
+  const auditButton = event.target.closest("[data-audit-open]");
+  if (auditButton) {
+    openAuditDetailDialog(auditButton.dataset.auditRef || "");
+    return;
+  }
+
   const shipmentButton = event.target.closest("[data-shipment-open]");
   if (shipmentButton) {
     const shipmentId = shipmentButton.dataset.shipmentId || "";
@@ -9730,6 +9847,61 @@ async function updateEmployeeProfile(data) {
   else state.employees.unshift(record);
   addHistory("Updated employee profile", userName);
   notifySuccess("Profile saved", "Your employee profile was updated.");
+  return true;
+}
+
+async function updatePod(data) {
+  const jobNo = data.jobNo;
+  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
+  if (!shipmentItem) {
+    notifyDenied("Shipment not found", "Select a valid Job No.");
+    return false;
+  }
+
+  const podFields = [
+    "deliveryNoteNo",
+    "ginNo",
+    "customerReference",
+    "deliveryRemarks",
+    "pocName",
+    "pocMobile",
+    "additionalContact",
+    "preparedBy",
+    "deliveredBy",
+    "receivedBy",
+    "receiverPhone",
+    "receiverSignature",
+    "deliveryDatetime"
+  ];
+  podFields.forEach((key) => {
+    if (data[key] !== undefined) {
+      shipmentItem[key] = data[key];
+    }
+  });
+
+  const oldPodStatus = shipmentItem.podStatus;
+  shipmentItem.podStatus = "Uploaded";
+  if (["Booked", "In-Transit"].includes(shipmentItem.status)) {
+    shipmentItem.status = "Delivered";
+  }
+  shipmentItem.notes = shipmentMetaNotes(shipmentItem);
+  await persistRecord("shipment", shipmentItem);
+
+  const historyEntry = {
+    jobNo,
+    status: shipmentItem.status,
+    podStatus: shipmentItem.podStatus,
+    invoiceStatus: shipmentItem.invoiceStatus,
+    notes: `POD uploaded (${shipmentItem.deliveryNoteNo || "no delivery note no."})`,
+    updatedBy: currentUserName(),
+    updatedAt: today()
+  };
+  state.shipmentStatusHistory.unshift(historyEntry);
+  await postRecord("statusHistory", historyEntry);
+
+  const podDetails = `pod: ${oldPodStatus || "Pending"} -> Uploaded | delivery note: ${shipmentItem.deliveryNoteNo || ""} | received by: ${shipmentItem.receivedBy || ""} | delivered: ${shipmentItem.deliveryDatetime || ""}`;
+  addHistory("Updated POD", `${jobNo} -> Uploaded`, podDetails);
+  notifySuccess("POD saved", `${jobNo} was marked delivered and the POD was saved.`);
   return true;
 }
 
