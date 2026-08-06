@@ -882,6 +882,77 @@ label {
   color: var(--muted, #8a94a3);
 }
 
+.audit-detail-list {
+  display: grid;
+  gap: 12px;
+}
+
+.audit-detail-entry {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fbff;
+}
+
+.audit-detail-entry-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.audit-detail-entry-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.audit-detail-entry-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.audit-detail-entry-meta {
+  color: var(--muted, #8a94a3);
+  font-size: 12px;
+}
+
+.audit-change-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.audit-change-table th,
+.audit-change-table td {
+  border-top: 1px solid var(--line);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.audit-change-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted, #8a94a3);
+}
+
+.audit-change-note {
+  margin: 0;
+  font-size: 13px;
+}
+
+.audit-change-note-empty {
+  color: var(--muted, #8a94a3);
+}
+
 .receipt-box {
   border: 1px solid var(--line);
   border-radius: 8px;
