@@ -8064,6 +8064,7 @@ function shipmentDocumentHtml(record) {
 
 function podDocumentHtml(record) {
   const deliveryNo = record.deliveryNoteNo || `POD-${record.jobNo}`;
+  const cargoBreakdown = podCargoBreakdown(record);
   return documentShell(
     `POD ${deliveryNo}`,
     "CARGO DELIVERY NOTE",
@@ -8071,7 +8072,7 @@ function podDocumentHtml(record) {
     record.deliveryDatetime || today(),
     `
       <section class="document-summary">
-        <div><span>File Reference Number</span><strong>${escapeHtml(deliveryNo)}</strong><small>${escapeHtml(record.customer || "")}</small></div>
+        <div><span>File Reference Number</span><strong>${escapeHtml(deliveryNo)}</strong><small class="pod-consignee">${escapeHtml(record.consigneeName || record.customer || "")}</small></div>
         <div><span>QR Reference</span>${qrMarkup(deliveryNo)}<small>${escapeHtml(record.jobNo)}</small></div>
       </section>
       ${documentBlock("Shipment Information", [
@@ -8083,12 +8084,11 @@ function podDocumentHtml(record) {
         ["Customer Reference", record.customerReference]
       ])}
       ${documentBlock("Cargo Details", [
-        ["Number of Pieces", record.pieces],
+        ["Number of Pieces", cargoBreakdown],
         ["Weight (Kgs)", money(record.actualKg)],
         ["Vehicle Type", record.vehicleType],
         ["Nature of Goods", record.natureOfGoods]
       ])}
-      ${cargoItemsPrintTable(record)}
       ${documentBlock("Delivery Information", [
         ["Delivery Remarks / Coordinates", record.deliveryRemarks],
         ["POC Name", record.pocName || record.deliveryContactPerson],
@@ -8105,6 +8105,22 @@ function podDocumentHtml(record) {
     `,
     { compact: true, qrValue: deliveryNo, hideDefaultSignatures: true }
   );
+}
+
+function podCargoBreakdown(record = {}) {
+  const lines = parsePalletDimensions(record.cargoItemsJson || record.palletDimensionsJson || "[]");
+  if (!lines.length) return String(record.pieces || 0);
+  const grouped = new Map();
+  lines.forEach((line) => {
+    const packageType = String(line.packageType || "Package").trim() || "Package";
+    const quantity = Number(line.quantity || line.count || 0);
+    grouped.set(packageType, (grouped.get(packageType) || 0) + quantity);
+  });
+  const total = [...grouped.values()].reduce((sum, quantity) => sum + quantity, 0);
+  const detail = [...grouped.entries()]
+    .map(([packageType, quantity]) => `${quantity} ${quantity === 1 ? packageType : `${packageType}s`}`)
+    .join(" + ");
+  return `${detail} (Total: ${total})`;
 }
 
 function manifestDocumentHtml(record) {
@@ -8511,6 +8527,7 @@ function documentShell(title, documentLabel, documentNo, documentDate, body, opt
         .document-summary span, .meta strong, th, .signature span { color: #5d6c7b; text-transform: uppercase; font-size: 11px; font-weight: 800; letter-spacing: 0; }
         .document-summary strong { display: block; margin-top: 7px; color: #172033; font-size: 22px; }
         .document-summary small { display: block; margin-top: 5px; color: #607080; }
+        .document-summary .pod-consignee { color: #172033; font-size: 18px; font-weight: 800; }
         h2 { margin: 26px 0 8px; color: #111; }
         .meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
         .meta p { display: grid; gap: 5px; margin: 0; padding: 12px; border: 1px solid #d96f16; background: #fff; }
