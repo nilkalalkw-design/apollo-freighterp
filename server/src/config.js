@@ -1,6 +1,5 @@
 const path = require("path");
 const dotenv = require("dotenv");
-const crypto = require("crypto");
 
 dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 
@@ -38,15 +37,13 @@ const allowedOrigins = (process.env.ALLOWED_ORIGIN || "*")
   .filter(Boolean);
 
 const configuredSecret = process.env.CUSTOMER_PORTAL_SECRET || process.env.SESSION_SECRET || process.env.API_SECRET || "";
-if (!configuredSecret) {
-  console.warn(
-    "WARNING: No CUSTOMER_PORTAL_SECRET/SESSION_SECRET/API_SECRET set. Generating a random secret for this run. " +
-    "Existing login sessions and tokens will be invalidated on every restart until you set one of these environment variables."
-  );
-}
-// Falls back to a secret generated fresh for this process (never a fixed, guessable value) so the
-// server always starts and works even without the env var set - it just won't persist across restarts.
-const customerPortalSecret = configuredSecret || crypto.randomBytes(32).toString("hex");
+// NOTE: this used to fall back to crypto.randomBytes(32) here, generating a brand new secret every
+// time the process started. On a serverless/multi-instance host (Vercel, Cloud Run, etc.) that meant
+// every cold start invalidated every token issued by every other instance - users got kicked out with
+// "Login required" mid-session, repeatedly, even though they never logged out. The fallback is now
+// resolved once at startup (see ensurePortalSecret in index.js), persisted to the database, and reused
+// by every instance so it stays stable across restarts and cold starts without requiring the env var.
+// Setting CUSTOMER_PORTAL_SECRET explicitly is still the recommended, more secure option.
 
 module.exports = {
   port: Number.isNaN(port) ? 4000 : port,
@@ -57,6 +54,6 @@ module.exports = {
   isNeonDatabase,
   isCloudSqlSocket,
   allowedOrigins,
-  customerPortalSecret,
+  configuredSecret,
   autoMigrate: process.env.AUTO_MIGRATE !== "false"
 };
