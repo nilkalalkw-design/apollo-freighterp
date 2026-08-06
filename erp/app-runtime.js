@@ -1603,7 +1603,12 @@ function canBillingCostEntry() {
 
 function canViewProfitMargin() {
   const role = String(currentSession()?.role || "").toLowerCase();
-  return isAdminSession() || role === "billing";
+  return isAdminSession() || ["billing", "accounts", "accountant"].includes(role);
+}
+
+function canViewBillingSummary() {
+  const role = String(currentSession()?.role || "").toLowerCase();
+  return isAdminSession() || ["billing", "accounts", "accountant"].includes(role);
 }
 
 function canViewAllBranches() {
@@ -2981,6 +2986,7 @@ function renderAdditionalCharges() {
   const rows = filteredAdditionalCharges();
   const selectedShipmentNo = state.ui.chargeFilters?.shipmentNo || rows[0]?.shipmentNo || state.shipments[0]?.jobNo || "";
   const summary = chargeSummary(selectedShipmentNo);
+  const canSeeSummary = canViewBillingSummary();
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Additional Charges", "Shipment cost control")}
@@ -2988,8 +2994,7 @@ function renderAdditionalCharges() {
         ${table("charge", rows, additionalChargeColumns())}
       </article>
       <article class="panel">${panelHeader("Shipment Cost Summary", "Profitability")}
-        ${summaryCard(summary)}
-        ${chargeReceiptPanel(selectedShipmentNo)}
+        ${canSeeSummary ? `${summaryCard(summary)}${chargeReceiptPanel(selectedShipmentNo)}` : `<p class="empty-state">Cost and billing summaries are available only to Accounts and Admin users.</p>`}
         <div class="action-stack">
           ${newRecordSelectorMarkup("charge")}
           <div class="action-row">
@@ -3258,12 +3263,13 @@ function renderReports() {
   const revenue = rows.reduce((sum, row) => sum + Number(row.sell || 0), 0);
   const cost = rows.reduce((sum, row) => sum + Number(row.buyCost || 0), 0);
   const preview = state.ui.reportPreview;
+  const canSeeSummary = canViewBillingSummary();
   return `
     <section class="kpi-grid">
       ${kpi("Filtered Shipments", rows.length, "Current report scope")}
-      ${canBillingSalesEntry() ? kpi("Revenue", money(revenue), "Sell total") : ""}
-      ${canBillingCostEntry() ? kpi("Supplier Cost", money(cost), "Buy total") : ""}
-      ${canViewProfitMargin() && canBillingSalesEntry() && canBillingCostEntry() ? kpi("Margin", money(revenue - cost), "Revenue minus cost") : ""}
+      ${canSeeSummary && canBillingSalesEntry() ? kpi("Revenue", money(revenue), "Sell total") : ""}
+      ${canSeeSummary && canBillingCostEntry() ? kpi("Supplier Cost", money(cost), "Buy total") : ""}
+      ${canSeeSummary && canViewProfitMargin() && canBillingSalesEntry() && canBillingCostEntry() ? kpi("Margin", money(revenue - cost), "Revenue minus cost") : ""}
     </section>
     <section class="panel">${panelHeader("Report Preview and Export", "Reports")}
       <div class="report-toolbar">
@@ -3600,6 +3606,7 @@ function chargeSummary(shipmentNo) {
 }
 
 function summaryCard(summary) {
+  if (!canViewBillingSummary()) return "";
   return `<div class="summary-card">
     <h3>${escapeHtml(summary.shipmentNo || "Shipment Summary")}</h3>
     ${canBillingCostEntry() ? `<p><span>Freight Cost</span><strong>${money(summary.freightCost)}</strong></p>
@@ -4205,7 +4212,7 @@ function statusOptions() {
 }
 
 function roleOptions() {
-  return dropdownOptions("role", ["Admin", "Operations", "Billing", "HR", "Management", "Read-only"]);
+  return dropdownOptions("role", ["Admin", "Operations", "Billing", "Accounts", "HR", "Management", "Read-only"]);
 }
 
 function accountStatusOptions() {
@@ -7310,23 +7317,27 @@ function invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercen
 }
 
 function invoiceLineTable(lines, canEditCost) {
+  const showSales = canBillingSalesEntry();
+  const showCost = canBillingCostEntry();
+  const editable = showSales || showCost;
   var rows = lines.length ? lines.map((line, index) => {
     return '<tr data-invoice-line-row="' + index + '">' +
       '<td>' + (index + 1) + '</td>' +
       '<td><input data-invoice-line-field="description" data-line-index="' + index + '" value="' + escapeHtml(line.description || '') + '" /></td>' +
       '<td><input data-invoice-line-field="unit" data-line-index="' + index + '" value="' + escapeHtml(line.unit || '') + '" /></td>' +
       '<td><input data-invoice-line-field="qty" data-line-index="' + index + '" type="number" step="0.001" value="' + escapeHtml(line.qty ?? 0) + '" /></td>' +
-      '<td><input data-invoice-line-field="rate" data-line-index="' + index + '" type="number" step="0.001" value="' + escapeHtml(line.rate ?? 0) + '" /></td>' +
-      '<td><input data-invoice-line-field="amount" data-line-index="' + index + '" type="number" step="0.001" value="' + escapeHtml(invoiceLineAmount(line)) + '" /></td>' +
-      '<td><input data-invoice-line-field="cost" data-line-index="' + index + '" type="number" step="0.001" ' + (canEditCost ? '' : 'readonly') + ' value="' + escapeHtml(line.cost ?? 0) + '" /></td>' +
+      (showSales ? '<td><input data-invoice-line-field="rate" data-line-index="' + index + '" type="number" step="0.001" value="' + escapeHtml(line.rate ?? 0) + '" /></td>' : '') +
+      (showSales ? '<td><input data-invoice-line-field="amount" data-line-index="' + index + '" type="number" step="0.001" value="' + escapeHtml(invoiceLineAmount(line)) + '" /></td>' : '') +
+      (showCost ? '<td><input data-invoice-line-field="cost" data-line-index="' + index + '" type="number" step="0.001" ' + (canEditCost ? '' : 'readonly') + ' value="' + escapeHtml(line.cost ?? 0) + '" /></td>' : '') +
       '<td><input data-invoice-line-field="remarks" data-line-index="' + index + '" value="' + escapeHtml(line.remarks || '') + '" /></td>' +
-      '<td><button type="button" class="ghost-button" data-remove-invoice-line="' + index + '">Remove</button></td>' +
+      '<td>' + (editable ? '<button type="button" class="ghost-button" data-remove-invoice-line="' + index + '">Remove</button>' : '') + '</td>' +
     '</tr>';
-  }).join('') : '<tr><td colspan="9" class="empty-state">No tariff lines loaded yet.</td></tr>';
-  return '<div class="table-wrap"><table class="tariff-charges-table invoice-lines-table"><thead><tr><th>Sr no</th><th>Description</th><th>Unit</th><th>Qty</th><th>Rate</th><th>Amount</th><th>Cost</th><th>Remarks</th><th>Button</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }).join('') : '<tr><td colspan="' + (6 + (showSales ? 2 : 0) + (showCost ? 1 : 0)) + '" class="empty-state">No tariff lines loaded yet.</td></tr>';
+  return '<div class="table-wrap"><table class="tariff-charges-table invoice-lines-table"><thead><tr><th>Sr no</th><th>Description</th><th>Unit</th><th>Qty</th>' + (showSales ? '<th>Rate</th><th>Amount</th>' : '') + (showCost ? '<th>Cost</th>' : '') + '<th>Remarks</th><th>Button</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 
 function invoicePreviewSummary(summary) {
+  if (!canViewBillingSummary()) return '';
   return '<section class="summary-card invoice-summary">' +
     (canBillingSalesEntry() ? '<div><span>Revenue</span><strong data-invoice-summary="revenue">' + money(summary.revenue) + '</strong></div>' : '') +
     (canBillingCostEntry() ? '<div><span>Cost</span><strong data-invoice-summary="cost">' + money(summary.cost) + '</strong></div>' : '') +
@@ -7353,8 +7364,8 @@ function invoicePreviewMarkup(shipmentItem, tariffItem, lines, taxPercent, canEd
     invoicePreviewMeta(shipmentItem, tariffItem) +
     (tariffItem ? tariffPreviewHtml([tariffItem], 'Select a tariff to view full details.', selectedWeight) : '<p class="empty-state">Select a tariff to view full details.</p>') +
     invoicePreviewSummary(summary) +
-    invoiceLineTable(lines, canEditCost) +
-    '<div class="action-row"><button type="button" class="secondary-button" data-add-invoice-line>Add Charge</button></div>' +
+    invoiceLineTable(lines, canEditCost && canBillingCostEntry()) +
+    ((canBillingSalesEntry() || canBillingCostEntry()) ? '<div class="action-row"><button type="button" class="secondary-button" data-add-invoice-line>Add Charge</button></div>' : '') +
   '</section>';
 }
 
