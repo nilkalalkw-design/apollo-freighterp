@@ -3078,7 +3078,18 @@ function renderPod() {
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("POD Pending / Delivery Board", "Delivery")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:pod")}</article>
-      ${moduleActionPanel("POD Actions", "pod", "Load a shipment into a separate POD window or create a new delivery update popup.", documentActionControls("pod", "Delivery Note / POD"))}
+      <article class="panel">${panelHeader("POD Actions", "Delivery")}
+        <div class="action-stack">
+          <p class="empty-state">Select one saved shipment, then load delivery details, generate or export its POD, or upload the signed POD after delivery.</p>
+          ${loadSelectorMarkup("pod", "Saved Records")}
+          <div class="action-row pod-action-row">
+            <button type="button" class="secondary-button" data-action="load-record" data-type="pod">Load</button>
+            <button type="button" class="secondary-button" data-action="generate-document" data-type="pod">Generate POD</button>
+            <button type="button" class="secondary-button" data-action="export-document" data-type="pod">Save / Export</button>
+            <button type="button" class="secondary-button" data-action="upload-pod-file" data-type="pod">Upload POD File</button>
+          </div>
+        </div>
+      </article>
     </section>
     ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for POD-related shipment cleanup.")}`;
 }
@@ -3880,6 +3891,104 @@ function filteredAuditRows() {
   });
 }
 
+// Composite audit references look like "AFS-2605001 -> Delivered" (status change) or
+// "LOAD-0001 - Booked (5 shipments)" (manifest sync) - the underlying reference number itself
+// never contains " -> " or " - ", so cutting at the first occurrence of either isolates it cleanly
+// and lets every audit entry for the same shipment/record group together regardless of which
+// action logged it.
+function auditReferenceKey(reference) {
+  const text = String(reference || "").trim();
+  if (!text) return "";
+  const arrowIndex = text.indexOf(" -> ");
+  const dashIndex = text.indexOf(" - ");
+  let cut = text.length;
+  if (arrowIndex !== -1) cut = Math.min(cut, arrowIndex);
+  if (dashIndex !== -1) cut = Math.min(cut, dashIndex);
+  return text.slice(0, cut).trim() || text;
+}
+
+// Audit "details" strings are written as "field: before -> after | field2: before2 -> after2"
+// (see summarizeChanges, updateStatus, updatePod). This recovers both sides for a before/after
+// table. Segments without a "->" (plain notes like "remark: ...") are not changes and are skipped.
+function parseChangeDetailPairs(details) {
+  return String(details || "")
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const colonIndex = item.indexOf(":");
+      if (colonIndex === -1) return null;
+      const field = item.slice(0, colonIndex).trim();
+      const valuePart = item.slice(colonIndex + 1).trim();
+      const arrowIndex = valuePart.indexOf("->");
+      if (!field || arrowIndex === -1) return null;
+      return {
+        field,
+        before: valuePart.slice(0, arrowIndex).trim(),
+        after: valuePart.slice(arrowIndex + 2).trim()
+      };
+    })
+    .filter(Boolean);
+}
+
+// Full history for a reference, oldest first, regardless of the summary list's current date/text
+// filters - opening a shipment's audit trail should always show everything ever done to it.
+function auditHistoryForReference(referenceKey) {
+  return state.audit
+    .filter((row) => auditReferenceKey(row.reference) === referenceKey)
+    .slice()
+    .sort((a, b) => String(a.dateTime || "").localeCompare(String(b.dateTime || "")));
+}
+
+function auditDetailEntryMarkup(entry, position) {
+  const pairs = parseChangeDetailPairs(entry.details);
+  const changesMarkup = pairs.length
+    ? `<table class="audit-change-table"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>${pairs
+        .map(
+          (pair) =>
+            `<tr><td>${escapeHtml(pair.field)}</td><td>${escapeHtml(pair.before || "-")}</td><td>${escapeHtml(pair.after || "-")}</td></tr>`
+        )
+        .join("")}</tbody></table>`
+    : entry.details
+      ? `<p class="audit-change-note">${escapeHtml(entry.details)}</p>`
+      : `<p class="audit-change-note audit-change-note-empty">No field-level changes recorded for this entry.</p>`;
+
+  return `<div class="audit-detail-entry">
+    <div class="audit-detail-entry-head">
+      <span class="audit-detail-entry-index">${position}</span>
+      <div class="audit-detail-entry-heading">
+        <strong>${escapeHtml(entry.action || "Update")}</strong>
+        <span class="audit-detail-entry-meta">${escapeHtml(entry.dateTime || "")} &middot; by ${escapeHtml(entry.user || "Unknown")}</span>
+      </div>
+    </div>
+    ${changesMarkup}
+  </div>`;
+}
+
+function openAuditDetailDialog(referenceKey) {
+  if (!isAdminSession()) return;
+  if (!referenceKey) {
+    notifyDenied("No reference", "This audit entry has no reference to look up.");
+    return;
+  }
+  const entries = auditHistoryForReference(referenceKey);
+  if (!entries.length) {
+    notifyDenied("Not found", `No audit history found for ${referenceKey}.`);
+    return;
+  }
+  const items = entries.map((entry, index) => auditDetailEntryMarkup(entry, index + 1)).join("");
+  openDialog({
+    title: `Audit Trail - ${referenceKey}`,
+    typeLabel: "Audit",
+    body: `<div class="audit-detail-list">${items}</div>`,
+    saveLabel: "Close",
+    singleColumn: true,
+    onSave() {
+      recordDialog.close();
+    }
+  });
+}
+
 function pendingRequestCount() {
   return state.adminRequests.filter((row) => row.status === "Pending").length + state.unblockRequests.filter((row) => row.status === "Pending").length;
 }
@@ -3898,6 +4007,12 @@ function badge(value) {
 
 function cellHtml(type, key, row, index = 0) {
   if (key === "slNo") return escapeHtml(index + 1);
+  if (type === "audit" && key === "auditNumber") {
+    const auditId = String(row.id || "").trim();
+    if (!auditId) return `<span class="audit-details-empty" title="Still saving - refresh in a moment">Pending</span>`;
+    const label = `AUD-${auditId}`;
+    return `<button type="button" class="table-inline-link" data-audit-open data-audit-ref="${escapeHtml(auditReferenceKey(row.reference))}" aria-label="Open audit trail for ${escapeHtml(String(row.reference || ""))}">${escapeHtml(label)}</button>`;
+  }
   if (type === "audit" && key === "details") {
     const value = String(row.details || "");
     if (!value) return `<span class="audit-details-empty">-</span>`;
@@ -4238,7 +4353,14 @@ function userRequestColumns() {
 }
 
 function auditColumns() {
-  return [["dateTime", "Date Time"], ["user", "User"], ["action", "Action"], ["reference", "Reference"], ["details", "Details"]];
+  return [
+    ["slNo", "Sr. No."],
+    ["auditNumber", "Audit No."],
+    ["dateTime", "Date Time"],
+    ["reference", "Reference"],
+    ["action", "Action"],
+    ["user", "Updated By"]
+  ];
 }
 
 function auditTableMarkup(rows) {
@@ -4533,6 +4655,11 @@ async function handleModuleClick(event) {
     return;
   }
 
+  if (action === "upload-pod-file") {
+    await uploadPodFileForSelectedShipment(selectedRecordId("pod"));
+    return;
+  }
+
   if (action === "export-list") {
     exportCollectionCsv(type);
     return;
@@ -4664,6 +4791,12 @@ function handleColumnResizeStart(event) {
 }
 
 function handleModuleLinkClick(event) {
+  const auditButton = event.target.closest("[data-audit-open]");
+  if (auditButton) {
+    openAuditDetailDialog(auditButton.dataset.auditRef || "");
+    return;
+  }
+
   const shipmentButton = event.target.closest("[data-shipment-open]");
   if (shipmentButton) {
     const shipmentId = shipmentButton.dataset.shipmentId || "";
@@ -5445,10 +5578,10 @@ function openPodDialog(jobNo = "") {
       ${selectFrom("jobNo", "Shipment No", shipmentOptions(), shipmentItem.jobNo || "")}
       <div data-pod-shipment-fields>${podShipmentFields(shipmentItem)}</div>
     `,
-    saveLabel: "Mark Delivered + Upload POD",
+    saveLabel: "Save Delivery",
     async onSave() {
       const data = collectFormValues(dialogBody.closest("form"));
-      const saved = await updatePod(data);
+      const saved = await savePodDelivery(data);
       if (!saved) return;
       saveState();
       recordDialog.close();
@@ -5460,6 +5593,7 @@ function openPodDialog(jobNo = "") {
 
 function podShipmentFields(shipmentItem = {}) {
   return `
+    ${podCargoSummary(shipmentItem)}
     ${input("deliveryNoteNo", "Delivery Note No", shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber())}
     ${input("ginNo", "GIN Number", shipmentItem.ginNo || "")}
     ${input("customerReference", "Customer Reference", shipmentItem.customerReference || "")}
@@ -5473,7 +5607,18 @@ function podShipmentFields(shipmentItem = {}) {
     ${input("receiverPhone", "Receiver Telephone Number", shipmentItem.receiverPhone || "")}
     ${input("receiverSignature", "Receiver Signature", shipmentItem.receiverSignature || "")}
     ${input("deliveryDatetime", "Delivery Date & Time", shipmentItem.deliveryDatetime || localDateTimeInput(), false, "datetime-local")}
+    <label>Signed POD File (upload after delivery)<input name="podFileUpload" type="file" accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf" /></label>
+    <p class="empty-state">Saving marks this shipment as Delivered. The signed file is stored in Documents as a POD attachment.</p>
   `;
+}
+
+function podCargoSummary(shipmentItem = {}) {
+  const lines = parsePalletDimensions(shipmentItem.cargoItemsJson || shipmentItem.palletDimensionsJson || "[]");
+  if (!lines.length) {
+    return `<section class="pod-cargo-summary"><strong>Cargo Details</strong><span>No pallet or carton details entered for this shipment.</span></section>`;
+  }
+  const packages = lines.map((line) => `${Number(line.quantity || line.count || 0)} ${line.packageType || "Package"}`).join(", ");
+  return `<section class="pod-cargo-summary"><strong>Cargo Details</strong><span>${escapeHtml(packages)}</span></section>`;
 }
 
 function bindPodShipmentDialog() {
@@ -5490,7 +5635,7 @@ function bindPodShipmentDialog() {
   shipmentField.addEventListener("input", refreshShipmentDetails);
 }
 
-async function updatePod(data) {
+async function savePodDelivery(data) {
   const jobNo = String(data.jobNo || "").trim();
   const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
   if (!shipmentItem) {
@@ -5498,10 +5643,12 @@ async function updatePod(data) {
     return false;
   }
 
+  const uploadedFile = data.podFileUpload;
+  const hasPodFile = uploadedFile && typeof uploadedFile === "object" && uploadedFile.name;
   const updatedShipment = {
     ...shipmentItem,
     status: "Delivered",
-    podStatus: "Uploaded",
+    podStatus: hasPodFile ? "Uploaded" : (shipmentItem.podStatus || "Pending"),
     deliveryNoteNo: String(data.deliveryNoteNo || shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber()).trim(),
     ginNo: String(data.ginNo || "").trim(),
     customerReference: String(data.customerReference || shipmentItem.customerReference || "").trim(),
@@ -5524,10 +5671,59 @@ async function updatePod(data) {
   }
 
   Object.assign(shipmentItem, updatedShipment);
-  addHistory("Saved POD / Delivery", updatedShipment.jobNo);
-  openPrintableDocument(podDocumentHtml(updatedShipment));
-  notifySuccess("POD saved", `${updatedShipment.deliveryNoteNo} was created for ${updatedShipment.jobNo}.`);
+  if (hasPodFile) {
+    await createDocument({
+      documentNo: nextNumber("DOC", state.documents, "documentNo"),
+      linkedNo: updatedShipment.jobNo,
+      type: "POD",
+      status: "Uploaded",
+      date: today(),
+      owner: currentUserName(),
+      fileUpload: uploadedFile,
+      notes: `Signed POD for ${updatedShipment.deliveryNoteNo}`
+    });
+  }
+  addHistory("Saved POD / Delivery", updatedShipment.jobNo, `Delivery note: ${updatedShipment.deliveryNoteNo}`);
+  notifySuccess("Delivery saved", `${updatedShipment.jobNo} is marked Delivered${hasPodFile ? " and the POD file was attached" : ""}.`);
   return true;
+}
+
+async function uploadPodFileForSelectedShipment(jobNo) {
+  const shipmentItem = state.shipments.find((row) => row.jobNo === String(jobNo || "").trim());
+  if (!shipmentItem) {
+    notifyDenied("POD file not uploaded", "Select a saved shipment first.");
+    return;
+  }
+  if (String(shipmentItem.status || "").trim().toLowerCase() !== "delivered") {
+    notifyDenied("Mark delivery first", "Save the delivery details before uploading the signed POD file.");
+    return;
+  }
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".pdf,.jpg,.jpeg,.png,image/*,application/pdf";
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    const documentSaved = await createDocument({
+      documentNo: nextNumber("DOC", state.documents, "documentNo"),
+      linkedNo: shipmentItem.jobNo,
+      type: "POD",
+      status: "Uploaded",
+      date: today(),
+      owner: currentUserName(),
+      fileUpload: file,
+      notes: `Signed POD for ${shipmentItem.deliveryNoteNo || shipmentItem.jobNo}`
+    });
+    if (!documentSaved) return;
+    shipmentItem.podStatus = "Uploaded";
+    const shipmentSaved = await persistRecord("shipment", shipmentItem);
+    if (!shipmentSaved) return;
+    addHistory("Uploaded signed POD", shipmentItem.jobNo, file.name);
+    saveState();
+    render();
+    notifySuccess("POD file uploaded", `${file.name} was attached to ${shipmentItem.jobNo}.`);
+  }, { once: true });
+  fileInput.click();
 }
 
 function openAdminRequestDialog(record) {
@@ -7892,6 +8088,7 @@ function podDocumentHtml(record) {
         ["Vehicle Type", record.vehicleType],
         ["Nature of Goods", record.natureOfGoods]
       ])}
+      ${cargoItemsPrintTable(record)}
       ${documentBlock("Delivery Information", [
         ["Delivery Remarks / Coordinates", record.deliveryRemarks],
         ["POC Name", record.pocName || record.deliveryContactPerson],
@@ -9793,6 +9990,10 @@ async function updateEmployeeProfile(data) {
   addHistory("Updated employee profile", userName);
   notifySuccess("Profile saved", "Your employee profile was updated.");
   return true;
+}
+
+async function updatePod(data) {
+  return savePodDelivery(data);
 }
 
 async function updateStatus(data) {

@@ -1138,6 +1138,25 @@ label {
   font-weight: 800;
 }
 
+.pod-cargo-summary {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 10px 12px;
+  border: 1px solid #cbdcf1;
+  border-radius: 8px;
+  background: #f4f8fc;
+}
+
+.pod-cargo-summary span {
+  color: var(--muted);
+}
+
+.pod-action-row {
+  flex-wrap: wrap;
+}
+
 .pallet-builder {
   grid-column: 1 / -1;
   display: grid;

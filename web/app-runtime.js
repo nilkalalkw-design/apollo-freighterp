@@ -3078,7 +3078,18 @@ function renderPod() {
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("POD Pending / Delivery Board", "Delivery")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:pod")}</article>
-      ${moduleActionPanel("POD Actions", "pod", "Load a shipment into a separate POD window or create a new delivery update popup.", documentActionControls("pod", "Delivery Note / POD"))}
+      <article class="panel">${panelHeader("POD Actions", "Delivery")}
+        <div class="action-stack">
+          <p class="empty-state">Select one saved shipment, then load delivery details, generate or export its POD, or upload the signed POD after delivery.</p>
+          ${loadSelectorMarkup("pod", "Saved Records")}
+          <div class="action-row pod-action-row">
+            <button type="button" class="secondary-button" data-action="load-record" data-type="pod">Load</button>
+            <button type="button" class="secondary-button" data-action="generate-document" data-type="pod">Generate POD</button>
+            <button type="button" class="secondary-button" data-action="export-document" data-type="pod">Save / Export</button>
+            <button type="button" class="secondary-button" data-action="upload-pod-file" data-type="pod">Upload POD File</button>
+          </div>
+        </div>
+      </article>
     </section>
     ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for POD-related shipment cleanup.")}`;
 }
@@ -4644,6 +4655,11 @@ async function handleModuleClick(event) {
     return;
   }
 
+  if (action === "upload-pod-file") {
+    await uploadPodFileForSelectedShipment(selectedRecordId("pod"));
+    return;
+  }
+
   if (action === "export-list") {
     exportCollectionCsv(type);
     return;
@@ -5562,10 +5578,10 @@ function openPodDialog(jobNo = "") {
       ${selectFrom("jobNo", "Shipment No", shipmentOptions(), shipmentItem.jobNo || "")}
       <div data-pod-shipment-fields>${podShipmentFields(shipmentItem)}</div>
     `,
-    saveLabel: "Mark Delivered + Upload POD",
+    saveLabel: "Save Delivery",
     async onSave() {
       const data = collectFormValues(dialogBody.closest("form"));
-      const saved = await updatePod(data);
+      const saved = await savePodDelivery(data);
       if (!saved) return;
       saveState();
       recordDialog.close();
@@ -5577,6 +5593,7 @@ function openPodDialog(jobNo = "") {
 
 function podShipmentFields(shipmentItem = {}) {
   return `
+    ${podCargoSummary(shipmentItem)}
     ${input("deliveryNoteNo", "Delivery Note No", shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber())}
     ${input("ginNo", "GIN Number", shipmentItem.ginNo || "")}
     ${input("customerReference", "Customer Reference", shipmentItem.customerReference || "")}
@@ -5590,7 +5607,18 @@ function podShipmentFields(shipmentItem = {}) {
     ${input("receiverPhone", "Receiver Telephone Number", shipmentItem.receiverPhone || "")}
     ${input("receiverSignature", "Receiver Signature", shipmentItem.receiverSignature || "")}
     ${input("deliveryDatetime", "Delivery Date & Time", shipmentItem.deliveryDatetime || localDateTimeInput(), false, "datetime-local")}
+    <label>Signed POD File (upload after delivery)<input name="podFileUpload" type="file" accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf" /></label>
+    <p class="empty-state">Saving marks this shipment as Delivered. The signed file is stored in Documents as a POD attachment.</p>
   `;
+}
+
+function podCargoSummary(shipmentItem = {}) {
+  const lines = parsePalletDimensions(shipmentItem.cargoItemsJson || shipmentItem.palletDimensionsJson || "[]");
+  if (!lines.length) {
+    return `<section class="pod-cargo-summary"><strong>Cargo Details</strong><span>No pallet or carton details entered for this shipment.</span></section>`;
+  }
+  const packages = lines.map((line) => `${Number(line.quantity || line.count || 0)} ${line.packageType || "Package"}`).join(", ");
+  return `<section class="pod-cargo-summary"><strong>Cargo Details</strong><span>${escapeHtml(packages)}</span></section>`;
 }
 
 function bindPodShipmentDialog() {
@@ -5607,7 +5635,7 @@ function bindPodShipmentDialog() {
   shipmentField.addEventListener("input", refreshShipmentDetails);
 }
 
-async function updatePod(data) {
+async function savePodDelivery(data) {
   const jobNo = String(data.jobNo || "").trim();
   const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
   if (!shipmentItem) {
@@ -5615,10 +5643,12 @@ async function updatePod(data) {
     return false;
   }
 
+  const uploadedFile = data.podFileUpload;
+  const hasPodFile = uploadedFile && typeof uploadedFile === "object" && uploadedFile.name;
   const updatedShipment = {
     ...shipmentItem,
     status: "Delivered",
-    podStatus: "Uploaded",
+    podStatus: hasPodFile ? "Uploaded" : (shipmentItem.podStatus || "Pending"),
     deliveryNoteNo: String(data.deliveryNoteNo || shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber()).trim(),
     ginNo: String(data.ginNo || "").trim(),
     customerReference: String(data.customerReference || shipmentItem.customerReference || "").trim(),
@@ -5641,10 +5671,59 @@ async function updatePod(data) {
   }
 
   Object.assign(shipmentItem, updatedShipment);
-  addHistory("Saved POD / Delivery", updatedShipment.jobNo);
-  openPrintableDocument(podDocumentHtml(updatedShipment));
-  notifySuccess("POD saved", `${updatedShipment.deliveryNoteNo} was created for ${updatedShipment.jobNo}.`);
+  if (hasPodFile) {
+    await createDocument({
+      documentNo: nextNumber("DOC", state.documents, "documentNo"),
+      linkedNo: updatedShipment.jobNo,
+      type: "POD",
+      status: "Uploaded",
+      date: today(),
+      owner: currentUserName(),
+      fileUpload: uploadedFile,
+      notes: `Signed POD for ${updatedShipment.deliveryNoteNo}`
+    });
+  }
+  addHistory("Saved POD / Delivery", updatedShipment.jobNo, `Delivery note: ${updatedShipment.deliveryNoteNo}`);
+  notifySuccess("Delivery saved", `${updatedShipment.jobNo} is marked Delivered${hasPodFile ? " and the POD file was attached" : ""}.`);
   return true;
+}
+
+async function uploadPodFileForSelectedShipment(jobNo) {
+  const shipmentItem = state.shipments.find((row) => row.jobNo === String(jobNo || "").trim());
+  if (!shipmentItem) {
+    notifyDenied("POD file not uploaded", "Select a saved shipment first.");
+    return;
+  }
+  if (String(shipmentItem.status || "").trim().toLowerCase() !== "delivered") {
+    notifyDenied("Mark delivery first", "Save the delivery details before uploading the signed POD file.");
+    return;
+  }
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".pdf,.jpg,.jpeg,.png,image/*,application/pdf";
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    const documentSaved = await createDocument({
+      documentNo: nextNumber("DOC", state.documents, "documentNo"),
+      linkedNo: shipmentItem.jobNo,
+      type: "POD",
+      status: "Uploaded",
+      date: today(),
+      owner: currentUserName(),
+      fileUpload: file,
+      notes: `Signed POD for ${shipmentItem.deliveryNoteNo || shipmentItem.jobNo}`
+    });
+    if (!documentSaved) return;
+    shipmentItem.podStatus = "Uploaded";
+    const shipmentSaved = await persistRecord("shipment", shipmentItem);
+    if (!shipmentSaved) return;
+    addHistory("Uploaded signed POD", shipmentItem.jobNo, file.name);
+    saveState();
+    render();
+    notifySuccess("POD file uploaded", `${file.name} was attached to ${shipmentItem.jobNo}.`);
+  }, { once: true });
+  fileInput.click();
 }
 
 function openAdminRequestDialog(record) {
@@ -8009,6 +8088,7 @@ function podDocumentHtml(record) {
         ["Vehicle Type", record.vehicleType],
         ["Nature of Goods", record.natureOfGoods]
       ])}
+      ${cargoItemsPrintTable(record)}
       ${documentBlock("Delivery Information", [
         ["Delivery Remarks / Coordinates", record.deliveryRemarks],
         ["POC Name", record.pocName || record.deliveryContactPerson],
@@ -9913,58 +9993,7 @@ async function updateEmployeeProfile(data) {
 }
 
 async function updatePod(data) {
-  const jobNo = data.jobNo;
-  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
-  if (!shipmentItem) {
-    notifyDenied("Shipment not found", "Select a valid Job No.");
-    return false;
-  }
-
-  const podFields = [
-    "deliveryNoteNo",
-    "ginNo",
-    "customerReference",
-    "deliveryRemarks",
-    "pocName",
-    "pocMobile",
-    "additionalContact",
-    "preparedBy",
-    "deliveredBy",
-    "receivedBy",
-    "receiverPhone",
-    "receiverSignature",
-    "deliveryDatetime"
-  ];
-  podFields.forEach((key) => {
-    if (data[key] !== undefined) {
-      shipmentItem[key] = data[key];
-    }
-  });
-
-  const oldPodStatus = shipmentItem.podStatus;
-  shipmentItem.podStatus = "Uploaded";
-  if (["Booked", "In-Transit"].includes(shipmentItem.status)) {
-    shipmentItem.status = "Delivered";
-  }
-  shipmentItem.notes = shipmentMetaNotes(shipmentItem);
-  await persistRecord("shipment", shipmentItem);
-
-  const historyEntry = {
-    jobNo,
-    status: shipmentItem.status,
-    podStatus: shipmentItem.podStatus,
-    invoiceStatus: shipmentItem.invoiceStatus,
-    notes: `POD uploaded (${shipmentItem.deliveryNoteNo || "no delivery note no."})`,
-    updatedBy: currentUserName(),
-    updatedAt: today()
-  };
-  state.shipmentStatusHistory.unshift(historyEntry);
-  await postRecord("statusHistory", historyEntry);
-
-  const podDetails = `pod: ${oldPodStatus || "Pending"} -> Uploaded | delivery note: ${shipmentItem.deliveryNoteNo || ""} | received by: ${shipmentItem.receivedBy || ""} | delivered: ${shipmentItem.deliveryDatetime || ""}`;
-  addHistory("Updated POD", `${jobNo} -> Uploaded`, podDetails);
-  notifySuccess("POD saved", `${jobNo} was marked delivered and the POD was saved.`);
-  return true;
+  return savePodDelivery(data);
 }
 
 async function updateStatus(data) {
