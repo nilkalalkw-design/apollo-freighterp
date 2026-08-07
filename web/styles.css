@@ -711,7 +711,6 @@ label {
 
 .kpi,
 .panel,
-.load-card,
 .alert,
 .record-dialog::backdrop {
   border-radius: 14px;
@@ -1358,35 +1357,10 @@ th {
 }
 
 .alert span,
-.load-meta,
 .job-chip span,
 .empty-state {
   color: var(--muted);
   font-size: 13px;
-}
-
-.load-card {
-  border: 1px solid var(--line);
-  padding: 14px;
-  background: #fafcff;
-}
-
-.load-title {
-  min-height: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--accent);
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.load-title:hover {
-  filter: none;
-  transform: none;
-}
-
-.load-meta {
-  margin: 6px 0 12px;
 }
 
 .job-chip {
