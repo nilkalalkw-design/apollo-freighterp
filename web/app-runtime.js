@@ -2982,36 +2982,6 @@ function renderDocuments() {
     ${adminDeletePanel("document", "Document")}`;
 }
 
-function renderAdditionalCharges() {
-  const rows = filteredAdditionalCharges();
-  const selectedShipmentNo = state.ui.chargeFilters?.shipmentNo || rows[0]?.shipmentNo || state.shipments[0]?.jobNo || "";
-  const summary = chargeSummary(selectedShipmentNo);
-  const canSeeSummary = canViewBillingSummary();
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Additional Charges", "Shipment cost control")}
-        ${chargeFilterPanel()}
-        ${table("charge", rows, additionalChargeColumns())}
-      </article>
-      <article class="panel">${panelHeader("Shipment Cost Summary", "Profitability")}
-        ${canSeeSummary ? `${summaryCard(summary)}${chargeReceiptPanel(selectedShipmentNo)}` : `<p class="empty-state">Cost and billing summaries are available only to Accounts and Admin users.</p>`}
-        <div class="action-stack">
-          ${newRecordSelectorMarkup("charge")}
-          <div class="action-row">
-            <button type="button" data-action="new-record" data-type="charge">New Charge</button>
-          </div>
-          ${loadSelectorMarkup("charge", "Saved Charges")}
-          <div class="action-row">
-            <button type="button" class="secondary-button" data-action="load-record" data-type="charge">Load Charge</button>
-          </div>
-          <p class="empty-state">Admins can approve or edit charges directly. Other users send change requests to admin.</p>
-          ${actionChecklist(chargeTypeOptions())}
-        </div>
-      </article>
-    </section>
-    ${adminDeletePanel("charge", "Additional Charge")}`;
-}
-
 function renderShipmentRequests() {
   const rows = filteredRows(state.shipmentRequests);
   return `
@@ -4059,15 +4029,6 @@ function cargoPalletCount(row) {
     .reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0);
 }
 
-function loadCard(loadItem) {
-  const jobs = loadItem.jobNumbers.split(",").map((job) => job.trim()).filter(Boolean);
-  return `<article class="load-card">
-    <button class="load-title" data-action="open" data-type="load" data-id="${escapeHtml(loadItem.loadNo)}">${escapeHtml(loadItem.loadNo)}</button>
-    <div class="load-meta">${escapeHtml(loadItem.tripDate)} | ${escapeHtml(loadItem.route)} | ${escapeHtml(loadItem.status)} | ${escapeHtml(loadItem.vehicleNo)}</div>
-    <div class="job-list">${jobs.map((jobNo) => jobBadge(jobNo)).join("") || empty("No jobs linked yet.")}</div>
-  </article>`;
-}
-
 function jobBadge(jobNo) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
   if (!shipmentItem) return `<button class="job-chip warning">${escapeHtml(jobNo)}</button>`;
@@ -4346,14 +4307,6 @@ function customerRequestColumns() { return [["request_no", "Request"], ["item_na
 function customerShipmentColumns() { return [["job_no", "Shipment"], ["origin", "Origin"], ["destination", "Destination"], ["status", "Status"], ["pod_status", "POD"], ["invoice_status", "Invoice"]]; }
 function customerNotificationColumns() { return [["title", "Title"], ["message", "Message"], ["read_status", "Status"], ["created_at", "Created"]]; }
 function customerActivityColumns() { return [["action", "Action"], ["description", "Description"], ["ip_address", "IP"], ["created_at", "Created"]]; }
-
-function unblockColumns() {
-  return [["requestNo", "Request"], ["requestType", "Type"], ["targetType", "Target"], ["referenceNo", "Reference"], ["customerName", "Name"], ["requestedBy", "Requested By"], ["reason", "Reason"], ["status", "Status"], ["date", "Date"]];
-}
-
-function adminRequestColumns() {
-  return [["requestNo", "Request"], ["requestType", "Type"], ["targetModule", "Module"], ["referenceNo", "Reference"], ["requestedBy", "Requested By"], ["status", "Status"], ["date", "Date"]];
-}
 
 function userRequestColumns() {
   return [["requestNo", "Request"], ["requestType", "Type"], ["target", "Section"], ["referenceNo", "Reference"], ["requestedBy", "Requested By"], ["status", "Status"], ["date", "Date"]];
@@ -5214,6 +5167,28 @@ function notifyDuplicate(id) {
   window.alert(`Already used\n${message}`);
 }
 
+// Airway Bill numbers must be unique per branch (the same AWB can legitimately be reused across
+// different branches, e.g. Kuwait HO and Dubai each running their own numbering) but never twice
+// within the same branch. excludeJobNo lets an edit compare against every OTHER shipment without
+// flagging itself as a duplicate of its own current AWB.
+function duplicateAirwayBillExists(awbNo, branch, excludeJobNo = "") {
+  const normalizedAwb = String(awbNo || "").trim().toLowerCase();
+  if (!normalizedAwb) return false;
+  const normalizedBranch = normalizeBranchName(branch).toLowerCase();
+  const excludeNormalized = String(excludeJobNo || "").trim().toLowerCase();
+  return state.shipments.some((row) => {
+    if (excludeNormalized && String(row.jobNo || "").trim().toLowerCase() === excludeNormalized) return false;
+    if (String(row.airwayBillNo || "").trim().toLowerCase() !== normalizedAwb) return false;
+    return normalizeBranchName(row.branch).toLowerCase() === normalizedBranch;
+  });
+}
+
+function notifyDuplicateAirwayBill(awbNo, branch) {
+  const message = `Airway Bill ${awbNo} is already used by another shipment in ${branch || "this branch"}. Enter a different AWB number.`;
+  notifyDenied("Airway Bill already used", message);
+  window.alert(`Airway Bill already used\n${message}`);
+}
+
 function detailFieldControl(type, key, value, record) {
   const readonlyKeys = new Set(["jobNo", "loadNo", "code", "tariffNo", "documentNo", "invoiceNo", "refNo", "userName", "requestNo", "payslipNo"]);
   const options = detailFieldOptions(type, key, record);
@@ -5369,6 +5344,10 @@ async function saveDialogRecordInner() {
   if (editing.type === "shipment") {
     if (!String(updatedRecord.billTo1 || "").trim() && !String(updatedRecord.billTo2 || "").trim()) {
       notifyDenied("Bill To required", "Enter at least one Bill To value.");
+      return;
+    }
+    if (duplicateAirwayBillExists(updatedRecord.airwayBillNo, updatedRecord.branch, editing.id)) {
+      notifyDuplicateAirwayBill(updatedRecord.airwayBillNo, updatedRecord.branch);
       return;
     }
     updatedRecord.notes = shipmentMetaNotes(updatedRecord);
@@ -5553,29 +5532,6 @@ function openLoadDialog(type) {
   });
 }
 
-function openStatusDialog(jobNo = "") {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo) || state.shipments[0];
-  openDialog({
-    title: jobNo ? `Shipment Status - ${jobNo}` : "Shipment Status Update",
-    typeLabel: "Status",
-    body: `
-      ${selectFrom("jobNo", "Shipment No", shipmentOptions(), shipmentItem?.jobNo || "")}
-      ${select("status", "Shipment Status", statusOptions(), shipmentItem?.status || "Booked")}
-      ${select("podStatus", "POD Status", ["Pending", "Uploaded", "Missing", "Disputed", "Approved"], shipmentItem?.podStatus || "Pending")}
-      ${select("invoiceStatus", "Invoice Status", ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue"], shipmentItem?.invoiceStatus || "Unbilled")}
-      ${input("notes", "Notes", "Status update")}
-    `,
-    saveLabel: "Update Shipment Status",
-    async onSave() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      await updateStatus(data);
-      saveState();
-      recordDialog.close();
-      render();
-    }
-  });
-}
-
 function openPodDialog(jobNo = "") {
   const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo) || visibleRows(state.shipments)[0] || {};
   openDialog({
@@ -5604,7 +5560,7 @@ function podShipmentFields(shipmentItem = {}) {
     ${input("deliveryNoteNo", "Delivery Note No", shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber())}
     ${input("ginNo", "GIN Number", shipmentItem.ginNo || "")}
     ${input("customerReference", "Customer Reference", shipmentItem.customerReference || "")}
-    ${textarea("deliveryRemarks", "Delivery Remarks / Coordinates", shipmentItem.deliveryRemarks || "", false, 3)}
+    ${textarea("deliveryRemarks", "Delivery Remarks / Coordinates", shipmentItem.deliveryRemarks || [shipmentItem.deliveryLocation, shipmentItem.deliveryAddress].filter((part) => String(part || "").trim()).join(" - "), false, 3)}
     ${input("pocName", "POC Name", shipmentItem.pocName || shipmentItem.deliveryContactPerson || "")}
     ${input("pocMobile", "POC Mobile Number", shipmentItem.pocMobile || shipmentItem.deliveryMobile || "")}
     ${input("additionalContact", "Additional Contact Person", shipmentItem.additionalContact || "")}
@@ -6014,7 +5970,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     `, true, sectionOpen)}
     ${formSection("Billing Party 1", `
       ${checkbox("copyCustomerToBilling1", "Same as customer information")}
-      ${input("billTo1", "Billing Party Name", fieldValue("billTo1", defaultCustomer))}
+      ${selectFrom("billTo1", "Billing Party Name", state.customers.map((row) => row.name), fieldValue("billTo1", defaultCustomer))}
       ${textarea("billingParty1Address", "Billing Address", fieldValue("billingParty1Address"), false, 3)}
       ${input("billingParty1ContactPerson", "Contact Person", fieldValue("billingParty1ContactPerson"))}
       ${input("billingParty1Mobile", "Mobile Number", fieldValue("billingParty1Mobile"))}
@@ -6049,20 +6005,6 @@ function formSection(title, body, collapsible = false, open = false) {
   const sectionBody = `<div class="form-section-grid">${body}</div>`;
   if (!collapsible) return `<section class="form-section"><h3>${escapeHtml(title)}</h3>${sectionBody}</section>`;
   return `<details class="form-section collapsible-section" ${open ? "open" : ""}><summary>${escapeHtml(title)}</summary>${sectionBody}</details>`;
-}
-
-function palletDimensionBuilder(initialValue = "[]") {
-  return `<section class="pallet-builder" data-pallet-builder>
-    <input type="hidden" name="palletDimensionsJson" value="${escapeHtml(initialValue || "[]")}" />
-    <div class="tariff-charge-entry">
-      ${input("palletCount", "No of Pallets", "1", false, "number")}
-      ${input("palletLength", "Length", "100", false, "number")}
-      ${input("palletWidth", "Width", "120", false, "number")}
-      ${input("palletHeight", "Height", "120", false, "number")}
-      <button type="button" class="secondary-button" data-dialog-action="add-pallet-line">Add</button>
-    </div>
-    <div class="tariff-charge-table" data-pallet-lines-list></div>
-  </section>`;
 }
 
 function shipmentRequestDialogBody(record) {
@@ -6575,15 +6517,19 @@ function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
 function bindShipmentCustomerAutofill() {
   const customerField = dialogBody.querySelector("input[name='customer']");
   const codeField = dialogBody.querySelector("input[name='customerCode']");
-  if (!customerField && !codeField) return;
+  const billToField = dialogBody.querySelector("input[name='billTo1']");
+  if (!customerField && !codeField && !billToField) return;
+
+  const findCustomer = (value) =>
+    state.customers.find((row) =>
+      String(row.name || "").trim().toLowerCase() === value ||
+      String(row.code || "").trim().toLowerCase() === value
+    );
 
   const fill = (source) => {
     const value = String(source?.value || "").trim().toLowerCase();
     if (!value) return;
-    const customer = state.customers.find((row) =>
-      String(row.name || "").trim().toLowerCase() === value ||
-      String(row.code || "").trim().toLowerCase() === value
-    );
+    const customer = findCustomer(value);
     if (!customer) return;
 
     setDialogValue("customer", customer.name);
@@ -6601,10 +6547,28 @@ function bindShipmentCustomerAutofill() {
     setDialogValue("billingParty1CreditTerms", customer.terms);
   };
 
+  // Searching/typing directly into the Billing Party Name field is its own entry point - the
+  // billing party isn't always the same as the shipment's operational customer (e.g. third-party
+  // billing), so this only fills the billing-specific fields, not the customer/consignee ones above.
+  const fillBillingPartyOnly = (source) => {
+    const value = String(source?.value || "").trim().toLowerCase();
+    if (!value) return;
+    const customer = findCustomer(value);
+    if (!customer) return;
+
+    setDialogValue("billingParty1Address", customer.fullAddress || customer.locationOrLane);
+    setDialogValue("billingParty1ContactPerson", customer.name);
+    setDialogValue("billingParty1Mobile", customer.mobile);
+    setDialogValue("billingParty1Email", customer.email);
+    setDialogValue("billingParty1CreditTerms", customer.terms);
+  };
+
   customerField?.addEventListener("input", () => fill(customerField));
   customerField?.addEventListener("change", () => fill(customerField));
   codeField?.addEventListener("input", () => fill(codeField));
   codeField?.addEventListener("change", () => fill(codeField));
+  billToField?.addEventListener("input", () => fillBillingPartyOnly(billToField));
+  billToField?.addEventListener("change", () => fillBillingPartyOnly(billToField));
 }
 
 function customerDialogSnapshot() {
@@ -7122,32 +7086,6 @@ function tariffChargeTable(lines, total, grandTotal, showActions = true, options
 
 function normalizeLookupText(value) {
   return String(value || '').trim().toLowerCase();
-}
-
-function customerSearchTokens(customerName) {
-  const lookup = normalizeLookupText(customerName);
-  if (!lookup) return [];
-  const tokens = new Set([lookup]);
-  visibleRows(state.customers).forEach((customer) => {
-    const matched = [customer.name, customer.code, customer.customerName, customer.customerCode].some((value) => {
-      const candidate = normalizeLookupText(value);
-      return candidate && (candidate === lookup || candidate.includes(lookup) || lookup.includes(candidate));
-    });
-    if (!matched) return;
-    [customer.name, customer.code, customer.customerName, customer.customerCode].forEach((value) => {
-      const candidate = normalizeLookupText(value);
-      if (candidate) tokens.add(candidate);
-    });
-  });
-  return [...tokens];
-}
-
-function rowMatchesLookup(row, fields, tokens) {
-  if (!tokens.length) return true;
-  return fields.some((value) => {
-    const candidate = normalizeLookupText(value);
-    return candidate && tokens.some((token) => candidate === token || candidate.includes(token) || token.includes(candidate));
-  });
 }
 
 function invoiceCustomerOptions() {
@@ -7965,29 +7903,6 @@ function generateRecordDocument(type, id, download = false) {
     return;
   }
   openPrintableDocument(html);
-}
-
-function viewDocument(type, id) {
-  return generateRecordDocument(type, id, false);
-}
-
-function editDocument(type, id) {
-  return openRecord(type, id);
-}
-
-function printDocument(type, id) {
-  return generateRecordDocument(type, id, false);
-}
-
-function downloadPdf(type, id) {
-  return generateRecordDocument(type, id, true);
-}
-
-function emailDocument(type, id) {
-  const record = collectionFor(type).find((row) => rowId(type, row) === id);
-  const subject = encodeURIComponent(`${typeLabel(type)} ${id}`);
-  const body = encodeURIComponent(`Please find ${typeLabel(type)} ${id} attached or printed from Apollo Freight ERP.\n\nReference: ${record ? rowId(type, record) : id}`);
-  window.location.href = `mailto:?subject=${subject}&body=${body}`;
 }
 
 function shipmentDocumentHtml(record) {
@@ -9541,6 +9456,11 @@ async function changeCurrentPassword(data) {
 async function createShipment(data) {
   if (duplicateRecordExists("shipment", data.jobNo)) {
     notifyDuplicate(data.jobNo);
+    return false;
+  }
+  const awbForCreate = data.airwayBillNo || data.jobNo?.replace("AFS", "AWB");
+  if (duplicateAirwayBillExists(awbForCreate, data.branch)) {
+    notifyDuplicateAirwayBill(awbForCreate, data.branch);
     return false;
   }
   if (!String(data.billTo1 || "").trim() && !String(data.billTo2 || "").trim()) {
