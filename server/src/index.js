@@ -1310,11 +1310,17 @@ async function prepareRecordForConfig(config, body) {
 }
 function bumpTrailingNumber(value) {
   const text = String(value || "");
-  const match = text.match(/^(.*?)(\d+)(\D*)$/);
-  if (!match) return `${text}-1`;
-  const [, prefix, digits, suffix] = match;
-  const next = String(Number(digits) + 1).padStart(digits.length, "0");
-  return `${prefix}${next}${suffix}`;
+  const matches = [...text.matchAll(/\d+/g)];
+  if (!matches.length) return `${text}-1`;
+  // Bump the longest digit run, not just the last one in the string. Job number formats embed the
+  // month AFTER the serial number (e.g. "AFS-00174/08/KWI/EXP") - a naive "last digits in the
+  // string" match increments the month (08 -> 09) instead of the actual serial number, which never
+  // resolves the real collision and can exhaust every retry attempt with the serial left unchanged.
+  const target = matches.reduce((longest, current) => (current[0].length > longest[0].length ? current : longest), matches[0]);
+  const start = target.index;
+  const end = start + target[0].length;
+  const next = String(Number(target[0]) + 1).padStart(target[0].length, "0");
+  return text.slice(0, start) + next + text.slice(end);
 }
 
 async function insertRow(config, body) {
