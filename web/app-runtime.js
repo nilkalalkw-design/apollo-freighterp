@@ -1735,6 +1735,15 @@ function branchValuesForRecord(row) {
   add(row?.branch);
   add(row?.branchAccess);
 
+  // If the record already carries its own explicit branch, that's authoritative - stop here.
+  // Previously this always continued on to also pull in a linked shipment's or the customer's
+  // master-record branch, which meant a shipment correctly booked under Dubai would still pick up
+  // "Kuwait HO" (and start matching a Kuwait-only filter) whenever its customer's account happened
+  // to be tagged to the other branch - a very normal situation for any customer shipping from both.
+  // The fallback below is only meant for record types (invoices, loads) that don't carry their own
+  // branch and have to infer one from what they're linked to.
+  if (branches.size > 0) return [...branches];
+
   const shipmentKeys = [row?.shipmentNo, row?.jobNo, row?.linkedNo, row?.referenceNo]
     .map((value) => String(value || "").trim())
     .filter(Boolean);
@@ -1745,6 +1754,10 @@ function branchValuesForRecord(row) {
     .map((jobNo) => jobNo.trim())
     .filter(Boolean)
     .forEach((jobNo) => add(state.shipments.find((shipmentItem) => shipmentItem.jobNo === jobNo)?.branch));
+
+  // A linked shipment's own branch is more specific than the customer's master-record branch -
+  // if that already resolved something, stop before also folding in the customer-level guess.
+  if (branches.size > 0) return [...branches];
 
   const customerName = row?.customer || row?.customerName || row?.customer_name;
   if (customerName) add(state.customers.find((customer) => customer.name === customerName || customer.code === customerName)?.branch);
