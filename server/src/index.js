@@ -20,10 +20,23 @@ const runtimeStatus = {
   databaseUrlSource: databaseUrlSource || "missing",
   migration: autoMigrate ? "pending" : "disabled",
   loginSecret: configuredSecret ? "configured" : "pending",
+  // allowedOrigins defaults to ["*"] (see config.js) when ALLOWED_ORIGIN isn't set. Combined with
+  // credentials: true on the cors() middleware below, that means any origin's credentialed request
+  // gets reflected back and allowed - fine for same-origin-only deployments (this app's normal
+  // setup), but worth being able to see at a glance rather than discovering it during an audit.
+  corsPolicy: allowedOrigins.includes("*") ? "open (ALLOWED_ORIGIN not set)" : "restricted",
   startupError: databaseUrl
     ? ""
     : "No database connection string was found. Set DATABASE_URL or one of the supported PostgreSQL aliases."
 };
+
+if (allowedOrigins.includes("*")) {
+  console.warn(
+    "CORS is open to all origins (ALLOWED_ORIGIN is not set) with credentials enabled. This is fine " +
+    "if the frontend and API are only ever called from origins you control, but set ALLOWED_ORIGIN to " +
+    "your production domain(s) to lock this down."
+  );
+}
 
 // The token signing secret. Starts as whatever was explicitly configured (may be empty) and is
 // resolved to a stable value by ensurePortalSecret() before the server starts accepting requests -
@@ -1554,6 +1567,7 @@ app.get("/api/health", async (_request, response) => {
       autoMigrate: runtimeStatus.autoMigrate,
       migration: runtimeStatus.migration,
       loginSecret: runtimeStatus.loginSecret,
+      corsPolicy: runtimeStatus.corsPolicy,
       startupError: ready ? runtimeStatus.startupError : runtimeStatus.startupError || `Missing tables: ${readiness.missingTables.join(", ")}`,
       error: ready ? "" : runtimeStatus.startupError || `Missing tables: ${readiness.missingTables.join(", ")}`,
       serverTime: db.server_time
@@ -1573,6 +1587,7 @@ app.get("/api/health", async (_request, response) => {
       autoMigrate: runtimeStatus.autoMigrate,
       migration: runtimeStatus.migration,
       loginSecret: runtimeStatus.loginSecret,
+      corsPolicy: runtimeStatus.corsPolicy,
       startupError: runtimeStatus.startupError,
       error: error.message
     });
