@@ -1911,16 +1911,38 @@ function showApp() {
   appShell.classList.toggle("hr-portal-theme", isHrSession());
   renderModuleNav();
   updateUserContext();
+  // This first render happens before syncFromApi()'s data has arrived - it uses whatever was
+  // cached locally from the last session, which can be stale or incomplete (missing anything
+  // added since). Show a visible loading indicator so that's obvious, rather than silently
+  // presenting old data as current and leaving the person to notice something's missing and
+  // manually refresh - syncFromApi() replaces this render with live data as soon as it's ready.
+  showSyncingIndicator();
   syncFromApi();
   render();
 }
 
-async function syncFromApi() {
-  if (isCustomerSession()) {
-    await syncCustomerPortal();
-    return;
+function showSyncingIndicator() {
+  let banner = document.querySelector("#dataSyncBanner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "dataSyncBanner";
+    banner.className = "data-sync-banner";
+    banner.textContent = "Loading latest data...";
+    document.body.appendChild(banner);
   }
+  banner.classList.remove("is-hidden");
+}
+
+function hideSyncingIndicator() {
+  document.querySelector("#dataSyncBanner")?.classList.add("is-hidden");
+}
+
+async function syncFromApi() {
   try {
+    if (isCustomerSession()) {
+      await syncCustomerPortal();
+      return;
+    }
     const [
       health,
       shipments,
@@ -2008,9 +2030,12 @@ async function syncFromApi() {
     }
     saveState();
     maybePlayAdminNotification();
-    render();
   } catch (error) {
     state.api = { status: "API offline", database: "local data", mode: "browser", error: error.message };
+  } finally {
+    // Always clears, whichever branch ran (customer portal, success, or failure) - so the person
+    // is never left staring at a "loading" indicator that never goes away.
+    hideSyncingIndicator();
     render();
   }
 }
@@ -2656,6 +2681,14 @@ function renderDashboard() {
   const pendingRequests = pendingRequestCount();
   const pendingCustomerRequests = state.shipmentRequests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(String(row.status || "").toUpperCase())).length;
   const pendingCharges = state.additionalCharges.filter((row) => row.status === "Pending Approval").length;
+  // The KPI counts above still reflect every shipment, but the table itself only needs to show a
+  // recent slice - rendering the full register here (potentially thousands of rows, on every
+  // render, which happens on nearly every click anywhere in the app) was the main cause of the
+  // dashboard feeling slow. The full list is one click away on the Shipment Register.
+  const recentRows = [...rows].sort((left, right) => String(right.bookingDate || "").localeCompare(String(left.bookingDate || ""))).slice(0, 50);
+  const dashboardTableNote = rows.length > recentRows.length
+    ? `<p class="empty-state">Showing the most recent ${recentRows.length} of ${rows.length} shipments. Open Shipment Register for the full list.</p>`
+    : "";
   if (!isAdminSession()) {
     return `
       <section class="kpi-grid">
@@ -2666,7 +2699,7 @@ function renderDashboard() {
         ${kpi("Pending Requests", pendingRequests, "Your pending approvals", "pending-requests")}
         ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
       </section>
-      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${table("shipment", rows, dashboardOperationalShipmentColumns(), undefined, "shipment:myShipments")}</section>`;
+      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${dashboardTableNote} ${table("shipment", recentRows, shipmentColumns(), undefined, "shipment:myShipments")}</section>`;
   }
   return `
     <section class="kpi-grid">
@@ -2681,7 +2714,7 @@ function renderDashboard() {
       ${canViewProfitMargin() ? kpi("Gross Profit", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0) - Number(row.supplierCost || 0), 0)), "Invoiced revenue minus cost", "gross-profit") : ""}
     </section>
     <section class="split-grid single-panel dashboard-shipment-register">
-      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, dashboardOperationalShipmentColumns(), undefined, "shipment:dashboard")}</article>
+      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${dashboardTableNote} ${table("shipment", recentRows, shipmentColumns(), undefined, "shipment:dashboard")}</article>
     </section>
     <section class="split-grid single-panel dashboard-alert-row">
       <details class="panel collapsible-section dashboard-alert-panel">
@@ -3116,12 +3149,17 @@ function shipmentStatusColumns() {
 
 function shipmentStatusTable(rows) {
   const columns = shipmentStatusColumns();
+  const scope = "shipmentStatus";
+  const sortedRows = applySort(scope, rows);
   const expandedJob = state.ui.expandedStatusJob || "";
-  const headCells = columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("");
-  const body = rows.length
-    ? rows.map((row, index) => shipmentStatusRowMarkup(row, index, columns, expandedJob)).join("")
+  const locked = isColumnWidthLocked(scope);
+  const headCells = columns.map(([key, label]) => sortableHeaderCell("shipment", scope, key, label, locked)).join("");
+  const widths = (state.ui.columnWidths || {})[scope];
+  const tableStyle = widths && Object.keys(widths).length ? ` style="table-layout:fixed"` : "";
+  const body = sortedRows.length
+    ? sortedRows.map((row, index) => shipmentStatusRowMarkup(row, index, columns, expandedJob)).join("")
     : `<tr><td colspan="${columns.length}">${empty("No records found.")}</td></tr>`;
-  return `<div class="table-wrap"><table><thead><tr>${headCells}</tr></thead><tbody>${body}</tbody></table></div>`;
+  return `${columnLockToggleMarkup(scope, locked)}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function shipmentStatusRowMarkup(row, index, columns, expandedJob) {
@@ -4166,7 +4204,6 @@ function defaultColumnLayouts() {
       ["consigneeName", "CONSIGNEE"],
       ["pickupLocation", "PICK UP LOCATIONS"],
       ["deliveryLocation", "DELIVERY LOCATION"],
-      ["shipmentDirection", "MODE"],
       ["loadType", "LOAD TYPE"],
       ["shipmentService", "MODE FULL"],
       ["pieces", "PKGS / CARTONS"],
@@ -4192,12 +4229,6 @@ function defaultColumnLayouts() {
 
 function shipmentColumns() {
   return configurableColumns("shipment", defaultColumnLayouts().shipment);
-}
-
-// Same as shipmentColumns() but without the MODE column, for the Dashboard's shipment tables only -
-// other modules (Shipment Register, POD board, reports) keep showing it via shipmentColumns().
-function dashboardOperationalShipmentColumns() {
-  return shipmentColumns().filter(([key]) => key !== "shipmentDirection");
 }
 
 function loadColumns() {
@@ -5950,6 +5981,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       <button type="button" class="secondary-button" data-dialog-action="generate-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before generating a TCN\""}>Generate TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="view-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before viewing a TCN\""}>View TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="generate-pod">Generate Delivery Note / POD</button>
+      <button type="button" class="secondary-button" data-dialog-action="save-draft">Save as Draft</button>
     </div>
   `;
 }
@@ -6885,6 +6917,7 @@ function bindPalletDimensionBuilder() {
   });
 
   dialogBody.querySelector("[data-dialog-action='generate-pod']")?.addEventListener("click", printPod);
+  dialogBody.querySelector("[data-dialog-action='save-draft']")?.addEventListener("click", () => createShipmentDraft(currentShipmentData()));
   dialogBody.querySelector("[data-dialog-action='generate-tcn']")?.addEventListener("click", () => printTcn(true));
   dialogBody.querySelector("[data-dialog-action='view-tcn']")?.addEventListener("click", () => printTcn(false));
   const shipmentDocumentUpload = dialogBody.querySelector("input[name='shipmentDocumentUpload']");
@@ -9443,6 +9476,70 @@ async function changeCurrentPassword(data) {
 
   addHistory("Changed password", userName);
   notifySuccess("Password updated", "Your password was changed successfully.");
+  return true;
+}
+
+// Saves whatever is currently in the New Shipment form, skipping the requirements that only
+// matter once a shipment is ready to move forward (Bill To, tariff-customer matching) - a draft is
+// allowed to be incomplete. If this is editing an existing shipment already (i.e. continuing a
+// draft that was opened again), this updates that same record instead of creating a duplicate.
+async function createShipmentDraft(data) {
+  if (editing && editing.type === "shipment") {
+    const updatedRecord = { ...editing.record };
+    Object.keys(data).forEach((key) => {
+      updatedRecord[key] = coerceValue(updatedRecord[key], data[key]);
+    });
+    updatedRecord.status = "Draft";
+    updatedRecord.notes = shipmentMetaNotes(updatedRecord);
+    const changeSummary = summarizeChanges(editing.record, updatedRecord);
+    const saved = await persistRecord("shipment", updatedRecord);
+    if (!saved) {
+      notifyDenied("Draft not saved", "The draft could not be saved. Check the connection and try again.");
+      return false;
+    }
+    Object.assign(editing.record, updatedRecord);
+    addHistory("Saved shipment as draft", updatedRecord.jobNo, changeSummary);
+    notifySuccess("Draft saved", `${updatedRecord.jobNo} was updated and kept as a draft.`);
+    editing = null;
+    recordDialog.close();
+    render();
+    return true;
+  }
+
+  if (!String(data.jobNo || "").trim()) {
+    notifyDenied("Draft not saved", "A job number is required, even for a draft.");
+    return false;
+  }
+  if (duplicateRecordExists("shipment", data.jobNo)) {
+    notifyDuplicate(data.jobNo);
+    return false;
+  }
+  if (duplicateAirwayBillExists(data.airwayBillNo, data.branch)) {
+    notifyDuplicateAirwayBill(data.airwayBillNo, data.branch);
+    return false;
+  }
+  const tariffItem = state.tariffs.find((row) => row.tariffNo === data.tariffNo) || assignedTariffForShipment({ customer: data.customer, origin: data.origin, destination: data.destination, tariffNo: data.tariffNo });
+  const chargeableWeight = Number(data.chargeableKg || 0);
+  const pricing = tariffPricingForWeight(tariffItem, chargeableWeight);
+  const record = shipment(
+    data.jobNo, data.branch, data.customer, data.origin, data.destination, "Draft",
+    Number(data.pieces), Number(data.actualKg), Number(data.cbm), Number(data.chargeableKg), pricing.revenue, 0,
+    "Pending", "Unbilled", data.bookingDate || today(), data.airwayBillNo || "",
+    data.tariffNo || "", Number(data.transitDays || 0), data.shipmentDirection || "Export", data.shipmentService || "AE",
+    data.shipmentServiceOther || "", data.volumeCategory || "Land", Number(data.chargeableDivisor || volumeDivisorFor(data.volumeCategory || "Land") || 0),
+    currentUserName(), shipmentMetaNotes(data)
+  );
+  const saved = await postRecord("shipment", record);
+  if (!saved) {
+    notifyDenied("Draft not saved", "The draft could not be saved. Check the connection and try again.");
+    return false;
+  }
+  const finalRecord = typeof saved === "object" ? apiShipment(saved) : record;
+  state.shipments.unshift(finalRecord);
+  addHistory("Saved shipment as draft", finalRecord.jobNo);
+  notifySuccess("Draft saved", `${finalRecord.jobNo} was saved as a draft. Open it anytime from the Shipment Register to continue.`);
+  recordDialog.close();
+  render();
   return true;
 }
 
