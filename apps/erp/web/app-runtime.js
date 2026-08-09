@@ -373,7 +373,9 @@ function loadMetaNotes(data) {
     driverName: String(data.driverName || "").trim(),
     driverNumber: String(data.driverNumber || "").trim(),
     driverMobile: String(data.driverMobile || "").trim(),
-    transporterCode: String(data.transporterCode || "").trim()
+    transporterCode: String(data.transporterCode || "").trim(),
+    origin: String(data.origin || "").trim(),
+    destination: String(data.destination || "").trim()
   });
 }
 
@@ -535,7 +537,7 @@ function shipment(
 
 function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, manifestStatus = "Not Generated", lastManifestRequestNo = "", createdBy = currentUserName(), notes = "") {
   const meta = parseJsonMeta(notes);
-  return { loadNo, tripDate, route, transporter, transporterCode: meta.transporterCode || "", vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", driverMobile: meta.driverMobile || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
+  return { loadNo, tripDate, route, transporter, transporterCode: meta.transporterCode || "", vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", driverMobile: meta.driverMobile || "", origin: meta.origin || "", destination: meta.destination || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
 }
 
 function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName(), fullAddress = "", mobile = "") {
@@ -1735,6 +1737,15 @@ function branchValuesForRecord(row) {
   add(row?.branch);
   add(row?.branchAccess);
 
+  // If the record already carries its own explicit branch, that's authoritative - stop here.
+  // Previously this always continued on to also pull in a linked shipment's or the customer's
+  // master-record branch, which meant a shipment correctly booked under Dubai would still pick up
+  // "Kuwait HO" (and start matching a Kuwait-only filter) whenever its customer's account happened
+  // to be tagged to the other branch - a very normal situation for any customer shipping from both.
+  // The fallback below is only meant for record types (invoices, loads) that don't carry their own
+  // branch and have to infer one from what they're linked to.
+  if (branches.size > 0) return [...branches];
+
   const shipmentKeys = [row?.shipmentNo, row?.jobNo, row?.linkedNo, row?.referenceNo]
     .map((value) => String(value || "").trim())
     .filter(Boolean);
@@ -1745,6 +1756,10 @@ function branchValuesForRecord(row) {
     .map((jobNo) => jobNo.trim())
     .filter(Boolean)
     .forEach((jobNo) => add(state.shipments.find((shipmentItem) => shipmentItem.jobNo === jobNo)?.branch));
+
+  // A linked shipment's own branch is more specific than the customer's master-record branch -
+  // if that already resolved something, stop before also folding in the customer-level guess.
+  if (branches.size > 0) return [...branches];
 
   const customerName = row?.customer || row?.customerName || row?.customer_name;
   if (customerName) add(state.customers.find((customer) => customer.name === customerName || customer.code === customerName)?.branch);
@@ -1837,7 +1852,7 @@ async function handleLogin(event) {
       customerPortalData = loginResult.data || null;
       rememberSession(loginResult.session);
     } else if (loginMode === "employee") {
-      const session = await attemptApiLogin(userName, password);
+      const session = await attemptApiLogin(userName, password, "employee");
       if (!session.hrPortalAccess) {
         throw new Error("HR Portal access is not enabled for this account. Contact your Admin to enable it.");
       }
@@ -1870,7 +1885,7 @@ async function attemptCustomerLogin(userName, password) {
   return { session: result.session, data: result.data };
 }
 
-async function attemptApiLogin(userName, password) {
+async function attemptApiLogin(userName, password, loginMode = "company") {
   if (!userName || !password) {
     throw new Error("User name and password are required.");
   }
@@ -1878,7 +1893,7 @@ async function attemptApiLogin(userName, password) {
   const result = await fetchJson("/api/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userName, password })
+    body: JSON.stringify({ userName, password, loginMode })
   });
   return result.session;
 }
@@ -1896,16 +1911,38 @@ function showApp() {
   appShell.classList.toggle("hr-portal-theme", isHrSession());
   renderModuleNav();
   updateUserContext();
+  // This first render happens before syncFromApi()'s data has arrived - it uses whatever was
+  // cached locally from the last session, which can be stale or incomplete (missing anything
+  // added since). Show a visible loading indicator so that's obvious, rather than silently
+  // presenting old data as current and leaving the person to notice something's missing and
+  // manually refresh - syncFromApi() replaces this render with live data as soon as it's ready.
+  showSyncingIndicator();
   syncFromApi();
   render();
 }
 
-async function syncFromApi() {
-  if (isCustomerSession()) {
-    await syncCustomerPortal();
-    return;
+function showSyncingIndicator() {
+  let banner = document.querySelector("#dataSyncBanner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "dataSyncBanner";
+    banner.className = "data-sync-banner";
+    banner.textContent = "Loading latest data...";
+    document.body.appendChild(banner);
   }
+  banner.classList.remove("is-hidden");
+}
+
+function hideSyncingIndicator() {
+  document.querySelector("#dataSyncBanner")?.classList.add("is-hidden");
+}
+
+async function syncFromApi() {
   try {
+    if (isCustomerSession()) {
+      await syncCustomerPortal();
+      return;
+    }
     const [
       health,
       shipments,
@@ -1928,7 +1965,8 @@ async function syncFromApi() {
       employees,
       leaveRequests,
       payslips,
-      hrAnnouncements
+      hrAnnouncements,
+      employeeProfileDocuments
     ] = await Promise.all([
       fetchJson("/api/health"),
       fetchJson("/api/shipments"),
@@ -1951,7 +1989,8 @@ async function syncFromApi() {
       fetchJson("/api/employees"),
       fetchJson("/api/leave-requests"),
       fetchJson("/api/payslips"),
-      fetchJson("/api/hr-announcements")
+      fetchJson("/api/hr-announcements"),
+      isHrSession() ? fetchJson("/api/employee-profile-documents") : Promise.resolve({ rows: [] })
     ]);
 
     const apiMode = health.mode || (health.database === "connected" ? "database" : "demo");
@@ -1983,6 +2022,7 @@ async function syncFromApi() {
       state.leaveRequests = (leaveRequests.rows || []).map(apiLeaveRequest);
       state.payslips = (payslips.rows || []).map(apiPayslip);
       state.hrAnnouncements = (hrAnnouncements.rows || []).map(apiHrAnnouncement);
+      state.employeeProfileDocuments = (employeeProfileDocuments.rows || []).map(apiDocument);
       if (settings.rows?.length) {
         state.settings = apiSettings(settings.rows[0]);
         state.dropdownOptions = {
@@ -1993,9 +2033,12 @@ async function syncFromApi() {
     }
     saveState();
     maybePlayAdminNotification();
-    render();
   } catch (error) {
     state.api = { status: "API offline", database: "local data", mode: "browser", error: error.message };
+  } finally {
+    // Always clears, whichever branch ran (customer portal, success, or failure) - so the person
+    // is never left staring at a "loading" indicator that never goes away.
+    hideSyncingIndicator();
     render();
   }
 }
@@ -2561,6 +2604,33 @@ function renderHrProfile() {
       </div>
       <button type="submit">Save My Profile</button>
     </form>
+    ${employeeProfileDocumentsPanel()}
+  </section>`;
+}
+
+function employeeProfileDocumentsPanel() {
+  const documents = Array.isArray(state.employeeProfileDocuments) ? state.employeeProfileDocuments : [];
+  const documentTypes = [
+    ["Employee Photo", "Profile Photo", "JPG, JPEG or PNG • Maximum 5 MB"],
+    ["Civil ID Front", "Civil ID — Front", "PDF • Maximum 10 MB"],
+    ["Civil ID Back", "Civil ID — Back", "PDF • Maximum 10 MB"],
+    ["Passport Front", "Passport — Front", "PDF • Maximum 10 MB"],
+    ["Passport Back", "Passport — Back", "PDF • Maximum 10 MB"]
+  ];
+  return `<section class="form-section employee-document-panel"><h3>Personal Documents</h3>
+    <p class="empty-state">Your documents are stored privately. Upload a replacement any time.</p>
+    <div class="employee-document-grid">
+      ${documentTypes.map(([type, label, help]) => {
+        const documentItem = documents.find((item) => item.type === type);
+        return `<article class="employee-document-card">
+          <strong>${escapeHtml(label)}</strong>
+          <small>${escapeHtml(help)}</small>
+          ${type === "Employee Photo" && documentItem?.storageUrl ? `<img class="employee-profile-thumbnail" src="${escapeHtml(documentItem.storageUrl)}" alt="Employee profile" />` : ""}
+          <span class="${documentItem?.storageUrl ? "document-uploaded" : "document-missing"}">${documentItem?.storageUrl ? "Uploaded" : "Not uploaded"}</span>
+          <button type="button" class="secondary-button" data-action="upload-employee-document" data-document-type="${escapeHtml(type)}">${documentItem?.storageUrl ? "Replace file" : "Upload file"}</button>
+        </article>`;
+      }).join("")}
+    </div>
   </section>`;
 }
 
@@ -2641,6 +2711,14 @@ function renderDashboard() {
   const pendingRequests = pendingRequestCount();
   const pendingCustomerRequests = state.shipmentRequests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(String(row.status || "").toUpperCase())).length;
   const pendingCharges = state.additionalCharges.filter((row) => row.status === "Pending Approval").length;
+  // The KPI counts above still reflect every shipment, but the table itself only needs to show a
+  // recent slice - rendering the full register here (potentially thousands of rows, on every
+  // render, which happens on nearly every click anywhere in the app) was the main cause of the
+  // dashboard feeling slow. The full list is one click away on the Shipment Register.
+  const recentRows = [...rows].sort((left, right) => String(right.bookingDate || "").localeCompare(String(left.bookingDate || ""))).slice(0, 50);
+  const dashboardTableNote = rows.length > recentRows.length
+    ? `<p class="empty-state">Showing the most recent ${recentRows.length} of ${rows.length} shipments. Open Shipment Register for the full list.</p>`
+    : "";
   if (!isAdminSession()) {
     return `
       <section class="kpi-grid">
@@ -2651,7 +2729,7 @@ function renderDashboard() {
         ${kpi("Pending Requests", pendingRequests, "Your pending approvals", "pending-requests")}
         ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
       </section>
-      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:myShipments")}</section>`;
+      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${dashboardTableNote} ${table("shipment", recentRows, shipmentColumns(), undefined, "shipment:myShipments")}</section>`;
   }
   return `
     <section class="kpi-grid">
@@ -2666,7 +2744,7 @@ function renderDashboard() {
       ${canViewProfitMargin() ? kpi("Gross Profit", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0) - Number(row.supplierCost || 0), 0)), "Invoiced revenue minus cost", "gross-profit") : ""}
     </section>
     <section class="split-grid single-panel dashboard-shipment-register">
-      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:dashboard")}</article>
+      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${dashboardTableNote} ${table("shipment", recentRows, shipmentColumns(), undefined, "shipment:dashboard")}</article>
     </section>
     <section class="split-grid single-panel dashboard-alert-row">
       <details class="panel collapsible-section dashboard-alert-panel">
@@ -2982,36 +3060,6 @@ function renderDocuments() {
     ${adminDeletePanel("document", "Document")}`;
 }
 
-function renderAdditionalCharges() {
-  const rows = filteredAdditionalCharges();
-  const selectedShipmentNo = state.ui.chargeFilters?.shipmentNo || rows[0]?.shipmentNo || state.shipments[0]?.jobNo || "";
-  const summary = chargeSummary(selectedShipmentNo);
-  const canSeeSummary = canViewBillingSummary();
-  return `
-    <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Additional Charges", "Shipment cost control")}
-        ${chargeFilterPanel()}
-        ${table("charge", rows, additionalChargeColumns())}
-      </article>
-      <article class="panel">${panelHeader("Shipment Cost Summary", "Profitability")}
-        ${canSeeSummary ? `${summaryCard(summary)}${chargeReceiptPanel(selectedShipmentNo)}` : `<p class="empty-state">Cost and billing summaries are available only to Accounts and Admin users.</p>`}
-        <div class="action-stack">
-          ${newRecordSelectorMarkup("charge")}
-          <div class="action-row">
-            <button type="button" data-action="new-record" data-type="charge">New Charge</button>
-          </div>
-          ${loadSelectorMarkup("charge", "Saved Charges")}
-          <div class="action-row">
-            <button type="button" class="secondary-button" data-action="load-record" data-type="charge">Load Charge</button>
-          </div>
-          <p class="empty-state">Admins can approve or edit charges directly. Other users send change requests to admin.</p>
-          ${actionChecklist(chargeTypeOptions())}
-        </div>
-      </article>
-    </section>
-    ${adminDeletePanel("charge", "Additional Charge")}`;
-}
-
 function renderShipmentRequests() {
   const rows = filteredRows(state.shipmentRequests);
   return `
@@ -3099,32 +3147,6 @@ function renderPod() {
     ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for POD-related shipment cleanup.")}`;
 }
 
-function chargeReceiptPanel(shipmentNo) {
-  const charges = state.additionalCharges.filter((row) => row.shipmentNo === shipmentNo);
-  if (!shipmentNo) return `<p class="empty-state">Select a shipment to view charge receipt lines.</p>`;
-  const invoiceNo = charges.find((row) => row.invoiceNo)?.invoiceNo || "Not assigned";
-  const receiptNo = charges.find((row) => row.referenceNo)?.referenceNo || charges[0]?.refNo || "No receipt";
-  const total = charges.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
-  const rows = charges.length
-    ? charges
-        .map(
-          (row) => `<div class="receipt-line">
-            <span>${escapeHtml(row.chargeType)}</span>
-            <small>${escapeHtml(row.status)} | ${escapeHtml(row.currency)}</small>
-            <strong>${money(row.totalAmount)}</strong>
-            <button type="button" class="ghost-button" data-action="open" data-type="charge" data-id="${escapeHtml(row.refNo)}">Edit</button>
-            ${isAdminSession() ? `<button type="button" class="danger-button" data-action="delete-record-direct" data-type="charge" data-id="${escapeHtml(row.refNo)}">Delete</button>` : ""}
-          </div>`
-        )
-        .join("")
-    : `<p class="empty-state">No charge lines added for this shipment yet.</p>`;
-  return `<section class="receipt-box">
-    <div class="panel-header"><div><p class="eyebrow">Receipt ${escapeHtml(receiptNo)} / Invoice ${escapeHtml(invoiceNo)}</p><h2>Charge Lines</h2></div></div>
-    ${rows}
-    <div class="receipt-total"><span>Total Receipt Amount</span><strong>${money(total)}</strong></div>
-  </section>`;
-}
-
 function renderShipmentStatus() {
   const rows = filteredRows(visibleRows(state.shipments));
   return `
@@ -3157,12 +3179,17 @@ function shipmentStatusColumns() {
 
 function shipmentStatusTable(rows) {
   const columns = shipmentStatusColumns();
+  const scope = "shipmentStatus";
+  const sortedRows = applySort(scope, rows);
   const expandedJob = state.ui.expandedStatusJob || "";
-  const headCells = columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("");
-  const body = rows.length
-    ? rows.map((row, index) => shipmentStatusRowMarkup(row, index, columns, expandedJob)).join("")
+  const locked = isColumnWidthLocked(scope);
+  const headCells = columns.map(([key, label]) => sortableHeaderCell("shipment", scope, key, label, locked)).join("");
+  const widths = (state.ui.columnWidths || {})[scope];
+  const tableStyle = widths && Object.keys(widths).length ? ` style="table-layout:fixed"` : "";
+  const body = sortedRows.length
+    ? sortedRows.map((row, index) => shipmentStatusRowMarkup(row, index, columns, expandedJob)).join("")
     : `<tr><td colspan="${columns.length}">${empty("No records found.")}</td></tr>`;
-  return `<div class="table-wrap"><table><thead><tr>${headCells}</tr></thead><tbody>${body}</tbody></table></div>`;
+  return `${columnLockToggleMarkup(scope, locked)}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function shipmentStatusRowMarkup(row, index, columns, expandedJob) {
@@ -3275,10 +3302,13 @@ function renderReports() {
       <div class="report-toolbar">
         ${select("reportType", "Report Type", reportTypeOptions(), state.ui.reportType || "Daily shipments")}
         ${select("reportFormat", "Preview As", ["PDF", "Excel CSV"], state.ui.reportFormat || "PDF")}
+        ${input("reportFromDate", "From Date", state.ui.reportFromDate || "", false, "date")}
+        ${input("reportToDate", "To Date", state.ui.reportToDate || "", false, "date")}
         <button type="button" data-action="preview-report">Preview Report</button>
         <button type="button" class="secondary-button" data-action="export-report" ${preview ? "" : "disabled"}>Export Report</button>
         ${canViewProfitMargin() && canBillingSalesEntry() && canBillingCostEntry() ? `<button type="button" class="secondary-button" data-action="margin-report">Margin Summary</button>` : ""}
       </div>
+      <p class="empty-state">Leave From/To blank to include every shipment for the selected report type. Dates filter on booking date.</p>
       ${preview ? reportPreviewPanel(preview) : `<div class="report-preview-empty"><p class="empty-state">Preview the report first, then export once the page layout looks correct.</p></div>`}
     </section>`;
 }
@@ -3573,50 +3603,6 @@ function actionChecklist(items) {
   return `<div class="bullet-card">${items.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>`;
 }
 
-function chargeFilterPanel() {
-  const filters = state.ui.chargeFilters || {};
-  return `<div class="charge-filter-grid">
-    ${input("chargeShipmentNo", "Shipment No", filters.shipmentNo || "", false, "text")}
-    ${select("chargeTypeFilter", "Charge Type", ["All", ...chargeTypeOptions()], filters.chargeType || "All")}
-    ${select("chargeSupplierFilter", "Supplier", ["All", ...uniqueOptions(state.additionalCharges.map((row) => row.supplier))], filters.supplier || "All")}
-    ${select("chargeStatusFilter", "Status", ["All", ...chargeStatusOptions()], filters.status || "All")}
-    ${input("chargeFromDate", "From Date", filters.fromDate || "", false, "date")}
-    ${input("chargeToDate", "To Date", filters.toDate || "", false, "date")}
-    <button type="button" data-action="filter-charges">Search</button>
-    ${newRecordSelectorMarkup("charge", "New Entry")}
-    <button type="button" data-action="new-record" data-type="charge">New Charge</button>
-    <button type="button" class="secondary-button" data-action="load-record" data-type="charge">Load Charge</button>
-  </div>`;
-}
-
-function chargeSummary(shipmentNo) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === shipmentNo);
-  const chargeRows = state.additionalCharges.filter((row) => row.shipmentNo === shipmentNo);
-  const extraCost = chargeRows.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
-  const freightCost = Number(shipmentItem?.buyCost || 0);
-  const sellAmount = Number(shipmentItem?.sell || 0);
-  return {
-    shipmentNo,
-    freightCost,
-    additionalCharges: extraCost,
-    totalCost: freightCost + extraCost,
-    sellAmount,
-    netProfit: sellAmount - (freightCost + extraCost)
-  };
-}
-
-function summaryCard(summary) {
-  if (!canViewBillingSummary()) return "";
-  return `<div class="summary-card">
-    <h3>${escapeHtml(summary.shipmentNo || "Shipment Summary")}</h3>
-    ${canBillingCostEntry() ? `<p><span>Freight Cost</span><strong>${money(summary.freightCost)}</strong></p>
-    <p><span>Additional Charges</span><strong>${money(summary.additionalCharges)}</strong></p>
-    <p><span>Total Cost</span><strong>${money(summary.totalCost)}</strong></p>` : ""}
-    ${canBillingSalesEntry() ? `<p><span>Sell Amount</span><strong>${money(summary.sellAmount)}</strong></p>` : ""}
-    ${canViewProfitMargin() && canBillingCostEntry() && canBillingSalesEntry() ? `<p><span>Net Profit</span><strong>${money(summary.netProfit)}</strong></p>` : ""}
-  </div>`;
-}
-
 function reportPreviewPanel(preview) {
   return `<div class="report-preview-shell">
     <div class="report-preview-page ${preview.format === "PDF" ? "pdf" : "excel"}">
@@ -3777,10 +3763,6 @@ function display(value) {
   return value ?? "";
 }
 
-function uniqueOptions(values) {
-  return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right));
-}
-
 function chargeTypeOptions() {
   return [
     "Labour Charges",
@@ -3871,19 +3853,6 @@ function normalizeConsolidationJobs(jobNumbers, currentLoadNo = "") {
         .filter((jobNo) => jobNo && valid.has(jobNo) && !assigned.has(jobNo))
     )
   ];
-}
-
-function filteredAdditionalCharges() {
-  const filters = state.ui.chargeFilters || {};
-  return filteredRows(visibleRows(state.additionalCharges)).filter((row) => {
-    const shipmentMatch = !filters.shipmentNo || row.shipmentNo.toLowerCase().includes(String(filters.shipmentNo).toLowerCase());
-    const typeMatch = !filters.chargeType || filters.chargeType === "All" || row.chargeType === filters.chargeType;
-    const supplierMatch = !filters.supplier || filters.supplier === "All" || row.supplier === filters.supplier;
-    const statusMatch = !filters.status || filters.status === "All" || row.status === filters.status;
-    const fromMatch = !filters.fromDate || row.chargeDate >= filters.fromDate;
-    const toMatch = !filters.toDate || row.chargeDate <= filters.toDate;
-    return shipmentMatch && typeMatch && supplierMatch && statusMatch && fromMatch && toMatch;
-  });
 }
 
 function filteredAuditRows() {
@@ -4014,6 +3983,12 @@ function badge(value) {
 
 function cellHtml(type, key, row, index = 0) {
   if (key === "slNo") return escapeHtml(index + 1);
+  const clickableRegisterKey = { customers: "code", suppliers: "code", tariff: "tariffNo", invoice: "invoiceNo" }[type];
+  if (clickableRegisterKey && key === clickableRegisterKey) {
+    const id = String(row[key] || "").trim();
+    if (!id) return escapeHtml(row[key] || "");
+    return `<button type="button" class="table-inline-link" data-record-open data-record-type="${escapeHtml(type)}" data-record-id="${escapeHtml(id)}" aria-label="Open ${escapeHtml(type)} ${escapeHtml(id)}">${escapeHtml(id)}</button>`;
+  }
   if (type === "audit" && key === "auditNumber") {
     const auditId = String(row.id || "").trim();
     if (!auditId) return `<span class="audit-details-empty" title="Still saving - refresh in a moment">Pending</span>`;
@@ -4057,21 +4032,6 @@ function cargoPalletCount(row) {
   return parsePalletDimensions(row.cargoItemsJson || row.palletDimensionsJson || "[]")
     .filter((line) => String(line.packageType || "").toLowerCase() === "pallet")
     .reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0);
-}
-
-function loadCard(loadItem) {
-  const jobs = loadItem.jobNumbers.split(",").map((job) => job.trim()).filter(Boolean);
-  return `<article class="load-card">
-    <button class="load-title" data-action="open" data-type="load" data-id="${escapeHtml(loadItem.loadNo)}">${escapeHtml(loadItem.loadNo)}</button>
-    <div class="load-meta">${escapeHtml(loadItem.tripDate)} | ${escapeHtml(loadItem.route)} | ${escapeHtml(loadItem.status)} | ${escapeHtml(loadItem.vehicleNo)}</div>
-    <div class="job-list">${jobs.map((jobNo) => jobBadge(jobNo)).join("") || empty("No jobs linked yet.")}</div>
-  </article>`;
-}
-
-function jobBadge(jobNo) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
-  if (!shipmentItem) return `<button class="job-chip warning">${escapeHtml(jobNo)}</button>`;
-  return `<button class="job-chip" data-action="open" data-type="shipment" data-id="${escapeHtml(jobNo)}"><strong>${escapeHtml(jobNo)}</strong><span>${escapeHtml(shipmentItem.customer)} | Pieces ${escapeHtml(shipmentItem.pieces)} | ${escapeHtml(shipmentItem.status)}</span></button>`;
 }
 
 function dashboardShipmentColumns() {
@@ -4164,7 +4124,15 @@ function rememberDropdownOptions(data) {
   if (changed) {
     state.settings.dropdownOptionsJson = JSON.stringify(state.dropdownOptions);
     saveState();
-    persistRecord("settings", state.settings);
+    // Deliberately send ONLY the field that changed here, not the whole state.settings object.
+    // This runs on every form submission app-wide (any new value typed into any autocomplete
+    // field), often from sessions that logged in before a later admin change to Company Settings -
+    // sending the full settings snapshot would silently overwrite every other setting (branch
+    // serial numbers, etc.) with whatever stale copy happened to be sitting in that browser tab.
+    persistRecord("settings", {
+      settingsKey: state.settings.settingsKey || "default",
+      dropdownOptionsJson: state.settings.dropdownOptionsJson
+    });
   }
 }
 
@@ -4269,7 +4237,6 @@ function defaultColumnLayouts() {
       ["consigneeName", "CONSIGNEE"],
       ["pickupLocation", "PICK UP LOCATIONS"],
       ["deliveryLocation", "DELIVERY LOCATION"],
-      ["shipmentDirection", "MODE"],
       ["loadType", "LOAD TYPE"],
       ["shipmentService", "MODE FULL"],
       ["pieces", "PKGS / CARTONS"],
@@ -4279,10 +4246,10 @@ function defaultColumnLayouts() {
       ["status", "STATUS"],
       ["createdBy", "USERNAME"]
     ],
-    load: [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]],
-    customers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
-    suppliers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
-    tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["currency", "Currency"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"]],
+    load: [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["origin", "Origin"], ["destination", "Destination"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"], ["createdBy", "USERNAME"]],
+    customers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"], ["createdBy", "USERNAME"]],
+    suppliers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"], ["createdBy", "USERNAME"]],
+    tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["currency", "Currency"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"], ["createdBy", "USERNAME"]],
     document: [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]],
     invoice: [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"], ["createdBy", "USERNAME"]],
     quotation: [["quotationNo", "Quotation"], ["date", "Date"], ["customerName", "Customer"], ["customerMobile", "Mobile"], ["customerEmail", "Email"], ["cbm", "CBM"], ["status", "Status"], ["createdBy", "USERNAME"]],
@@ -4346,14 +4313,6 @@ function customerRequestColumns() { return [["request_no", "Request"], ["item_na
 function customerShipmentColumns() { return [["job_no", "Shipment"], ["origin", "Origin"], ["destination", "Destination"], ["status", "Status"], ["pod_status", "POD"], ["invoice_status", "Invoice"]]; }
 function customerNotificationColumns() { return [["title", "Title"], ["message", "Message"], ["read_status", "Status"], ["created_at", "Created"]]; }
 function customerActivityColumns() { return [["action", "Action"], ["description", "Description"], ["ip_address", "IP"], ["created_at", "Created"]]; }
-
-function unblockColumns() {
-  return [["requestNo", "Request"], ["requestType", "Type"], ["targetType", "Target"], ["referenceNo", "Reference"], ["customerName", "Name"], ["requestedBy", "Requested By"], ["reason", "Reason"], ["status", "Status"], ["date", "Date"]];
-}
-
-function adminRequestColumns() {
-  return [["requestNo", "Request"], ["requestType", "Type"], ["targetModule", "Module"], ["referenceNo", "Reference"], ["requestedBy", "Requested By"], ["status", "Status"], ["date", "Date"]];
-}
 
 function userRequestColumns() {
   return [["requestNo", "Request"], ["requestType", "Type"], ["target", "Section"], ["referenceNo", "Reference"], ["requestedBy", "Requested By"], ["status", "Status"], ["date", "Date"]];
@@ -4620,6 +4579,11 @@ async function handleModuleClick(event) {
     return;
   }
 
+  if (action === "upload-employee-document") {
+    await uploadEmployeeProfileDocument(button.dataset.documentType || "");
+    return;
+  }
+
   if (action === "new-record") {
     openNewDialog(selectedNewRecordType(type), mode || "");
     return;
@@ -4798,6 +4762,14 @@ function handleColumnResizeStart(event) {
 }
 
 function handleModuleLinkClick(event) {
+  const recordButton = event.target.closest("[data-record-open]");
+  if (recordButton) {
+    const recordType = recordButton.dataset.recordType || "";
+    const recordId = recordButton.dataset.recordId || "";
+    if (recordType && recordId) openRecord(recordType, recordId);
+    return;
+  }
+
   const auditButton = event.target.closest("[data-audit-open]");
   if (auditButton) {
     openAuditDetailDialog(auditButton.dataset.auditRef || "");
@@ -5214,6 +5186,28 @@ function notifyDuplicate(id) {
   window.alert(`Already used\n${message}`);
 }
 
+// Airway Bill numbers must be unique per branch (the same AWB can legitimately be reused across
+// different branches, e.g. Kuwait HO and Dubai each running their own numbering) but never twice
+// within the same branch. excludeJobNo lets an edit compare against every OTHER shipment without
+// flagging itself as a duplicate of its own current AWB.
+function duplicateAirwayBillExists(awbNo, branch, excludeJobNo = "") {
+  const normalizedAwb = String(awbNo || "").trim().toLowerCase();
+  if (!normalizedAwb) return false;
+  const normalizedBranch = normalizeBranchName(branch).toLowerCase();
+  const excludeNormalized = String(excludeJobNo || "").trim().toLowerCase();
+  return state.shipments.some((row) => {
+    if (excludeNormalized && String(row.jobNo || "").trim().toLowerCase() === excludeNormalized) return false;
+    if (String(row.airwayBillNo || "").trim().toLowerCase() !== normalizedAwb) return false;
+    return normalizeBranchName(row.branch).toLowerCase() === normalizedBranch;
+  });
+}
+
+function notifyDuplicateAirwayBill(awbNo, branch) {
+  const message = `Airway Bill ${awbNo} is already used by another shipment in ${branch || "this branch"}. Enter a different AWB number.`;
+  notifyDenied("Airway Bill already used", message);
+  window.alert(`Airway Bill already used\n${message}`);
+}
+
 function detailFieldControl(type, key, value, record) {
   const readonlyKeys = new Set(["jobNo", "loadNo", "code", "tariffNo", "documentNo", "invoiceNo", "refNo", "userName", "requestNo", "payslipNo"]);
   const options = detailFieldOptions(type, key, record);
@@ -5361,14 +5355,16 @@ async function saveDialogRecordInner() {
   const data = collectFormValues(dialogBody.closest("form"));
   rememberDropdownOptions(data);
   const updatedRecord = { ...editing.record };
-  Object.keys(updatedRecord).forEach((key) => {
-    if (Object.prototype.hasOwnProperty.call(data, key)) {
-      updatedRecord[key] = coerceValue(updatedRecord[key], data[key]);
-    }
+  Object.keys(data).forEach((key) => {
+    updatedRecord[key] = coerceValue(updatedRecord[key], data[key]);
   });
   if (editing.type === "shipment") {
     if (!String(updatedRecord.billTo1 || "").trim() && !String(updatedRecord.billTo2 || "").trim()) {
       notifyDenied("Bill To required", "Enter at least one Bill To value.");
+      return;
+    }
+    if (duplicateAirwayBillExists(updatedRecord.airwayBillNo, updatedRecord.branch, editing.id)) {
+      notifyDuplicateAirwayBill(updatedRecord.airwayBillNo, updatedRecord.branch);
       return;
     }
     updatedRecord.notes = shipmentMetaNotes(updatedRecord);
@@ -5553,29 +5549,6 @@ function openLoadDialog(type) {
   });
 }
 
-function openStatusDialog(jobNo = "") {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo) || state.shipments[0];
-  openDialog({
-    title: jobNo ? `Shipment Status - ${jobNo}` : "Shipment Status Update",
-    typeLabel: "Status",
-    body: `
-      ${selectFrom("jobNo", "Shipment No", shipmentOptions(), shipmentItem?.jobNo || "")}
-      ${select("status", "Shipment Status", statusOptions(), shipmentItem?.status || "Booked")}
-      ${select("podStatus", "POD Status", ["Pending", "Uploaded", "Missing", "Disputed", "Approved"], shipmentItem?.podStatus || "Pending")}
-      ${select("invoiceStatus", "Invoice Status", ["Unbilled", "Draft", "Approved", "Sent", "Paid", "Overdue"], shipmentItem?.invoiceStatus || "Unbilled")}
-      ${input("notes", "Notes", "Status update")}
-    `,
-    saveLabel: "Update Shipment Status",
-    async onSave() {
-      const data = collectFormValues(dialogBody.closest("form"));
-      await updateStatus(data);
-      saveState();
-      recordDialog.close();
-      render();
-    }
-  });
-}
-
 function openPodDialog(jobNo = "") {
   const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo) || visibleRows(state.shipments)[0] || {};
   openDialog({
@@ -5604,7 +5577,7 @@ function podShipmentFields(shipmentItem = {}) {
     ${input("deliveryNoteNo", "Delivery Note No", shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber())}
     ${input("ginNo", "GIN Number", shipmentItem.ginNo || "")}
     ${input("customerReference", "Customer Reference", shipmentItem.customerReference || "")}
-    ${textarea("deliveryRemarks", "Delivery Remarks / Coordinates", shipmentItem.deliveryRemarks || "", false, 3)}
+    ${textarea("deliveryRemarks", "Delivery Remarks / Coordinates", shipmentItem.deliveryRemarks || [shipmentItem.deliveryLocation, shipmentItem.deliveryAddress].filter((part) => String(part || "").trim()).join(" - "), false, 3)}
     ${input("pocName", "POC Name", shipmentItem.pocName || shipmentItem.deliveryContactPerson || "")}
     ${input("pocMobile", "POC Mobile Number", shipmentItem.pocMobile || shipmentItem.deliveryMobile || "")}
     ${input("additionalContact", "Additional Contact Person", shipmentItem.additionalContact || "")}
@@ -5642,6 +5615,25 @@ function bindPodShipmentDialog() {
   shipmentField.addEventListener("input", refreshShipmentDetails);
 }
 
+async function uploadPodDocument(jobNo, file) {
+  const allowedMimeTypes = ["application/pdf", "image/jpeg", "image/png"];
+  if (!file || !allowedMimeTypes.includes(String(file.type || "").toLowerCase())) {
+    throw new Error("POD file must be a PDF, JPG, JPEG, or PNG file.");
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("POD file must be 10 MB or smaller.");
+  }
+  const contentBase64 = await readFileAsBase64(file);
+  const result = await fetchJson("/api/pod-documents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jobNo, fileName: file.name, mimeType: file.type, contentBase64 })
+  });
+  const documentItem = apiDocument(result.row || {});
+  state.documents = [...state.documents.filter((item) => !(item.type === "POD" && item.linkedNo === jobNo)), documentItem];
+  return documentItem;
+}
+
 async function savePodDelivery(data) {
   const jobNo = String(data.jobNo || "").trim();
   const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
@@ -5652,10 +5644,11 @@ async function savePodDelivery(data) {
 
   const uploadedFile = data.podFileUpload;
   const hasPodFile = uploadedFile && typeof uploadedFile === "object" && uploadedFile.name;
+  const previousPodStatus = shipmentItem.podStatus || "Pending";
   const updatedShipment = {
     ...shipmentItem,
     status: "Delivered",
-    podStatus: hasPodFile ? "Uploaded" : (shipmentItem.podStatus || "Pending"),
+    podStatus: hasPodFile ? "Uploaded" : previousPodStatus,
     deliveryNoteNo: String(data.deliveryNoteNo || shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber()).trim(),
     ginNo: String(data.ginNo || "").trim(),
     customerReference: String(data.customerReference || shipmentItem.customerReference || "").trim(),
@@ -5677,20 +5670,22 @@ async function savePodDelivery(data) {
     return false;
   }
 
+  // Compute the diff BEFORE shipmentItem gets overwritten below, using the exact same
+  // "field: before -> after" format the generic edit-save flow uses, so POD saves show up in the
+  // audit trail with proper before/after just like every other kind of edit.
+  const podChangeSummary = summarizeChanges(shipmentItem, updatedShipment);
   Object.assign(shipmentItem, updatedShipment);
   if (hasPodFile) {
-    await createDocument({
-      documentNo: nextNumber("DOC", state.documents, "documentNo"),
-      linkedNo: updatedShipment.jobNo,
-      type: "POD",
-      status: "Uploaded",
-      date: today(),
-      owner: currentUserName(),
-      fileUpload: uploadedFile,
-      notes: `Signed POD for ${updatedShipment.deliveryNoteNo}`
-    });
+    try {
+      await uploadPodDocument(updatedShipment.jobNo, uploadedFile);
+    } catch (error) {
+      updatedShipment.podStatus = shipmentItem.podStatus = previousPodStatus;
+      await persistRecord("shipment", updatedShipment);
+      notifyDenied("Delivery saved", `${updatedShipment.jobNo} was marked Delivered, but the POD file was not uploaded: ${error.message}`);
+      return false;
+    }
   }
-  addHistory("Saved POD / Delivery", updatedShipment.jobNo, `Delivery note: ${updatedShipment.deliveryNoteNo}`);
+  addHistory("Saved POD / Delivery", updatedShipment.jobNo, podChangeSummary);
   notifySuccess("Delivery saved", `${updatedShipment.jobNo} is marked Delivered${hasPodFile ? " and the POD file was attached" : ""}.`);
   return true;
 }
@@ -5711,24 +5706,18 @@ async function uploadPodFileForSelectedShipment(jobNo) {
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
     if (!file) return;
-    const documentSaved = await createDocument({
-      documentNo: nextNumber("DOC", state.documents, "documentNo"),
-      linkedNo: shipmentItem.jobNo,
-      type: "POD",
-      status: "Uploaded",
-      date: today(),
-      owner: currentUserName(),
-      fileUpload: file,
-      notes: `Signed POD for ${shipmentItem.deliveryNoteNo || shipmentItem.jobNo}`
-    });
-    if (!documentSaved) return;
-    shipmentItem.podStatus = "Uploaded";
-    const shipmentSaved = await persistRecord("shipment", shipmentItem);
-    if (!shipmentSaved) return;
-    addHistory("Uploaded signed POD", shipmentItem.jobNo, file.name);
-    saveState();
-    render();
-    notifySuccess("POD file uploaded", `${file.name} was attached to ${shipmentItem.jobNo}.`);
+    try {
+      await uploadPodDocument(shipmentItem.jobNo, file);
+      shipmentItem.podStatus = "Uploaded";
+      const shipmentSaved = await persistRecord("shipment", shipmentItem);
+      if (!shipmentSaved) return;
+      addHistory("Uploaded signed POD", shipmentItem.jobNo, file.name);
+      saveState();
+      render();
+      notifySuccess("POD file uploaded", `${file.name} was attached to ${shipmentItem.jobNo}.`);
+    } catch (error) {
+      notifyDenied("POD file not uploaded", error.message || "The POD file could not be uploaded.");
+    }
   }, { once: true });
   fileInput.click();
 }
@@ -5801,7 +5790,8 @@ function dialogConfigFor(type, mode = "") {
       body: `
         ${input("loadNo", "Manifest No", nextConsolidationNumber(), false)}
         ${input("tripDate", "Trip Date", today(), false, "date")}
-        ${input("route", "Route", "Kuwait - Riyadh")}
+        ${input("origin", "Origin", "")}
+        ${input("destination", "Destination", "")}
         ${formSection("Transport Information", `
           ${selectFrom("transporter", "Transporter", state.suppliers.map((row) => ({ value: row.name, label: `${row.code} | ${row.name}` })), "Al Dana Transport")}
           ${selectFrom("transporterCode", "Transporter Number", state.suppliers.map((row) => ({ value: row.code, label: `${row.code} | ${row.name}` })), "")}
@@ -6014,7 +6004,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     `, true, sectionOpen)}
     ${formSection("Billing Party 1", `
       ${checkbox("copyCustomerToBilling1", "Same as customer information")}
-      ${input("billTo1", "Billing Party Name", fieldValue("billTo1", defaultCustomer))}
+      ${selectFrom("billTo1", "Billing Party Name", state.customers.map((row) => row.name), fieldValue("billTo1", defaultCustomer))}
       ${textarea("billingParty1Address", "Billing Address", fieldValue("billingParty1Address"), false, 3)}
       ${input("billingParty1ContactPerson", "Contact Person", fieldValue("billingParty1ContactPerson"))}
       ${input("billingParty1Mobile", "Mobile Number", fieldValue("billingParty1Mobile"))}
@@ -6041,6 +6031,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       <button type="button" class="secondary-button" data-dialog-action="generate-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before generating a TCN\""}>Generate TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="view-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before viewing a TCN\""}>View TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="generate-pod">Generate Delivery Note / POD</button>
+      <button type="button" class="secondary-button" data-dialog-action="save-draft">Save as Draft</button>
     </div>
   `;
 }
@@ -6049,20 +6040,6 @@ function formSection(title, body, collapsible = false, open = false) {
   const sectionBody = `<div class="form-section-grid">${body}</div>`;
   if (!collapsible) return `<section class="form-section"><h3>${escapeHtml(title)}</h3>${sectionBody}</section>`;
   return `<details class="form-section collapsible-section" ${open ? "open" : ""}><summary>${escapeHtml(title)}</summary>${sectionBody}</details>`;
-}
-
-function palletDimensionBuilder(initialValue = "[]") {
-  return `<section class="pallet-builder" data-pallet-builder>
-    <input type="hidden" name="palletDimensionsJson" value="${escapeHtml(initialValue || "[]")}" />
-    <div class="tariff-charge-entry">
-      ${input("palletCount", "No of Pallets", "1", false, "number")}
-      ${input("palletLength", "Length", "100", false, "number")}
-      ${input("palletWidth", "Width", "120", false, "number")}
-      ${input("palletHeight", "Height", "120", false, "number")}
-      <button type="button" class="secondary-button" data-dialog-action="add-pallet-line">Add</button>
-    </div>
-    <div class="tariff-charge-table" data-pallet-lines-list></div>
-  </section>`;
 }
 
 function shipmentRequestDialogBody(record) {
@@ -6575,15 +6552,34 @@ function openShipmentFromAirwayBill(sourceRecord, airwayBillNo, branch = "") {
 function bindShipmentCustomerAutofill() {
   const customerField = dialogBody.querySelector("input[name='customer']");
   const codeField = dialogBody.querySelector("input[name='customerCode']");
-  if (!customerField && !codeField) return;
+  const billToField = dialogBody.querySelector("input[name='billTo1']");
+  const tariffField = dialogBody.querySelector("input[name='tariffNo']");
+  const tariffDatalist = dialogBody.querySelector("#tariffNoOptions");
+  if (!customerField && !codeField && !billToField) return;
 
-  const fill = (source) => {
-    const value = String(source?.value || "").trim().toLowerCase();
-    if (!value) return;
-    const customer = state.customers.find((row) =>
+  const findCustomer = (value) =>
+    state.customers.find((row) =>
       String(row.name || "").trim().toLowerCase() === value ||
       String(row.code || "").trim().toLowerCase() === value
     );
+
+  // Tariff options are filtered to the selected customer only, matching the same behavior as the
+  // Invoice dialog's Job No/Tariff No fields - without this, the tariff list would only reflect
+  // whichever customer was set when the shipment dialog first opened, not later changes.
+  const refreshTariffOptions = () => {
+    if (!tariffDatalist) return;
+    const options = tariffOptionsForCustomer(customerField?.value || "");
+    tariffDatalist.innerHTML = options
+      .map((option) => `<option value="${escapeHtml(option.value || "")}" label="${escapeHtml(option.label || option.value || "")}"></option>`)
+      .join("");
+    if (tariffField?.value && !options.some((option) => option.value === tariffField.value)) tariffField.value = "";
+  };
+
+  const fill = (source) => {
+    const value = String(source?.value || "").trim().toLowerCase();
+    refreshTariffOptions();
+    if (!value) return;
+    const customer = findCustomer(value);
     if (!customer) return;
 
     setDialogValue("customer", customer.name);
@@ -6601,10 +6597,28 @@ function bindShipmentCustomerAutofill() {
     setDialogValue("billingParty1CreditTerms", customer.terms);
   };
 
+  // Searching/typing directly into the Billing Party Name field is its own entry point - the
+  // billing party isn't always the same as the shipment's operational customer (e.g. third-party
+  // billing), so this only fills the billing-specific fields, not the customer/consignee ones above.
+  const fillBillingPartyOnly = (source) => {
+    const value = String(source?.value || "").trim().toLowerCase();
+    if (!value) return;
+    const customer = findCustomer(value);
+    if (!customer) return;
+
+    setDialogValue("billingParty1Address", customer.fullAddress || customer.locationOrLane);
+    setDialogValue("billingParty1ContactPerson", customer.name);
+    setDialogValue("billingParty1Mobile", customer.mobile);
+    setDialogValue("billingParty1Email", customer.email);
+    setDialogValue("billingParty1CreditTerms", customer.terms);
+  };
+
   customerField?.addEventListener("input", () => fill(customerField));
   customerField?.addEventListener("change", () => fill(customerField));
   codeField?.addEventListener("input", () => fill(codeField));
   codeField?.addEventListener("change", () => fill(codeField));
+  billToField?.addEventListener("input", () => fillBillingPartyOnly(billToField));
+  billToField?.addEventListener("change", () => fillBillingPartyOnly(billToField));
 }
 
 function customerDialogSnapshot() {
@@ -6816,10 +6830,20 @@ function bindPalletDimensionBuilder() {
     const deliveryNo = data.deliveryNoteNo || nextDeliveryNoteNumber();
     const deliveryDatetime = data.deliveryDatetime || (data.deliveryDate ? `${data.deliveryDate}${data.deliveryTime ? `T${data.deliveryTime}` : ""}` : "");
     if (deliveryNoteField) deliveryNoteField.value = deliveryNo;
+    // The main shipment form has no Delivery Remarks/POC/Prepared-Delivered-Received-By fields of
+    // its own (only a hidden Delivery Note No), so this button used to print an almost-empty POD.
+    // Apply the exact same field derivation the dedicated POD panel uses (podShipmentFields), so a
+    // POD generated from either place captures the same delivery information the same way.
     openPrintableDocument(podDocumentHtml({
       ...data,
       deliveryNoteNo: deliveryNo,
-      deliveryDatetime: deliveryDatetime || today()
+      deliveryDatetime: deliveryDatetime || today(),
+      deliveryRemarks: data.deliveryRemarks || [data.deliveryLocation, data.deliveryAddress].filter((part) => String(part || "").trim()).join(" - "),
+      pocName: data.pocName || data.deliveryContactPerson || "",
+      pocMobile: data.pocMobile || data.deliveryMobile || "",
+      preparedBy: data.preparedBy || currentUserName(),
+      deliveredBy: data.deliveredBy || data.driverName || "",
+      receivedBy: data.receivedBy || ""
     }));
   };
 
@@ -6943,6 +6967,7 @@ function bindPalletDimensionBuilder() {
   });
 
   dialogBody.querySelector("[data-dialog-action='generate-pod']")?.addEventListener("click", printPod);
+  dialogBody.querySelector("[data-dialog-action='save-draft']")?.addEventListener("click", () => createShipmentDraft(currentShipmentData()));
   dialogBody.querySelector("[data-dialog-action='generate-tcn']")?.addEventListener("click", () => printTcn(true));
   dialogBody.querySelector("[data-dialog-action='view-tcn']")?.addEventListener("click", () => printTcn(false));
   const shipmentDocumentUpload = dialogBody.querySelector("input[name='shipmentDocumentUpload']");
@@ -7122,32 +7147,6 @@ function tariffChargeTable(lines, total, grandTotal, showActions = true, options
 
 function normalizeLookupText(value) {
   return String(value || '').trim().toLowerCase();
-}
-
-function customerSearchTokens(customerName) {
-  const lookup = normalizeLookupText(customerName);
-  if (!lookup) return [];
-  const tokens = new Set([lookup]);
-  visibleRows(state.customers).forEach((customer) => {
-    const matched = [customer.name, customer.code, customer.customerName, customer.customerCode].some((value) => {
-      const candidate = normalizeLookupText(value);
-      return candidate && (candidate === lookup || candidate.includes(lookup) || lookup.includes(candidate));
-    });
-    if (!matched) return;
-    [customer.name, customer.code, customer.customerName, customer.customerCode].forEach((value) => {
-      const candidate = normalizeLookupText(value);
-      if (candidate) tokens.add(candidate);
-    });
-  });
-  return [...tokens];
-}
-
-function rowMatchesLookup(row, fields, tokens) {
-  if (!tokens.length) return true;
-  return fields.some((value) => {
-    const candidate = normalizeLookupText(value);
-    return candidate && tokens.some((token) => candidate === token || candidate.includes(token) || token.includes(candidate));
-  });
 }
 
 function invoiceCustomerOptions() {
@@ -7624,7 +7623,15 @@ function bindInvoiceShipmentTariff() {
     syncInvoice();
   };
 
-  dialogBody.addEventListener('input', (event) => {
+  // dialogBody is a persistent, reused DOM node across every dialog open in the app - without
+  // removing the previous listeners first, opening the invoice dialog N times in a session would
+  // attach N separate 'input'/'click' listeners here, each closing over field references from a
+  // prior dialog's now-replaced HTML. The stale ones are individually harmless (their captured
+  // elements are detached, so their target checks never match), but they'd accumulate indefinitely.
+  if (dialogBody._invoiceInputHandler) dialogBody.removeEventListener('input', dialogBody._invoiceInputHandler);
+  if (dialogBody._invoiceClickHandler) dialogBody.removeEventListener('click', dialogBody._invoiceClickHandler);
+
+  dialogBody._invoiceInputHandler = (event) => {
     const target = event.target;
     if (target === customerField || target === shipmentField || target === tariffField || target === taxPercentField) {
       syncDatalist();
@@ -7643,9 +7650,14 @@ function bindInvoiceShipmentTariff() {
     const lineIndex = target?.dataset?.lineIndex;
     const lineField = target?.dataset?.invoiceLineField;
     if (lineIndex !== undefined && lineField) updateLineValue(Number(lineIndex), lineField, target.value);
-  });
+  };
+  dialogBody.addEventListener('input', dialogBody._invoiceInputHandler);
+  // Selecting a datalist suggestion by mouse click doesn't reliably fire 'input' in every browser -
+  // 'change' is the one event guaranteed to fire either way, so this is a defensive second listener
+  // covering the same three fields in case that's how the customer gets picked.
+  dialogBody.addEventListener('change', dialogBody._invoiceInputHandler);
 
-  dialogBody.addEventListener('click', (event) => {
+  dialogBody._invoiceClickHandler = (event) => {
     const addButton = event.target.closest('[data-add-invoice-line]');
     if (addButton) {
       lines.push({ id: 'manual-' + Date.now(), source: 'manual', description: '', unit: 'Unit', qty: 1, rate: 0, amount: 0, cost: 0, remarks: '' });
@@ -7657,7 +7669,8 @@ function bindInvoiceShipmentTariff() {
       lines.splice(Number(removeButton.dataset.removeInvoiceLine), 1);
       syncInvoice(true);
     }
-  });
+  };
+  dialogBody.addEventListener('click', dialogBody._invoiceClickHandler);
 
   syncDatalist();
   syncInvoice(true);
@@ -7735,23 +7748,40 @@ function parseChangeSummary(summary) {
 function previewReport() {
   const reportType = moduleContent.querySelector("[name='reportType']")?.value || state.ui.reportType || "Daily shipments";
   const reportFormat = moduleContent.querySelector("[name='reportFormat']")?.value || state.ui.reportFormat || "PDF";
-  const rows = reportRows(reportType);
+  const reportFromDate = moduleContent.querySelector("[name='reportFromDate']")?.value || "";
+  const reportToDate = moduleContent.querySelector("[name='reportToDate']")?.value || "";
+  const rows = reportRows(reportType, reportFromDate, reportToDate);
   const revenue = rows.reduce((sum, row) => sum + Number(row.sell || 0), 0);
   const cost = rows.reduce((sum, row) => sum + Number(row.buyCost || 0), 0);
   state.ui.reportType = reportType;
   state.ui.reportFormat = reportFormat;
+  state.ui.reportFromDate = reportFromDate;
+  state.ui.reportToDate = reportToDate;
+  const rangeText = reportFromDate || reportToDate ? ` | ${reportFromDate || "earliest"} to ${reportToDate || "latest"}` : "";
   state.ui.reportPreview = {
     reportType,
     format: reportFormat,
     rows,
-    summary: `${rows.length} shipment(s) | Revenue ${money(revenue)} | Cost ${money(cost)} | Margin ${money(revenue - cost)}`
+    summary: `${rows.length} shipment(s) | Revenue ${money(revenue)} | Cost ${money(cost)} | Margin ${money(revenue - cost)}${rangeText}`
   };
   saveState();
   render();
 }
 
-function reportRows(reportType) {
-  const rows = filteredRows(visibleRows(state.shipments));
+// The report's own From/To fields are authoritative for report generation - they were added
+// specifically because relying on the ambient global date filter elsewhere on screen was
+// confusing (not obviously connected to the report, easy to forget was even set). Falls back to
+// the global filter only when the report's own dates are left blank, so existing habits still work.
+function reportRows(reportType, reportFromDate = "", reportToDate = "") {
+  const useOwnRange = reportFromDate || reportToDate;
+  const rows = useOwnRange
+    ? visibleRows(state.shipments).filter((row) => {
+        const date = recordDate(row);
+        const fromMatch = !reportFromDate || !date || date >= reportFromDate;
+        const toMatch = !reportToDate || !date || date <= reportToDate;
+        return fromMatch && toMatch && adminBranchFilterMatch(row);
+      })
+    : filteredRows(visibleRows(state.shipments));
   if (reportType === "Open / in-transit / delivered") {
     return rows.filter((row) => ["Booked", "In-Transit", "Delivered"].includes(row.status));
   }
@@ -7967,29 +7997,6 @@ function generateRecordDocument(type, id, download = false) {
   openPrintableDocument(html);
 }
 
-function viewDocument(type, id) {
-  return generateRecordDocument(type, id, false);
-}
-
-function editDocument(type, id) {
-  return openRecord(type, id);
-}
-
-function printDocument(type, id) {
-  return generateRecordDocument(type, id, false);
-}
-
-function downloadPdf(type, id) {
-  return generateRecordDocument(type, id, true);
-}
-
-function emailDocument(type, id) {
-  const record = collectionFor(type).find((row) => rowId(type, row) === id);
-  const subject = encodeURIComponent(`${typeLabel(type)} ${id}`);
-  const body = encodeURIComponent(`Please find ${typeLabel(type)} ${id} attached or printed from Apollo Freight ERP.\n\nReference: ${record ? rowId(type, record) : id}`);
-  window.location.href = `mailto:?subject=${subject}&body=${body}`;
-}
-
 function shipmentDocumentHtml(record) {
   return documentShell(
     `Shipment ${record.jobNo}`,
@@ -8101,6 +8108,7 @@ function podDocumentHtml(record) {
         ["Nature of Goods", record.natureOfGoods]
       ])}
       ${documentBlock("Delivery Information", [
+        ["Delivery Address", record.deliveryAddress || record.deliveryLocation],
         ["Delivery Remarks / Coordinates", record.deliveryRemarks],
         ["POC Name", record.pocName || record.deliveryContactPerson],
         ["POC Mobile Number", record.pocMobile || record.deliveryMobile],
@@ -8108,8 +8116,8 @@ function podDocumentHtml(record) {
       ])}
       <section class="delivery-signatures">
         <div><span>Prepared By</span><strong>${escapeHtml(record.preparedBy || currentUserName())}</strong><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || new Date().toLocaleString())}</em></div>
-        <div><span>Delivered By</span><strong>${escapeHtml(record.deliveredBy || record.driverName || "")}</strong><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || "")}</em></div>
-        <div><span>Goods Received By</span><strong>${escapeHtml(record.receivedBy || "")}</strong><small>Telephone Number</small><em>${escapeHtml(record.receiverPhone || "")}</em><small>Signature</small><b>${escapeHtml(record.receiverSignature || " ")}</b><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || "")}</em></div>
+        <div><span>Delivered By</span><strong>${escapeHtml(record.deliveredBy || record.driverName || "")}</strong></div>
+        <div><span>Goods Received By</span><strong>${escapeHtml(record.receivedBy || "")}</strong><small>Telephone Number</small><em>${escapeHtml(record.receiverPhone || "")}</em><small>Signature</small><b>${escapeHtml(record.receiverSignature || " ")}</b></div>
       </section>
       <p class="acknowledgement">This is to confirm that goods have been received in good order and condition. Any discrepancy must be notified within 24 hours from the time of receipt.</p>
       <p class="acknowledgement">Shipment was opened and checked by customs</p>
@@ -8171,9 +8179,9 @@ function manifestDocumentHtml(record) {
       <section class="manifest-sheet">
         <div class="manifest-header-grid">
           <p><strong>TRUCK NO</strong><span>${escapeHtml(record.vehicleNo || "")}</span></p>
-          <p><strong>FROM</strong><span>${escapeHtml(record.from || record.origin || record.route || "")}</span></p>
+          <p><strong>FROM</strong><span>${escapeHtml(record.origin || "")}</span></p>
           <p><strong>MANIFEST NO</strong><span>${escapeHtml(record.loadNo || "")}</span></p>
-          <p><strong>TO</strong><span>${escapeHtml(record.to || record.destination || "")}</span></p>
+          <p><strong>TO</strong><span>${escapeHtml(record.destination || "")}</span></p>
           <p><strong>DRIVER NAME</strong><span>${escapeHtml(record.driverName || "")}</span></p>
           <p><strong>ETD</strong><span>${escapeHtml(record.tripDate || "")}</span></p>
           <p><strong>MOB NO</strong><span>${escapeHtml(record.driverNumber || record.driverMobile || "")}</span></p>
@@ -8240,7 +8248,7 @@ function invoiceDocumentHtml(record) {
       </tbody></table>
       <table class="invoice-info-table"><tbody>
         <tr><th>SHIP VIA</th><th>TRACKING NO.</th><th>FROM / TO</th><th>GR / VOL WEIGHT</th><th>JOB NO.</th></tr>
-        <tr><td>${escapeHtml(shipmentItem?.transportMode || shipmentItem?.shipmentService || "")}</td><td>${escapeHtml(shipmentItem?.airwayBillNo || shipmentItem?.tcnNumber || "")}</td><td>${escapeHtml(invoiceFromTo(shipmentItem))}</td><td>${escapeHtml(invoiceWeightText(shipmentItem))}</td><td>${escapeHtml(record.shipmentNo)}</td></tr>
+        <tr><td>${escapeHtml(shipmentItem?.loadType || "")}</td><td>${escapeHtml(shipmentItem?.airwayBillNo || shipmentItem?.tcnNumber || "")}</td><td>${escapeHtml(invoiceFromTo(shipmentItem))}</td><td>${escapeHtml(invoiceWeightText(shipmentItem))}</td><td>${escapeHtml(record.shipmentNo)}</td></tr>
       </tbody></table>
       <table class="invoice-lines-table">
         <thead><tr><th>ACTIVITY</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead>
@@ -8286,7 +8294,7 @@ function invoiceChargeLines(record, shipmentItem, tariffItem) {
 }
 
 function invoiceCurrency(record, shipmentItem) {
-  return shipmentItem?.currency || state.additionalCharges.find((row) => row.shipmentNo === record.shipmentNo)?.currency || "KWD";
+  return record?.currency || shipmentItem?.currency || state.additionalCharges.find((row) => row.shipmentNo === record.shipmentNo)?.currency || "KWD";
 }
 
 function invoiceDueDate(dateValue, terms = "") {
@@ -8299,8 +8307,8 @@ function invoiceDueDate(dateValue, terms = "") {
 
 function invoiceFromTo(shipmentItem) {
   if (!shipmentItem) return "";
-  const from = shipmentItem.shipperName || shipmentItem.pickupLocation || shipmentItem.origin || "";
-  const to = shipmentItem.consigneeName || shipmentItem.deliveryLocation || shipmentItem.destination || "";
+  const from = shipmentItem.origin || shipmentItem.shipperName || shipmentItem.pickupLocation || "";
+  const to = shipmentItem.destination || shipmentItem.consigneeName || shipmentItem.deliveryLocation || "";
   return [from, to].filter(Boolean).join(" / ");
 }
 
@@ -9163,7 +9171,7 @@ async function createLoad(data) {
   const record = load(
     loadNo,
     data.tripDate || today(),
-    data.route || "",
+    [data.origin, data.destination].filter((part) => String(part || "").trim()).join(" - "),
     data.transporter || "",
     data.vehicleNo || "",
     data.status || "Planned",
@@ -9538,9 +9546,78 @@ async function changeCurrentPassword(data) {
   return true;
 }
 
+// Saves whatever is currently in the New Shipment form, skipping the requirements that only
+// matter once a shipment is ready to move forward (Bill To, tariff-customer matching) - a draft is
+// allowed to be incomplete. If this is editing an existing shipment already (i.e. continuing a
+// draft that was opened again), this updates that same record instead of creating a duplicate.
+async function createShipmentDraft(data) {
+  if (editing && editing.type === "shipment") {
+    const updatedRecord = { ...editing.record };
+    Object.keys(data).forEach((key) => {
+      updatedRecord[key] = coerceValue(updatedRecord[key], data[key]);
+    });
+    updatedRecord.status = "Draft";
+    updatedRecord.notes = shipmentMetaNotes(updatedRecord);
+    const changeSummary = summarizeChanges(editing.record, updatedRecord);
+    const saved = await persistRecord("shipment", updatedRecord);
+    if (!saved) {
+      notifyDenied("Draft not saved", "The draft could not be saved. Check the connection and try again.");
+      return false;
+    }
+    Object.assign(editing.record, updatedRecord);
+    addHistory("Saved shipment as draft", updatedRecord.jobNo, changeSummary);
+    notifySuccess("Draft saved", `${updatedRecord.jobNo} was updated and kept as a draft.`);
+    editing = null;
+    recordDialog.close();
+    render();
+    return true;
+  }
+
+  if (!String(data.jobNo || "").trim()) {
+    notifyDenied("Draft not saved", "A job number is required, even for a draft.");
+    return false;
+  }
+  if (duplicateRecordExists("shipment", data.jobNo)) {
+    notifyDuplicate(data.jobNo);
+    return false;
+  }
+  if (duplicateAirwayBillExists(data.airwayBillNo, data.branch)) {
+    notifyDuplicateAirwayBill(data.airwayBillNo, data.branch);
+    return false;
+  }
+  const tariffItem = state.tariffs.find((row) => row.tariffNo === data.tariffNo) || assignedTariffForShipment({ customer: data.customer, origin: data.origin, destination: data.destination, tariffNo: data.tariffNo });
+  const chargeableWeight = Number(data.chargeableKg || 0);
+  const pricing = tariffPricingForWeight(tariffItem, chargeableWeight);
+  const record = shipment(
+    data.jobNo, data.branch, data.customer, data.origin, data.destination, "Draft",
+    Number(data.pieces), Number(data.actualKg), Number(data.cbm), Number(data.chargeableKg), pricing.revenue, 0,
+    "Pending", "Unbilled", data.bookingDate || today(), data.airwayBillNo || "",
+    data.tariffNo || "", Number(data.transitDays || 0), data.shipmentDirection || "Export", data.shipmentService || "AE",
+    data.shipmentServiceOther || "", data.volumeCategory || "Land", Number(data.chargeableDivisor || volumeDivisorFor(data.volumeCategory || "Land") || 0),
+    currentUserName(), shipmentMetaNotes(data)
+  );
+  const saved = await postRecord("shipment", record);
+  if (!saved) {
+    notifyDenied("Draft not saved", "The draft could not be saved. Check the connection and try again.");
+    return false;
+  }
+  const finalRecord = typeof saved === "object" ? apiShipment(saved) : record;
+  state.shipments.unshift(finalRecord);
+  addHistory("Saved shipment as draft", finalRecord.jobNo);
+  notifySuccess("Draft saved", `${finalRecord.jobNo} was saved as a draft. Open it anytime from the Shipment Register to continue.`);
+  recordDialog.close();
+  render();
+  return true;
+}
+
 async function createShipment(data) {
   if (duplicateRecordExists("shipment", data.jobNo)) {
     notifyDuplicate(data.jobNo);
+    return false;
+  }
+  const awbForCreate = data.airwayBillNo || data.jobNo?.replace("AFS", "AWB");
+  if (duplicateAirwayBillExists(awbForCreate, data.branch)) {
+    notifyDuplicateAirwayBill(awbForCreate, data.branch);
     return false;
   }
   if (!String(data.billTo1 || "").trim() && !String(data.billTo2 || "").trim()) {
@@ -9976,6 +10053,64 @@ async function updateCustomerProfile(data) {
   await fetchJson("/api/customer/profile", { method: "PUT", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify(data) });
   notifySuccess("Profile saved", "Your customer profile was updated.");
   return true;
+}
+
+function employeeDocumentUploadRule(documentType) {
+  const rules = {
+    "Employee Photo": { accept: "image/jpeg,image/png", mimeTypes: ["image/jpeg", "image/png"], maxBytes: 5 * 1024 * 1024, label: "JPG, JPEG or PNG" },
+    "Civil ID Front": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" },
+    "Civil ID Back": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" },
+    "Passport Front": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" },
+    "Passport Back": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" }
+  };
+  return rules[documentType] || null;
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").split(",").pop() || "");
+    reader.onerror = () => reject(new Error("The selected file could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadEmployeeProfileDocument(documentType) {
+  const rule = employeeDocumentUploadRule(documentType);
+  if (!rule || !isHrSession()) return;
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = rule.accept;
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    if (!rule.mimeTypes.includes(String(file.type || "").toLowerCase())) {
+      notifyDenied("File not uploaded", `${documentType} must be a ${rule.label} file.`);
+      return;
+    }
+    if (file.size > rule.maxBytes) {
+      notifyDenied("File not uploaded", `${documentType} must be ${rule.maxBytes / 1024 / 1024} MB or smaller.`);
+      return;
+    }
+    try {
+      notifySuccess("Uploading document", `Uploading ${documentType}...`);
+      const contentBase64 = await readFileAsBase64(file);
+      const result = await fetchJson("/api/employee-profile-documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentType, fileName: file.name, mimeType: file.type, contentBase64 })
+      });
+      const documentItem = apiDocument(result.row || {});
+      const current = Array.isArray(state.employeeProfileDocuments) ? state.employeeProfileDocuments : [];
+      state.employeeProfileDocuments = [...current.filter((item) => item.type !== documentType), documentItem];
+      saveState();
+      render();
+      notifySuccess("Document uploaded", `${documentType} was uploaded successfully.`);
+    } catch (error) {
+      notifyDenied("File not uploaded", error.message || "The document could not be uploaded.");
+    }
+  }, { once: true });
+  fileInput.click();
 }
 
 async function updateEmployeeProfile(data) {

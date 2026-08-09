@@ -11,6 +11,38 @@ const { runMigrations } = require("./migrate");
 
 const app = express();
 app.set("trust proxy", 1);
+const EMPLOYEE_DOCUMENT_TYPES = {
+  "Employee Photo": { kind: "image", mimeTypes: new Set(["image/jpeg", "image/png"]), maxBytes: 5 * 1024 * 1024, code: "PHOTO", privateAsset: false },
+  "Civil ID Front": { kind: "raw", mimeTypes: new Set(["application/pdf"]), maxBytes: 10 * 1024 * 1024, code: "CIVIL-FRONT", privateAsset: true },
+  "Civil ID Back": { kind: "raw", mimeTypes: new Set(["application/pdf"]), maxBytes: 10 * 1024 * 1024, code: "CIVIL-BACK", privateAsset: true },
+  "Passport Front": { kind: "raw", mimeTypes: new Set(["application/pdf"]), maxBytes: 10 * 1024 * 1024, code: "PASS-FRONT", privateAsset: true },
+  "Passport Back": { kind: "raw", mimeTypes: new Set(["application/pdf"]), maxBytes: 10 * 1024 * 1024, code: "PASS-BACK", privateAsset: true }
+};
+const EMPLOYEE_DOCUMENT_TYPE_NAMES = new Set(Object.keys(EMPLOYEE_DOCUMENT_TYPES));
+
+function employeeDocumentType(value) {
+  return EMPLOYEE_DOCUMENT_TYPES[String(value || "").trim()] || null;
+}
+
+function safeEmployeeDocumentPart(value) {
+  return String(value || "").trim().replace(/[^a-z0-9_-]/gi, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "employee";
+}
+
+function cloudinaryConfig() {
+  const value = String(process.env.CLOUDINARY_URL || "").trim();
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "cloudinary:" || !url.username || !url.password || !url.hostname) return null;
+    return { apiKey: decodeURIComponent(url.username), apiSecret: decodeURIComponent(url.password), cloudName: url.hostname };
+  } catch {
+    return null;
+  }
+}
+
+function employeeDocumentNo(userName, typeConfig) {
+  return `EMP-${safeEmployeeDocumentPart(userName).toUpperCase()}-${typeConfig.code}`;
+}
 const webDirCandidates = [path.resolve(__dirname, "..", "web"), path.resolve(__dirname, "..", "..", "web")];
 const webDir = webDirCandidates.find((candidate) => fs.existsSync(path.join(candidate, "index.html"))) || webDirCandidates[0];
 const webIndex = path.join(webDir, "index.html");
@@ -436,6 +468,14 @@ function requireAppAuth(request, response, next) {
     return response.status(401).json({ ok: false, error: "Login required." });
   }
 
+  request.appSession = session;
+  return next();
+}
+
+function requireEmployeePortalAuth(request, response, next) {
+  const session = appAuthFromRequest(request);
+  if (!session) return response.status(401).json({ ok: false, error: "Login required." });
+  if (!session.employeePortal) return response.status(403).json({ ok: false, error: "Employee Portal login is required." });
   request.appSession = session;
   return next();
 }
@@ -1527,7 +1567,7 @@ app.use(
 );
 app.use(helmet());
 app.use(morgan("dev"));
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "15mb" }));
 
 if (fs.existsSync(webIndex)) {
   app.use(express.static(webDir));
@@ -1603,6 +1643,7 @@ app.get("/api/health", async (_request, response) => {
 app.post("/api/login", loginRateLimiter, async (request, response, next) => {
   const identifier = String(request.body?.userName || request.body?.email || "").trim();
   const password = String(request.body?.password || "");
+  const employeeLogin = String(request.body?.loginMode || "").trim().toLowerCase() === "employee";
 
   if (!identifier || !password) {
     return response.status(400).json({
@@ -1627,6 +1668,9 @@ app.post("/api/login", loginRateLimiter, async (request, response, next) => {
         error: "This user account is not active."
       });
     }
+    if (employeeLogin && !row.hr_portal_access) {
+      return response.status(403).json({ ok: false, error: "HR Portal access is not enabled for this account." });
+    }
 
     return response.json({
       ok: true,
@@ -1644,7 +1688,7 @@ app.post("/api/login", loginRateLimiter, async (request, response, next) => {
         canBillingSalesEntry: row.can_billing_sales_entry !== false,
         canBillingCostEntry: row.can_billing_cost_entry !== false,
         hrPortalAccess: Boolean(row.hr_portal_access),
-        token: signCustomerToken({ userName: row.user_name, role: row.role, portal: "app", exp: Date.now() + APP_TOKEN_TTL_MS })
+        token: signCustomerToken({ userName: row.user_name, role: row.role, portal: "app", employeePortal: employeeLogin, exp: Date.now() + APP_TOKEN_TTL_MS })
       }
     });
   } catch (error) {
@@ -1660,7 +1704,7 @@ app.post("/api/login", loginRateLimiter, async (request, response, next) => {
             branchViewScope: "All Branches",
             sectionAccess: "All",
             hrPortalAccess: true,
-            token: signCustomerToken({ userName: "admin", role: "Admin", portal: "app", exp: Date.now() + APP_TOKEN_TTL_MS })
+            token: signCustomerToken({ userName: "admin", role: "Admin", portal: "app", employeePortal: employeeLogin, exp: Date.now() + APP_TOKEN_TTL_MS })
           }
         });
       }
@@ -1987,7 +2031,134 @@ app.put("/api/customer/profile", requireCustomerPortalAuth, async (request, resp
     return next(error);
   }
 });
-app.get("/api/:resource", async (request, response, next) => {
+app.get("/api/employee-profile-documents", requireEmployeePortalAuth, async (request, response, next) => {
+  const userName = String(request.appSession?.userName || "").trim();
+  if (!userName) return response.status(401).json({ ok: false, error: "Login required." });
+  try {
+    const result = await query(
+      `select document_no, linked_no, type, status, date, owner, file_name, storage_url, notes, created_at
+       from documents
+       where lower(linked_no) = lower($1) and type = any($2::text[])
+       order by type`,
+      [userName, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
+    );
+    return response.json({ ok: true, rows: result.rows });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/employee-profile-documents", requireEmployeePortalAuth, async (request, response, next) => {
+  const userName = String(request.appSession?.userName || "").trim();
+  const documentTypeName = String(request.body?.documentType || "").trim();
+  const typeConfig = employeeDocumentType(documentTypeName);
+  const fileName = String(request.body?.fileName || "").trim();
+  const mimeType = String(request.body?.mimeType || "").toLowerCase().trim();
+  const contentBase64 = String(request.body?.contentBase64 || "").replace(/^data:[^,]+,/, "").trim();
+  if (!userName || !typeConfig || !fileName || !contentBase64) {
+    return response.status(400).json({ ok: false, error: "Choose a valid employee document file." });
+  }
+  if (!typeConfig.mimeTypes.has(mimeType)) {
+    return response.status(400).json({ ok: false, error: typeConfig.kind === "image" ? "Profile photo must be JPG, JPEG, or PNG." : "Identity documents must be PDF files." });
+  }
+
+  const cloudinary = cloudinaryConfig();
+  if (!cloudinary) {
+    return response.status(503).json({ ok: false, error: "Cloudinary is not configured on the server." });
+  }
+
+  try {
+    const fileBuffer = Buffer.from(contentBase64, "base64");
+    if (!fileBuffer.length || fileBuffer.length > typeConfig.maxBytes) {
+      return response.status(400).json({ ok: false, error: `File must be ${typeConfig.maxBytes / 1024 / 1024} MB or smaller.` });
+    }
+    const timestamp = Math.floor(Date.now() / 1000);
+    const folder = "apollo-freight/employee-private";
+    const publicId = `${safeEmployeeDocumentPart(userName)}-${typeConfig.code.toLowerCase()}`;
+    const signatureParams = `folder=${folder}&overwrite=true&public_id=${publicId}&timestamp=${timestamp}${typeConfig.privateAsset ? "&type=private" : ""}`;
+    const signature = crypto.createHash("sha1").update(signatureParams + cloudinary.apiSecret).digest("hex");
+    const form = new FormData();
+    form.append("file", new Blob([fileBuffer], { type: mimeType }), fileName);
+    form.append("api_key", cloudinary.apiKey);
+    form.append("timestamp", String(timestamp));
+    form.append("folder", folder);
+    form.append("public_id", publicId);
+    form.append("overwrite", "true");
+    if (typeConfig.privateAsset) form.append("type", "private");
+    form.append("signature", signature);
+    const cloudinaryResponse = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinary.cloudName)}/${typeConfig.kind}/upload`, { method: "POST", body: form });
+    const uploaded = await cloudinaryResponse.json().catch(() => ({}));
+    if (!cloudinaryResponse.ok || !uploaded.secure_url) {
+      throw new Error(uploaded.error?.message || "Cloudinary upload failed.");
+    }
+    const documentNo = employeeDocumentNo(userName, typeConfig);
+    const notes = JSON.stringify({ cloudinaryPublicId: uploaded.public_id || "", resourceType: uploaded.resource_type || typeConfig.kind, bytes: uploaded.bytes || fileBuffer.length });
+    const saved = await query(
+      `insert into documents (document_no, linked_no, type, status, date, owner, file_name, storage_url, notes, created_by)
+       values ($1, $2, $3, 'Uploaded', current_date, $2, $4, $5, $6, $2)
+       on conflict (document_no) do update set file_name = excluded.file_name, storage_url = excluded.storage_url, notes = excluded.notes, status = 'Uploaded', date = current_date, updated_at = now()
+       returning document_no, linked_no, type, status, date, owner, file_name, storage_url, notes, created_at`,
+      [documentNo, userName, documentTypeName, fileName, uploaded.secure_url, notes]
+    );
+    return response.status(201).json({ ok: true, row: saved.rows[0] });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/pod-documents", requireAppAuth, async (request, response, next) => {
+  const userName = String(request.appSession?.userName || "").trim();
+  const jobNo = String(request.body?.jobNo || "").trim();
+  const fileName = String(request.body?.fileName || "").trim();
+  const mimeType = String(request.body?.mimeType || "").toLowerCase().trim();
+  const contentBase64 = String(request.body?.contentBase64 || "").replace(/^data:[^,]+,/, "").trim();
+  const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
+  if (!userName || !jobNo || !fileName || !contentBase64 || !allowedTypes.has(mimeType)) {
+    return response.status(400).json({ ok: false, error: "POD file must be a PDF, JPG, JPEG, or PNG file." });
+  }
+  const cloudinary = cloudinaryConfig();
+  if (!cloudinary) return response.status(503).json({ ok: false, error: "Cloudinary is not configured on the server." });
+
+  try {
+    const shipment = await query("select job_no from shipments where lower(job_no) = lower($1) limit 1", [jobNo]);
+    if (!shipment.rows[0]) return response.status(404).json({ ok: false, error: "Shipment not found." });
+    const fileBuffer = Buffer.from(contentBase64, "base64");
+    if (!fileBuffer.length || fileBuffer.length > 10 * 1024 * 1024) {
+      return response.status(400).json({ ok: false, error: "POD file must be 10 MB or smaller." });
+    }
+    const kind = mimeType === "application/pdf" ? "raw" : "image";
+    const timestamp = Math.floor(Date.now() / 1000);
+    const folder = "apollo-freight/pod";
+    const publicId = `${safeEmployeeDocumentPart(jobNo)}-signed-pod`;
+    const signatureBase = `folder=${folder}&overwrite=true&public_id=${publicId}&timestamp=${timestamp}${cloudinary.apiSecret}`;
+    const signature = crypto.createHash("sha1").update(signatureBase).digest("hex");
+    const form = new FormData();
+    form.append("file", new Blob([fileBuffer], { type: mimeType }), fileName);
+    form.append("api_key", cloudinary.apiKey);
+    form.append("timestamp", String(timestamp));
+    form.append("folder", folder);
+    form.append("public_id", publicId);
+    form.append("overwrite", "true");
+    form.append("signature", signature);
+    const cloudinaryResponse = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinary.cloudName)}/${kind}/upload`, { method: "POST", body: form });
+    const uploaded = await cloudinaryResponse.json().catch(() => ({}));
+    if (!cloudinaryResponse.ok || !uploaded.secure_url) throw new Error(uploaded.error?.message || "Cloudinary upload failed.");
+    const documentNo = `POD-${safeEmployeeDocumentPart(jobNo).toUpperCase()}`;
+    const notes = JSON.stringify({ cloudinaryPublicId: uploaded.public_id || "", resourceType: uploaded.resource_type || kind, bytes: uploaded.bytes || fileBuffer.length, signedPod: true });
+    const saved = await query(
+      `insert into documents (document_no, linked_no, type, status, date, owner, file_name, storage_url, notes, created_by)
+       values ($1, $2, 'POD', 'Uploaded', current_date, $3, $4, $5, $6, $3)
+       on conflict (document_no) do update set file_name = excluded.file_name, storage_url = excluded.storage_url, notes = excluded.notes, status = 'Uploaded', date = current_date, owner = excluded.owner, updated_at = now()
+       returning document_no, linked_no, type, status, date, owner, file_name, storage_url, notes, created_at`,
+      [documentNo, jobNo, userName, fileName, uploaded.secure_url, notes]
+    );
+    return response.status(201).json({ ok: true, row: saved.rows[0] });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/:resource", requireAppAuth, async (request, response, next) => {
   const resourceName = request.params.resource;
   const config = resources[resourceName];
 
@@ -1996,7 +2167,11 @@ app.get("/api/:resource", async (request, response, next) => {
   }
 
   try {
-    response.json(await getRows(resourceName, config));
+    const result = await getRows(resourceName, config);
+    if (resourceName === "documents") {
+      result.rows = result.rows.filter((row) => !EMPLOYEE_DOCUMENT_TYPE_NAMES.has(String(row.type || "")));
+    }
+    response.json(result);
   } catch (error) {
     if (isDatabaseSetupError(error)) {
       return response.json(demoResponse(resourceName));

@@ -1167,6 +1167,61 @@ label {
   background: #f4f8fc;
 }
 
+.employee-document-panel {
+  margin-top: 20px;
+}
+
+.employee-document-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.employee-document-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.employee-document-card small {
+  color: var(--muted);
+}
+
+.employee-profile-thumbnail {
+  width: 78px;
+  height: 78px;
+  object-fit: cover;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+}
+
+.employee-document-card a {
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.document-uploaded,
+.document-missing {
+  width: max-content;
+  padding: 3px 8px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.document-uploaded {
+  color: #176b3a;
+  background: #e6f7ed;
+}
+
+.document-missing {
+  color: #7a5b14;
+  background: #fff4d8;
+}
+
 .pod-cargo-summary span {
   color: var(--muted);
 }

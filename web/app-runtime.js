@@ -1852,7 +1852,7 @@ async function handleLogin(event) {
       customerPortalData = loginResult.data || null;
       rememberSession(loginResult.session);
     } else if (loginMode === "employee") {
-      const session = await attemptApiLogin(userName, password);
+      const session = await attemptApiLogin(userName, password, "employee");
       if (!session.hrPortalAccess) {
         throw new Error("HR Portal access is not enabled for this account. Contact your Admin to enable it.");
       }
@@ -1885,7 +1885,7 @@ async function attemptCustomerLogin(userName, password) {
   return { session: result.session, data: result.data };
 }
 
-async function attemptApiLogin(userName, password) {
+async function attemptApiLogin(userName, password, loginMode = "company") {
   if (!userName || !password) {
     throw new Error("User name and password are required.");
   }
@@ -1893,7 +1893,7 @@ async function attemptApiLogin(userName, password) {
   const result = await fetchJson("/api/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userName, password })
+    body: JSON.stringify({ userName, password, loginMode })
   });
   return result.session;
 }
@@ -1965,7 +1965,8 @@ async function syncFromApi() {
       employees,
       leaveRequests,
       payslips,
-      hrAnnouncements
+      hrAnnouncements,
+      employeeProfileDocuments
     ] = await Promise.all([
       fetchJson("/api/health"),
       fetchJson("/api/shipments"),
@@ -1988,7 +1989,8 @@ async function syncFromApi() {
       fetchJson("/api/employees"),
       fetchJson("/api/leave-requests"),
       fetchJson("/api/payslips"),
-      fetchJson("/api/hr-announcements")
+      fetchJson("/api/hr-announcements"),
+      isHrSession() ? fetchJson("/api/employee-profile-documents") : Promise.resolve({ rows: [] })
     ]);
 
     const apiMode = health.mode || (health.database === "connected" ? "database" : "demo");
@@ -2020,6 +2022,7 @@ async function syncFromApi() {
       state.leaveRequests = (leaveRequests.rows || []).map(apiLeaveRequest);
       state.payslips = (payslips.rows || []).map(apiPayslip);
       state.hrAnnouncements = (hrAnnouncements.rows || []).map(apiHrAnnouncement);
+      state.employeeProfileDocuments = (employeeProfileDocuments.rows || []).map(apiDocument);
       if (settings.rows?.length) {
         state.settings = apiSettings(settings.rows[0]);
         state.dropdownOptions = {
@@ -2601,6 +2604,33 @@ function renderHrProfile() {
       </div>
       <button type="submit">Save My Profile</button>
     </form>
+    ${employeeProfileDocumentsPanel()}
+  </section>`;
+}
+
+function employeeProfileDocumentsPanel() {
+  const documents = Array.isArray(state.employeeProfileDocuments) ? state.employeeProfileDocuments : [];
+  const documentTypes = [
+    ["Employee Photo", "Profile Photo", "JPG, JPEG or PNG • Maximum 5 MB"],
+    ["Civil ID Front", "Civil ID — Front", "PDF • Maximum 10 MB"],
+    ["Civil ID Back", "Civil ID — Back", "PDF • Maximum 10 MB"],
+    ["Passport Front", "Passport — Front", "PDF • Maximum 10 MB"],
+    ["Passport Back", "Passport — Back", "PDF • Maximum 10 MB"]
+  ];
+  return `<section class="form-section employee-document-panel"><h3>Personal Documents</h3>
+    <p class="empty-state">Your documents are stored privately. Upload a replacement any time.</p>
+    <div class="employee-document-grid">
+      ${documentTypes.map(([type, label, help]) => {
+        const documentItem = documents.find((item) => item.type === type);
+        return `<article class="employee-document-card">
+          <strong>${escapeHtml(label)}</strong>
+          <small>${escapeHtml(help)}</small>
+          ${type === "Employee Photo" && documentItem?.storageUrl ? `<img class="employee-profile-thumbnail" src="${escapeHtml(documentItem.storageUrl)}" alt="Employee profile" />` : ""}
+          <span class="${documentItem?.storageUrl ? "document-uploaded" : "document-missing"}">${documentItem?.storageUrl ? "Uploaded" : "Not uploaded"}</span>
+          <button type="button" class="secondary-button" data-action="upload-employee-document" data-document-type="${escapeHtml(type)}">${documentItem?.storageUrl ? "Replace file" : "Upload file"}</button>
+        </article>`;
+      }).join("")}
+    </div>
   </section>`;
 }
 
@@ -4549,6 +4579,11 @@ async function handleModuleClick(event) {
     return;
   }
 
+  if (action === "upload-employee-document") {
+    await uploadEmployeeProfileDocument(button.dataset.documentType || "");
+    return;
+  }
+
   if (action === "new-record") {
     openNewDialog(selectedNewRecordType(type), mode || "");
     return;
@@ -5580,6 +5615,25 @@ function bindPodShipmentDialog() {
   shipmentField.addEventListener("input", refreshShipmentDetails);
 }
 
+async function uploadPodDocument(jobNo, file) {
+  const allowedMimeTypes = ["application/pdf", "image/jpeg", "image/png"];
+  if (!file || !allowedMimeTypes.includes(String(file.type || "").toLowerCase())) {
+    throw new Error("POD file must be a PDF, JPG, JPEG, or PNG file.");
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("POD file must be 10 MB or smaller.");
+  }
+  const contentBase64 = await readFileAsBase64(file);
+  const result = await fetchJson("/api/pod-documents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jobNo, fileName: file.name, mimeType: file.type, contentBase64 })
+  });
+  const documentItem = apiDocument(result.row || {});
+  state.documents = [...state.documents.filter((item) => !(item.type === "POD" && item.linkedNo === jobNo)), documentItem];
+  return documentItem;
+}
+
 async function savePodDelivery(data) {
   const jobNo = String(data.jobNo || "").trim();
   const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
@@ -5590,10 +5644,11 @@ async function savePodDelivery(data) {
 
   const uploadedFile = data.podFileUpload;
   const hasPodFile = uploadedFile && typeof uploadedFile === "object" && uploadedFile.name;
+  const previousPodStatus = shipmentItem.podStatus || "Pending";
   const updatedShipment = {
     ...shipmentItem,
     status: "Delivered",
-    podStatus: hasPodFile ? "Uploaded" : (shipmentItem.podStatus || "Pending"),
+    podStatus: hasPodFile ? "Uploaded" : previousPodStatus,
     deliveryNoteNo: String(data.deliveryNoteNo || shipmentItem.deliveryNoteNo || nextDeliveryNoteNumber()).trim(),
     ginNo: String(data.ginNo || "").trim(),
     customerReference: String(data.customerReference || shipmentItem.customerReference || "").trim(),
@@ -5621,16 +5676,14 @@ async function savePodDelivery(data) {
   const podChangeSummary = summarizeChanges(shipmentItem, updatedShipment);
   Object.assign(shipmentItem, updatedShipment);
   if (hasPodFile) {
-    await createDocument({
-      documentNo: nextNumber("DOC", state.documents, "documentNo"),
-      linkedNo: updatedShipment.jobNo,
-      type: "POD",
-      status: "Uploaded",
-      date: today(),
-      owner: currentUserName(),
-      fileUpload: uploadedFile,
-      notes: `Signed POD for ${updatedShipment.deliveryNoteNo}`
-    });
+    try {
+      await uploadPodDocument(updatedShipment.jobNo, uploadedFile);
+    } catch (error) {
+      updatedShipment.podStatus = shipmentItem.podStatus = previousPodStatus;
+      await persistRecord("shipment", updatedShipment);
+      notifyDenied("Delivery saved", `${updatedShipment.jobNo} was marked Delivered, but the POD file was not uploaded: ${error.message}`);
+      return false;
+    }
   }
   addHistory("Saved POD / Delivery", updatedShipment.jobNo, podChangeSummary);
   notifySuccess("Delivery saved", `${updatedShipment.jobNo} is marked Delivered${hasPodFile ? " and the POD file was attached" : ""}.`);
@@ -5653,24 +5706,18 @@ async function uploadPodFileForSelectedShipment(jobNo) {
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
     if (!file) return;
-    const documentSaved = await createDocument({
-      documentNo: nextNumber("DOC", state.documents, "documentNo"),
-      linkedNo: shipmentItem.jobNo,
-      type: "POD",
-      status: "Uploaded",
-      date: today(),
-      owner: currentUserName(),
-      fileUpload: file,
-      notes: `Signed POD for ${shipmentItem.deliveryNoteNo || shipmentItem.jobNo}`
-    });
-    if (!documentSaved) return;
-    shipmentItem.podStatus = "Uploaded";
-    const shipmentSaved = await persistRecord("shipment", shipmentItem);
-    if (!shipmentSaved) return;
-    addHistory("Uploaded signed POD", shipmentItem.jobNo, file.name);
-    saveState();
-    render();
-    notifySuccess("POD file uploaded", `${file.name} was attached to ${shipmentItem.jobNo}.`);
+    try {
+      await uploadPodDocument(shipmentItem.jobNo, file);
+      shipmentItem.podStatus = "Uploaded";
+      const shipmentSaved = await persistRecord("shipment", shipmentItem);
+      if (!shipmentSaved) return;
+      addHistory("Uploaded signed POD", shipmentItem.jobNo, file.name);
+      saveState();
+      render();
+      notifySuccess("POD file uploaded", `${file.name} was attached to ${shipmentItem.jobNo}.`);
+    } catch (error) {
+      notifyDenied("POD file not uploaded", error.message || "The POD file could not be uploaded.");
+    }
   }, { once: true });
   fileInput.click();
 }
@@ -10006,6 +10053,64 @@ async function updateCustomerProfile(data) {
   await fetchJson("/api/customer/profile", { method: "PUT", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify(data) });
   notifySuccess("Profile saved", "Your customer profile was updated.");
   return true;
+}
+
+function employeeDocumentUploadRule(documentType) {
+  const rules = {
+    "Employee Photo": { accept: "image/jpeg,image/png", mimeTypes: ["image/jpeg", "image/png"], maxBytes: 5 * 1024 * 1024, label: "JPG, JPEG or PNG" },
+    "Civil ID Front": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" },
+    "Civil ID Back": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" },
+    "Passport Front": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" },
+    "Passport Back": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" }
+  };
+  return rules[documentType] || null;
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").split(",").pop() || "");
+    reader.onerror = () => reject(new Error("The selected file could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadEmployeeProfileDocument(documentType) {
+  const rule = employeeDocumentUploadRule(documentType);
+  if (!rule || !isHrSession()) return;
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = rule.accept;
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    if (!rule.mimeTypes.includes(String(file.type || "").toLowerCase())) {
+      notifyDenied("File not uploaded", `${documentType} must be a ${rule.label} file.`);
+      return;
+    }
+    if (file.size > rule.maxBytes) {
+      notifyDenied("File not uploaded", `${documentType} must be ${rule.maxBytes / 1024 / 1024} MB or smaller.`);
+      return;
+    }
+    try {
+      notifySuccess("Uploading document", `Uploading ${documentType}...`);
+      const contentBase64 = await readFileAsBase64(file);
+      const result = await fetchJson("/api/employee-profile-documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentType, fileName: file.name, mimeType: file.type, contentBase64 })
+      });
+      const documentItem = apiDocument(result.row || {});
+      const current = Array.isArray(state.employeeProfileDocuments) ? state.employeeProfileDocuments : [];
+      state.employeeProfileDocuments = [...current.filter((item) => item.type !== documentType), documentItem];
+      saveState();
+      render();
+      notifySuccess("Document uploaded", `${documentType} was uploaded successfully.`);
+    } catch (error) {
+      notifyDenied("File not uploaded", error.message || "The document could not be uploaded.");
+    }
+  }, { once: true });
+  fileInput.click();
 }
 
 async function updateEmployeeProfile(data) {
