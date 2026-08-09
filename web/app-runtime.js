@@ -373,7 +373,9 @@ function loadMetaNotes(data) {
     driverName: String(data.driverName || "").trim(),
     driverNumber: String(data.driverNumber || "").trim(),
     driverMobile: String(data.driverMobile || "").trim(),
-    transporterCode: String(data.transporterCode || "").trim()
+    transporterCode: String(data.transporterCode || "").trim(),
+    origin: String(data.origin || "").trim(),
+    destination: String(data.destination || "").trim()
   });
 }
 
@@ -535,7 +537,7 @@ function shipment(
 
 function load(loadNo, tripDate, route, transporter, vehicleNo, status, jobNumbers, manifestStatus = "Not Generated", lastManifestRequestNo = "", createdBy = currentUserName(), notes = "") {
   const meta = parseJsonMeta(notes);
-  return { loadNo, tripDate, route, transporter, transporterCode: meta.transporterCode || "", vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", driverMobile: meta.driverMobile || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
+  return { loadNo, tripDate, route, transporter, transporterCode: meta.transporterCode || "", vehicleNo, driverName: meta.driverName || "", driverNumber: meta.driverNumber || "", driverMobile: meta.driverMobile || "", origin: meta.origin || "", destination: meta.destination || "", status, jobNumbers, pieces: 0, actualKg: 0, cbm: 0, chargeableKg: 0, manifestStatus, lastManifestRequestNo, notes, createdBy };
 }
 
 function party(code, name, locationOrLane, email, terms, status, isAccountOverdue, branch, createdBy = currentUserName(), fullAddress = "", mobile = "") {
@@ -2664,7 +2666,7 @@ function renderDashboard() {
         ${kpi("Pending Requests", pendingRequests, "Your pending approvals", "pending-requests")}
         ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
       </section>
-      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:myShipments")}</section>`;
+      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${table("shipment", rows, dashboardOperationalShipmentColumns(), undefined, "shipment:myShipments")}</section>`;
   }
   return `
     <section class="kpi-grid">
@@ -2679,7 +2681,7 @@ function renderDashboard() {
       ${canViewProfitMargin() ? kpi("Gross Profit", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0) - Number(row.supplierCost || 0), 0)), "Invoiced revenue minus cost", "gross-profit") : ""}
     </section>
     <section class="split-grid single-panel dashboard-shipment-register">
-      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, shipmentColumns(), undefined, "shipment:dashboard")}</article>
+      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${table("shipment", rows, dashboardOperationalShipmentColumns(), undefined, "shipment:dashboard")}</article>
     </section>
     <section class="split-grid single-panel dashboard-alert-row">
       <details class="panel collapsible-section dashboard-alert-panel">
@@ -3080,32 +3082,6 @@ function renderPod() {
       </article>
     </section>
     ${adminDeletePanel("shipment", "Shipment", "Admin deletion is available here for POD-related shipment cleanup.")}`;
-}
-
-function chargeReceiptPanel(shipmentNo) {
-  const charges = state.additionalCharges.filter((row) => row.shipmentNo === shipmentNo);
-  if (!shipmentNo) return `<p class="empty-state">Select a shipment to view charge receipt lines.</p>`;
-  const invoiceNo = charges.find((row) => row.invoiceNo)?.invoiceNo || "Not assigned";
-  const receiptNo = charges.find((row) => row.referenceNo)?.referenceNo || charges[0]?.refNo || "No receipt";
-  const total = charges.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
-  const rows = charges.length
-    ? charges
-        .map(
-          (row) => `<div class="receipt-line">
-            <span>${escapeHtml(row.chargeType)}</span>
-            <small>${escapeHtml(row.status)} | ${escapeHtml(row.currency)}</small>
-            <strong>${money(row.totalAmount)}</strong>
-            <button type="button" class="ghost-button" data-action="open" data-type="charge" data-id="${escapeHtml(row.refNo)}">Edit</button>
-            ${isAdminSession() ? `<button type="button" class="danger-button" data-action="delete-record-direct" data-type="charge" data-id="${escapeHtml(row.refNo)}">Delete</button>` : ""}
-          </div>`
-        )
-        .join("")
-    : `<p class="empty-state">No charge lines added for this shipment yet.</p>`;
-  return `<section class="receipt-box">
-    <div class="panel-header"><div><p class="eyebrow">Receipt ${escapeHtml(receiptNo)} / Invoice ${escapeHtml(invoiceNo)}</p><h2>Charge Lines</h2></div></div>
-    ${rows}
-    <div class="receipt-total"><span>Total Receipt Amount</span><strong>${money(total)}</strong></div>
-  </section>`;
 }
 
 function renderShipmentStatus() {
@@ -3556,50 +3532,6 @@ function actionChecklist(items) {
   return `<div class="bullet-card">${items.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>`;
 }
 
-function chargeFilterPanel() {
-  const filters = state.ui.chargeFilters || {};
-  return `<div class="charge-filter-grid">
-    ${input("chargeShipmentNo", "Shipment No", filters.shipmentNo || "", false, "text")}
-    ${select("chargeTypeFilter", "Charge Type", ["All", ...chargeTypeOptions()], filters.chargeType || "All")}
-    ${select("chargeSupplierFilter", "Supplier", ["All", ...uniqueOptions(state.additionalCharges.map((row) => row.supplier))], filters.supplier || "All")}
-    ${select("chargeStatusFilter", "Status", ["All", ...chargeStatusOptions()], filters.status || "All")}
-    ${input("chargeFromDate", "From Date", filters.fromDate || "", false, "date")}
-    ${input("chargeToDate", "To Date", filters.toDate || "", false, "date")}
-    <button type="button" data-action="filter-charges">Search</button>
-    ${newRecordSelectorMarkup("charge", "New Entry")}
-    <button type="button" data-action="new-record" data-type="charge">New Charge</button>
-    <button type="button" class="secondary-button" data-action="load-record" data-type="charge">Load Charge</button>
-  </div>`;
-}
-
-function chargeSummary(shipmentNo) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === shipmentNo);
-  const chargeRows = state.additionalCharges.filter((row) => row.shipmentNo === shipmentNo);
-  const extraCost = chargeRows.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
-  const freightCost = Number(shipmentItem?.buyCost || 0);
-  const sellAmount = Number(shipmentItem?.sell || 0);
-  return {
-    shipmentNo,
-    freightCost,
-    additionalCharges: extraCost,
-    totalCost: freightCost + extraCost,
-    sellAmount,
-    netProfit: sellAmount - (freightCost + extraCost)
-  };
-}
-
-function summaryCard(summary) {
-  if (!canViewBillingSummary()) return "";
-  return `<div class="summary-card">
-    <h3>${escapeHtml(summary.shipmentNo || "Shipment Summary")}</h3>
-    ${canBillingCostEntry() ? `<p><span>Freight Cost</span><strong>${money(summary.freightCost)}</strong></p>
-    <p><span>Additional Charges</span><strong>${money(summary.additionalCharges)}</strong></p>
-    <p><span>Total Cost</span><strong>${money(summary.totalCost)}</strong></p>` : ""}
-    ${canBillingSalesEntry() ? `<p><span>Sell Amount</span><strong>${money(summary.sellAmount)}</strong></p>` : ""}
-    ${canViewProfitMargin() && canBillingCostEntry() && canBillingSalesEntry() ? `<p><span>Net Profit</span><strong>${money(summary.netProfit)}</strong></p>` : ""}
-  </div>`;
-}
-
 function reportPreviewPanel(preview) {
   return `<div class="report-preview-shell">
     <div class="report-preview-page ${preview.format === "PDF" ? "pdf" : "excel"}">
@@ -3760,10 +3692,6 @@ function display(value) {
   return value ?? "";
 }
 
-function uniqueOptions(values) {
-  return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right));
-}
-
 function chargeTypeOptions() {
   return [
     "Labour Charges",
@@ -3854,19 +3782,6 @@ function normalizeConsolidationJobs(jobNumbers, currentLoadNo = "") {
         .filter((jobNo) => jobNo && valid.has(jobNo) && !assigned.has(jobNo))
     )
   ];
-}
-
-function filteredAdditionalCharges() {
-  const filters = state.ui.chargeFilters || {};
-  return filteredRows(visibleRows(state.additionalCharges)).filter((row) => {
-    const shipmentMatch = !filters.shipmentNo || row.shipmentNo.toLowerCase().includes(String(filters.shipmentNo).toLowerCase());
-    const typeMatch = !filters.chargeType || filters.chargeType === "All" || row.chargeType === filters.chargeType;
-    const supplierMatch = !filters.supplier || filters.supplier === "All" || row.supplier === filters.supplier;
-    const statusMatch = !filters.status || filters.status === "All" || row.status === filters.status;
-    const fromMatch = !filters.fromDate || row.chargeDate >= filters.fromDate;
-    const toMatch = !filters.toDate || row.chargeDate <= filters.toDate;
-    return shipmentMatch && typeMatch && supplierMatch && statusMatch && fromMatch && toMatch;
-  });
 }
 
 function filteredAuditRows() {
@@ -3997,6 +3912,12 @@ function badge(value) {
 
 function cellHtml(type, key, row, index = 0) {
   if (key === "slNo") return escapeHtml(index + 1);
+  const clickableRegisterKey = { customers: "code", suppliers: "code", tariff: "tariffNo", invoice: "invoiceNo" }[type];
+  if (clickableRegisterKey && key === clickableRegisterKey) {
+    const id = String(row[key] || "").trim();
+    if (!id) return escapeHtml(row[key] || "");
+    return `<button type="button" class="table-inline-link" data-record-open data-record-type="${escapeHtml(type)}" data-record-id="${escapeHtml(id)}" aria-label="Open ${escapeHtml(type)} ${escapeHtml(id)}">${escapeHtml(id)}</button>`;
+  }
   if (type === "audit" && key === "auditNumber") {
     const auditId = String(row.id || "").trim();
     if (!auditId) return `<span class="audit-details-empty" title="Still saving - refresh in a moment">Pending</span>`;
@@ -4040,12 +3961,6 @@ function cargoPalletCount(row) {
   return parsePalletDimensions(row.cargoItemsJson || row.palletDimensionsJson || "[]")
     .filter((line) => String(line.packageType || "").toLowerCase() === "pallet")
     .reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0);
-}
-
-function jobBadge(jobNo) {
-  const shipmentItem = state.shipments.find((row) => row.jobNo === jobNo);
-  if (!shipmentItem) return `<button class="job-chip warning">${escapeHtml(jobNo)}</button>`;
-  return `<button class="job-chip" data-action="open" data-type="shipment" data-id="${escapeHtml(jobNo)}"><strong>${escapeHtml(jobNo)}</strong><span>${escapeHtml(shipmentItem.customer)} | Pieces ${escapeHtml(shipmentItem.pieces)} | ${escapeHtml(shipmentItem.status)}</span></button>`;
 }
 
 function dashboardShipmentColumns() {
@@ -4138,7 +4053,15 @@ function rememberDropdownOptions(data) {
   if (changed) {
     state.settings.dropdownOptionsJson = JSON.stringify(state.dropdownOptions);
     saveState();
-    persistRecord("settings", state.settings);
+    // Deliberately send ONLY the field that changed here, not the whole state.settings object.
+    // This runs on every form submission app-wide (any new value typed into any autocomplete
+    // field), often from sessions that logged in before a later admin change to Company Settings -
+    // sending the full settings snapshot would silently overwrite every other setting (branch
+    // serial numbers, etc.) with whatever stale copy happened to be sitting in that browser tab.
+    persistRecord("settings", {
+      settingsKey: state.settings.settingsKey || "default",
+      dropdownOptionsJson: state.settings.dropdownOptionsJson
+    });
   }
 }
 
@@ -4253,10 +4176,10 @@ function defaultColumnLayouts() {
       ["status", "STATUS"],
       ["createdBy", "USERNAME"]
     ],
-    load: [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["route", "Route"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"]],
-    customers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
-    suppliers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"]],
-    tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["currency", "Currency"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"]],
+    load: [["loadNo", "Manifest"], ["tripDate", "Trip Date"], ["origin", "Origin"], ["destination", "Destination"], ["transporter", "Transporter"], ["vehicleNo", "Truck No"], ["driverName", "Driver Name"], ["driverNumber", "Driver Number"], ["status", "Status"], ["manifestStatus", "Manifest"], ["jobNumbers", "Job Numbers"], ["createdBy", "USERNAME"]],
+    customers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"], ["createdBy", "USERNAME"]],
+    suppliers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"], ["createdBy", "USERNAME"]],
+    tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["currency", "Currency"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"], ["createdBy", "USERNAME"]],
     document: [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]],
     invoice: [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"], ["createdBy", "USERNAME"]],
     quotation: [["quotationNo", "Quotation"], ["date", "Date"], ["customerName", "Customer"], ["customerMobile", "Mobile"], ["customerEmail", "Email"], ["cbm", "CBM"], ["status", "Status"], ["createdBy", "USERNAME"]],
@@ -4269,6 +4192,12 @@ function defaultColumnLayouts() {
 
 function shipmentColumns() {
   return configurableColumns("shipment", defaultColumnLayouts().shipment);
+}
+
+// Same as shipmentColumns() but without the MODE column, for the Dashboard's shipment tables only -
+// other modules (Shipment Register, POD board, reports) keep showing it via shipmentColumns().
+function dashboardOperationalShipmentColumns() {
+  return shipmentColumns().filter(([key]) => key !== "shipmentDirection");
 }
 
 function loadColumns() {
@@ -4764,6 +4693,14 @@ function handleColumnResizeStart(event) {
 }
 
 function handleModuleLinkClick(event) {
+  const recordButton = event.target.closest("[data-record-open]");
+  if (recordButton) {
+    const recordType = recordButton.dataset.recordType || "";
+    const recordId = recordButton.dataset.recordId || "";
+    if (recordType && recordId) openRecord(recordType, recordId);
+    return;
+  }
+
   const auditButton = event.target.closest("[data-audit-open]");
   if (auditButton) {
     openAuditDetailDialog(auditButton.dataset.auditRef || "");
@@ -5349,10 +5286,8 @@ async function saveDialogRecordInner() {
   const data = collectFormValues(dialogBody.closest("form"));
   rememberDropdownOptions(data);
   const updatedRecord = { ...editing.record };
-  Object.keys(updatedRecord).forEach((key) => {
-    if (Object.prototype.hasOwnProperty.call(data, key)) {
-      updatedRecord[key] = coerceValue(updatedRecord[key], data[key]);
-    }
+  Object.keys(data).forEach((key) => {
+    updatedRecord[key] = coerceValue(updatedRecord[key], data[key]);
   });
   if (editing.type === "shipment") {
     if (!String(updatedRecord.billTo1 || "").trim() && !String(updatedRecord.billTo2 || "").trim()) {
@@ -5646,6 +5581,10 @@ async function savePodDelivery(data) {
     return false;
   }
 
+  // Compute the diff BEFORE shipmentItem gets overwritten below, using the exact same
+  // "field: before -> after" format the generic edit-save flow uses, so POD saves show up in the
+  // audit trail with proper before/after just like every other kind of edit.
+  const podChangeSummary = summarizeChanges(shipmentItem, updatedShipment);
   Object.assign(shipmentItem, updatedShipment);
   if (hasPodFile) {
     await createDocument({
@@ -5659,7 +5598,7 @@ async function savePodDelivery(data) {
       notes: `Signed POD for ${updatedShipment.deliveryNoteNo}`
     });
   }
-  addHistory("Saved POD / Delivery", updatedShipment.jobNo, `Delivery note: ${updatedShipment.deliveryNoteNo}`);
+  addHistory("Saved POD / Delivery", updatedShipment.jobNo, podChangeSummary);
   notifySuccess("Delivery saved", `${updatedShipment.jobNo} is marked Delivered${hasPodFile ? " and the POD file was attached" : ""}.`);
   return true;
 }
@@ -5770,7 +5709,8 @@ function dialogConfigFor(type, mode = "") {
       body: `
         ${input("loadNo", "Manifest No", nextConsolidationNumber(), false)}
         ${input("tripDate", "Trip Date", today(), false, "date")}
-        ${input("route", "Route", "Kuwait - Riyadh")}
+        ${input("origin", "Origin", "")}
+        ${input("destination", "Destination", "")}
         ${formSection("Transport Information", `
           ${selectFrom("transporter", "Transporter", state.suppliers.map((row) => ({ value: row.name, label: `${row.code} | ${row.name}` })), "Al Dana Transport")}
           ${selectFrom("transporterCode", "Transporter Number", state.suppliers.map((row) => ({ value: row.code, label: `${row.code} | ${row.name}` })), "")}
@@ -6531,6 +6471,8 @@ function bindShipmentCustomerAutofill() {
   const customerField = dialogBody.querySelector("input[name='customer']");
   const codeField = dialogBody.querySelector("input[name='customerCode']");
   const billToField = dialogBody.querySelector("input[name='billTo1']");
+  const tariffField = dialogBody.querySelector("input[name='tariffNo']");
+  const tariffDatalist = dialogBody.querySelector("#tariffNoOptions");
   if (!customerField && !codeField && !billToField) return;
 
   const findCustomer = (value) =>
@@ -6539,8 +6481,21 @@ function bindShipmentCustomerAutofill() {
       String(row.code || "").trim().toLowerCase() === value
     );
 
+  // Tariff options are filtered to the selected customer only, matching the same behavior as the
+  // Invoice dialog's Job No/Tariff No fields - without this, the tariff list would only reflect
+  // whichever customer was set when the shipment dialog first opened, not later changes.
+  const refreshTariffOptions = () => {
+    if (!tariffDatalist) return;
+    const options = tariffOptionsForCustomer(customerField?.value || "");
+    tariffDatalist.innerHTML = options
+      .map((option) => `<option value="${escapeHtml(option.value || "")}" label="${escapeHtml(option.label || option.value || "")}"></option>`)
+      .join("");
+    if (tariffField?.value && !options.some((option) => option.value === tariffField.value)) tariffField.value = "";
+  };
+
   const fill = (source) => {
     const value = String(source?.value || "").trim().toLowerCase();
+    refreshTariffOptions();
     if (!value) return;
     const customer = findCustomer(value);
     if (!customer) return;
@@ -6793,10 +6748,20 @@ function bindPalletDimensionBuilder() {
     const deliveryNo = data.deliveryNoteNo || nextDeliveryNoteNumber();
     const deliveryDatetime = data.deliveryDatetime || (data.deliveryDate ? `${data.deliveryDate}${data.deliveryTime ? `T${data.deliveryTime}` : ""}` : "");
     if (deliveryNoteField) deliveryNoteField.value = deliveryNo;
+    // The main shipment form has no Delivery Remarks/POC/Prepared-Delivered-Received-By fields of
+    // its own (only a hidden Delivery Note No), so this button used to print an almost-empty POD.
+    // Apply the exact same field derivation the dedicated POD panel uses (podShipmentFields), so a
+    // POD generated from either place captures the same delivery information the same way.
     openPrintableDocument(podDocumentHtml({
       ...data,
       deliveryNoteNo: deliveryNo,
-      deliveryDatetime: deliveryDatetime || today()
+      deliveryDatetime: deliveryDatetime || today(),
+      deliveryRemarks: data.deliveryRemarks || [data.deliveryLocation, data.deliveryAddress].filter((part) => String(part || "").trim()).join(" - "),
+      pocName: data.pocName || data.deliveryContactPerson || "",
+      pocMobile: data.pocMobile || data.deliveryMobile || "",
+      preparedBy: data.preparedBy || currentUserName(),
+      deliveredBy: data.deliveredBy || data.driverName || "",
+      receivedBy: data.receivedBy || ""
     }));
   };
 
@@ -7575,7 +7540,15 @@ function bindInvoiceShipmentTariff() {
     syncInvoice();
   };
 
-  dialogBody.addEventListener('input', (event) => {
+  // dialogBody is a persistent, reused DOM node across every dialog open in the app - without
+  // removing the previous listeners first, opening the invoice dialog N times in a session would
+  // attach N separate 'input'/'click' listeners here, each closing over field references from a
+  // prior dialog's now-replaced HTML. The stale ones are individually harmless (their captured
+  // elements are detached, so their target checks never match), but they'd accumulate indefinitely.
+  if (dialogBody._invoiceInputHandler) dialogBody.removeEventListener('input', dialogBody._invoiceInputHandler);
+  if (dialogBody._invoiceClickHandler) dialogBody.removeEventListener('click', dialogBody._invoiceClickHandler);
+
+  dialogBody._invoiceInputHandler = (event) => {
     const target = event.target;
     if (target === customerField || target === shipmentField || target === tariffField || target === taxPercentField) {
       syncDatalist();
@@ -7594,9 +7567,14 @@ function bindInvoiceShipmentTariff() {
     const lineIndex = target?.dataset?.lineIndex;
     const lineField = target?.dataset?.invoiceLineField;
     if (lineIndex !== undefined && lineField) updateLineValue(Number(lineIndex), lineField, target.value);
-  });
+  };
+  dialogBody.addEventListener('input', dialogBody._invoiceInputHandler);
+  // Selecting a datalist suggestion by mouse click doesn't reliably fire 'input' in every browser -
+  // 'change' is the one event guaranteed to fire either way, so this is a defensive second listener
+  // covering the same three fields in case that's how the customer gets picked.
+  dialogBody.addEventListener('change', dialogBody._invoiceInputHandler);
 
-  dialogBody.addEventListener('click', (event) => {
+  dialogBody._invoiceClickHandler = (event) => {
     const addButton = event.target.closest('[data-add-invoice-line]');
     if (addButton) {
       lines.push({ id: 'manual-' + Date.now(), source: 'manual', description: '', unit: 'Unit', qty: 1, rate: 0, amount: 0, cost: 0, remarks: '' });
@@ -7608,7 +7586,8 @@ function bindInvoiceShipmentTariff() {
       lines.splice(Number(removeButton.dataset.removeInvoiceLine), 1);
       syncInvoice(true);
     }
-  });
+  };
+  dialogBody.addEventListener('click', dialogBody._invoiceClickHandler);
 
   syncDatalist();
   syncInvoice(true);
@@ -8029,6 +8008,7 @@ function podDocumentHtml(record) {
         ["Nature of Goods", record.natureOfGoods]
       ])}
       ${documentBlock("Delivery Information", [
+        ["Delivery Address", record.deliveryAddress || record.deliveryLocation],
         ["Delivery Remarks / Coordinates", record.deliveryRemarks],
         ["POC Name", record.pocName || record.deliveryContactPerson],
         ["POC Mobile Number", record.pocMobile || record.deliveryMobile],
@@ -8036,8 +8016,8 @@ function podDocumentHtml(record) {
       ])}
       <section class="delivery-signatures">
         <div><span>Prepared By</span><strong>${escapeHtml(record.preparedBy || currentUserName())}</strong><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || new Date().toLocaleString())}</em></div>
-        <div><span>Delivered By</span><strong>${escapeHtml(record.deliveredBy || record.driverName || "")}</strong><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || "")}</em></div>
-        <div><span>Goods Received By</span><strong>${escapeHtml(record.receivedBy || "")}</strong><small>Telephone Number</small><em>${escapeHtml(record.receiverPhone || "")}</em><small>Signature</small><b>${escapeHtml(record.receiverSignature || " ")}</b><small>Date & Time</small><em>${escapeHtml(record.deliveryDatetime || "")}</em></div>
+        <div><span>Delivered By</span><strong>${escapeHtml(record.deliveredBy || record.driverName || "")}</strong></div>
+        <div><span>Goods Received By</span><strong>${escapeHtml(record.receivedBy || "")}</strong><small>Telephone Number</small><em>${escapeHtml(record.receiverPhone || "")}</em><small>Signature</small><b>${escapeHtml(record.receiverSignature || " ")}</b></div>
       </section>
       <p class="acknowledgement">This is to confirm that goods have been received in good order and condition. Any discrepancy must be notified within 24 hours from the time of receipt.</p>
       <p class="acknowledgement">Shipment was opened and checked by customs</p>
@@ -8099,9 +8079,9 @@ function manifestDocumentHtml(record) {
       <section class="manifest-sheet">
         <div class="manifest-header-grid">
           <p><strong>TRUCK NO</strong><span>${escapeHtml(record.vehicleNo || "")}</span></p>
-          <p><strong>FROM</strong><span>${escapeHtml(record.from || record.origin || record.route || "")}</span></p>
+          <p><strong>FROM</strong><span>${escapeHtml(record.origin || "")}</span></p>
           <p><strong>MANIFEST NO</strong><span>${escapeHtml(record.loadNo || "")}</span></p>
-          <p><strong>TO</strong><span>${escapeHtml(record.to || record.destination || "")}</span></p>
+          <p><strong>TO</strong><span>${escapeHtml(record.destination || "")}</span></p>
           <p><strong>DRIVER NAME</strong><span>${escapeHtml(record.driverName || "")}</span></p>
           <p><strong>ETD</strong><span>${escapeHtml(record.tripDate || "")}</span></p>
           <p><strong>MOB NO</strong><span>${escapeHtml(record.driverNumber || record.driverMobile || "")}</span></p>
@@ -8168,7 +8148,7 @@ function invoiceDocumentHtml(record) {
       </tbody></table>
       <table class="invoice-info-table"><tbody>
         <tr><th>SHIP VIA</th><th>TRACKING NO.</th><th>FROM / TO</th><th>GR / VOL WEIGHT</th><th>JOB NO.</th></tr>
-        <tr><td>${escapeHtml(shipmentItem?.transportMode || shipmentItem?.shipmentService || "")}</td><td>${escapeHtml(shipmentItem?.airwayBillNo || shipmentItem?.tcnNumber || "")}</td><td>${escapeHtml(invoiceFromTo(shipmentItem))}</td><td>${escapeHtml(invoiceWeightText(shipmentItem))}</td><td>${escapeHtml(record.shipmentNo)}</td></tr>
+        <tr><td>${escapeHtml(shipmentItem?.loadType || "")}</td><td>${escapeHtml(shipmentItem?.airwayBillNo || shipmentItem?.tcnNumber || "")}</td><td>${escapeHtml(invoiceFromTo(shipmentItem))}</td><td>${escapeHtml(invoiceWeightText(shipmentItem))}</td><td>${escapeHtml(record.shipmentNo)}</td></tr>
       </tbody></table>
       <table class="invoice-lines-table">
         <thead><tr><th>ACTIVITY</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead>
@@ -8214,7 +8194,7 @@ function invoiceChargeLines(record, shipmentItem, tariffItem) {
 }
 
 function invoiceCurrency(record, shipmentItem) {
-  return shipmentItem?.currency || state.additionalCharges.find((row) => row.shipmentNo === record.shipmentNo)?.currency || "KWD";
+  return record?.currency || shipmentItem?.currency || state.additionalCharges.find((row) => row.shipmentNo === record.shipmentNo)?.currency || "KWD";
 }
 
 function invoiceDueDate(dateValue, terms = "") {
@@ -8227,8 +8207,8 @@ function invoiceDueDate(dateValue, terms = "") {
 
 function invoiceFromTo(shipmentItem) {
   if (!shipmentItem) return "";
-  const from = shipmentItem.shipperName || shipmentItem.pickupLocation || shipmentItem.origin || "";
-  const to = shipmentItem.consigneeName || shipmentItem.deliveryLocation || shipmentItem.destination || "";
+  const from = shipmentItem.origin || shipmentItem.shipperName || shipmentItem.pickupLocation || "";
+  const to = shipmentItem.destination || shipmentItem.consigneeName || shipmentItem.deliveryLocation || "";
   return [from, to].filter(Boolean).join(" / ");
 }
 
@@ -9091,7 +9071,7 @@ async function createLoad(data) {
   const record = load(
     loadNo,
     data.tripDate || today(),
-    data.route || "",
+    [data.origin, data.destination].filter((part) => String(part || "").trim()).join(" - "),
     data.transporter || "",
     data.vehicleNo || "",
     data.status || "Planned",
