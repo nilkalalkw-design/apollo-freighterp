@@ -684,6 +684,25 @@ label {
   color: var(--accent-deep);
 }
 
+.data-sync-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  padding: 9px 16px;
+  background: var(--blue, #2f6fed);
+  color: #fff;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.data-sync-banner.is-hidden {
+  display: none;
+}
+
 .workspace {
   min-width: 0;
   padding: 24px;
@@ -1841,16 +1860,10 @@ tr.shipment-row-cancelled td { background: #f2f3f5; }
   background: var(--accent);
 }
 
-.charge-filter-grid,
 .report-toolbar {
   display: grid;
   gap: 12px;
   align-items: end;
-}
-
-.charge-filter-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-bottom: 14px;
 }
 
 .report-toolbar {
@@ -2259,7 +2272,6 @@ tr.shipment-row-cancelled td { background: #f2f3f5; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .charge-filter-grid,
   .report-toolbar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2316,7 +2328,6 @@ tr.shipment-row-cancelled td { background: #f2f3f5; }
   .date-filter-panel,
   .dialog-body,
   .kpi-grid,
-  .charge-filter-grid,
   .report-toolbar {
     grid-template-columns: 1fr;
   }
