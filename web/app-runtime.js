@@ -3272,10 +3272,13 @@ function renderReports() {
       <div class="report-toolbar">
         ${select("reportType", "Report Type", reportTypeOptions(), state.ui.reportType || "Daily shipments")}
         ${select("reportFormat", "Preview As", ["PDF", "Excel CSV"], state.ui.reportFormat || "PDF")}
+        ${input("reportFromDate", "From Date", state.ui.reportFromDate || "", false, "date")}
+        ${input("reportToDate", "To Date", state.ui.reportToDate || "", false, "date")}
         <button type="button" data-action="preview-report">Preview Report</button>
         <button type="button" class="secondary-button" data-action="export-report" ${preview ? "" : "disabled"}>Export Report</button>
         ${canViewProfitMargin() && canBillingSalesEntry() && canBillingCostEntry() ? `<button type="button" class="secondary-button" data-action="margin-report">Margin Summary</button>` : ""}
       </div>
+      <p class="empty-state">Leave From/To blank to include every shipment for the selected report type. Dates filter on booking date.</p>
       ${preview ? reportPreviewPanel(preview) : `<div class="report-preview-empty"><p class="empty-state">Preview the report first, then export once the page layout looks correct.</p></div>`}
     </section>`;
 }
@@ -7698,23 +7701,40 @@ function parseChangeSummary(summary) {
 function previewReport() {
   const reportType = moduleContent.querySelector("[name='reportType']")?.value || state.ui.reportType || "Daily shipments";
   const reportFormat = moduleContent.querySelector("[name='reportFormat']")?.value || state.ui.reportFormat || "PDF";
-  const rows = reportRows(reportType);
+  const reportFromDate = moduleContent.querySelector("[name='reportFromDate']")?.value || "";
+  const reportToDate = moduleContent.querySelector("[name='reportToDate']")?.value || "";
+  const rows = reportRows(reportType, reportFromDate, reportToDate);
   const revenue = rows.reduce((sum, row) => sum + Number(row.sell || 0), 0);
   const cost = rows.reduce((sum, row) => sum + Number(row.buyCost || 0), 0);
   state.ui.reportType = reportType;
   state.ui.reportFormat = reportFormat;
+  state.ui.reportFromDate = reportFromDate;
+  state.ui.reportToDate = reportToDate;
+  const rangeText = reportFromDate || reportToDate ? ` | ${reportFromDate || "earliest"} to ${reportToDate || "latest"}` : "";
   state.ui.reportPreview = {
     reportType,
     format: reportFormat,
     rows,
-    summary: `${rows.length} shipment(s) | Revenue ${money(revenue)} | Cost ${money(cost)} | Margin ${money(revenue - cost)}`
+    summary: `${rows.length} shipment(s) | Revenue ${money(revenue)} | Cost ${money(cost)} | Margin ${money(revenue - cost)}${rangeText}`
   };
   saveState();
   render();
 }
 
-function reportRows(reportType) {
-  const rows = filteredRows(visibleRows(state.shipments));
+// The report's own From/To fields are authoritative for report generation - they were added
+// specifically because relying on the ambient global date filter elsewhere on screen was
+// confusing (not obviously connected to the report, easy to forget was even set). Falls back to
+// the global filter only when the report's own dates are left blank, so existing habits still work.
+function reportRows(reportType, reportFromDate = "", reportToDate = "") {
+  const useOwnRange = reportFromDate || reportToDate;
+  const rows = useOwnRange
+    ? visibleRows(state.shipments).filter((row) => {
+        const date = recordDate(row);
+        const fromMatch = !reportFromDate || !date || date >= reportFromDate;
+        const toMatch = !reportToDate || !date || date <= reportToDate;
+        return fromMatch && toMatch && adminBranchFilterMatch(row);
+      })
+    : filteredRows(visibleRows(state.shipments));
   if (reportType === "Open / in-transit / delivered") {
     return rows.filter((row) => ["Booked", "In-Transit", "Delivered"].includes(row.status));
   }
