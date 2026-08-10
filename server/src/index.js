@@ -820,7 +820,6 @@ const resources = {
       field("tax_amount", ["taxAmount", "tax_amount"]),
       field("grand_total", ["grandTotal", "grand_total"]),
       field("profit_percent", ["profitPercent", "profit_percent"]),
-      field("gross_profit", ["grossProfit", "gross_profit"]),
       field("invoice_lines_json", ["invoiceLinesJson", "invoice_lines_json"]),
       field("tariff_snapshot_json", ["tariffSnapshotJson", "tariff_snapshot_json"]),
       field("invoice_snapshot_json", ["invoiceSnapshotJson", "invoice_snapshot_json"]),

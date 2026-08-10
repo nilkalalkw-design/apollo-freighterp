@@ -2244,7 +2244,7 @@ function apiInvoice(row) {
   item.taxAmount = Number(row.tax_amount || 0);
   item.grandTotal = Number(row.grand_total || row.revenue || 0);
   item.profitPercent = Number(row.profit_percent || 0);
-  item.grossProfit = Number(row.gross_profit || item.revenue - item.totalCost || 0);
+  item.grossProfit = Number(item.revenue || 0) - Number(item.totalCost || 0);
   item.invoiceLinesJson = row.invoice_lines_json || "[]";
   item.tariffSnapshotJson = row.tariff_snapshot_json || "{}";
   item.invoiceSnapshotJson = row.invoice_snapshot_json || "{}";
