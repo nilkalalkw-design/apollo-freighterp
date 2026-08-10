@@ -2236,11 +2236,15 @@ function apiInvoice(row) {
   item.tariffNo = row.tariff_no || "";
   item.tariffName = row.tariff_name || "";
   item.chargeableWeight = Number(row.chargeable_weight || 0);
+  item.grossWeight = Number(row.gross_weight || 0);
+  item.volumeWeight = Number(row.volume_weight || 0);
+  item.currency = row.currency || "KD";
   item.totalCost = Number(row.total_cost || row.supplier_cost || 0);
   item.taxPercent = Number(row.tax_percent || 0);
   item.taxAmount = Number(row.tax_amount || 0);
   item.grandTotal = Number(row.grand_total || row.revenue || 0);
   item.profitPercent = Number(row.profit_percent || 0);
+  item.grossProfit = Number(row.gross_profit || item.revenue - item.totalCost || 0);
   item.invoiceLinesJson = row.invoice_lines_json || "[]";
   item.tariffSnapshotJson = row.tariff_snapshot_json || "{}";
   item.invoiceSnapshotJson = row.invoice_snapshot_json || "{}";
@@ -2627,6 +2631,7 @@ function employeeProfileDocumentsPanel() {
           <small>${escapeHtml(help)}</small>
           ${type === "Employee Photo" && documentItem?.storageUrl ? `<img class="employee-profile-thumbnail" src="${escapeHtml(documentItem.storageUrl)}" alt="Employee profile" />` : ""}
           <span class="${documentItem?.storageUrl ? "document-uploaded" : "document-missing"}">${documentItem?.storageUrl ? "Uploaded" : "Not uploaded"}</span>
+          ${documentItem?.storageUrl ? `<button type="button" class="secondary-button" data-action="view-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">View file</button>` : ""}
           <button type="button" class="secondary-button" data-action="upload-employee-document" data-document-type="${escapeHtml(type)}">${documentItem?.storageUrl ? "Replace file" : "Upload file"}</button>
         </article>`;
       }).join("")}
@@ -4581,6 +4586,11 @@ async function handleModuleClick(event) {
 
   if (action === "upload-employee-document") {
     await uploadEmployeeProfileDocument(button.dataset.documentType || "");
+    return;
+  }
+
+  if (action === "view-employee-document") {
+    await viewEmployeeProfileDocument(button.dataset.documentNo || "");
     return;
   }
 
@@ -8386,7 +8396,7 @@ function tcnDocumentHtml(record) {
       </section>
       <section class="tcn-two-col">
         <div><span>CONSIGNEE</span><strong>${escapeHtml(mergedRecord.consigneeName || mergedRecord.customer || "")}</strong><p>${escapeHtml(mergedRecord.consigneeAddress || "")}</p><p>${escapeHtml(mergedRecord.consigneeCountry || "")}</p></div>
-        <div><span>NOTIFY & DELIVERY ADDRESS</span><strong>${escapeHtml(mergedRecord.notifyPartyName || mergedRecord.deliveryContactPerson || "")}</strong><p>${escapeHtml(mergedRecord.deliveryAddress || mergedRecord.notifyPartyAddress || "")}</p><p>${escapeHtml(mergedRecord.deliveryMobile || mergedRecord.notifyMobile || "")}</p></div>
+        <div><span>NOTIFY & DELIVERY ADDRESS</span><strong>${escapeHtml(mergedRecord.deliveryLocation || mergedRecord.notifyPartyName || "")}</strong><p>${escapeHtml(mergedRecord.deliveryAddress || mergedRecord.notifyPartyAddress || "")}</p><p>${escapeHtml([mergedRecord.deliveryContactPerson || mergedRecord.notifyContactPerson || "", mergedRecord.deliveryMobile || mergedRecord.notifyMobile || ""].filter(Boolean).join(" | "))}</p></div>
       </section>
       <section class="tcn-grid tcn-cargo-head">
         <div><span>CARGO TYPE</span><strong>${escapeHtml(mergedRecord.vehicleType || mergedRecord.transportMode || "GENERAL CARGO")}</strong></div>
@@ -9724,6 +9734,9 @@ async function createInvoice(data) {
     tariffNo: data.tariffNo || tariffItem?.tariffNo || "",
     tariffName: data.tariffName || tariffItem?.customer || "",
     chargeableWeight,
+    grossWeight: Number(data.grossWeight || shipmentItem?.actualKg || 0),
+    volumeWeight: Number(data.volumeWeight || shipmentItem?.cbm || 0),
+    currency: String(data.currency || shipmentItem?.currency || "KD").trim(),
     totalCost: canBillingCostEntry() ? Number(data.totalCost || data.supplierCost || totals.cost || 0) : 0,
     taxPercent: Number(data.taxPercent || 0),
     taxAmount: Number(data.taxAmount || totals.taxAmount || 0),
@@ -10111,6 +10124,24 @@ async function uploadEmployeeProfileDocument(documentType) {
     }
   }, { once: true });
   fileInput.click();
+}
+
+async function viewEmployeeProfileDocument(documentNo) {
+  if (!documentNo || !isHrSession()) return;
+  const viewer = window.open("", "_blank");
+  try {
+    const result = await fetchJson(`/api/employee-profile-documents/${encodeURIComponent(documentNo)}/view`);
+    if (!result?.url) throw new Error("The file could not be opened.");
+    if (viewer) {
+      viewer.opener = null;
+      viewer.location.href = result.url;
+    } else {
+      window.location.assign(result.url);
+    }
+  } catch (error) {
+    if (viewer) viewer.close();
+    notifyDenied("File not opened", error.message || "The file could not be opened.");
+  }
 }
 
 async function updateEmployeeProfile(data) {

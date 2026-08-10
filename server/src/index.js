@@ -43,6 +43,24 @@ function cloudinaryConfig() {
 function employeeDocumentNo(userName, typeConfig) {
   return `EMP-${safeEmployeeDocumentPart(userName).toUpperCase()}-${typeConfig.code}`;
 }
+
+function cloudinaryPrivateDownloadUrl(cloudinary, { publicId, fileName, resourceType }) {
+  const format = path.extname(String(fileName || "")).replace(/^\./, "").toLowerCase();
+  if (!publicId || !format || !resourceType) return "";
+  const timestamp = Math.floor(Date.now() / 1000);
+  const expiresAt = timestamp + (10 * 60);
+  const signatureParams = `expires_at=${expiresAt}&format=${format}&public_id=${publicId}&timestamp=${timestamp}`;
+  const signature = crypto.createHash("sha1").update(signatureParams + cloudinary.apiSecret).digest("hex");
+  const query = new URLSearchParams({
+    timestamp: String(timestamp),
+    public_id: publicId,
+    format,
+    expires_at: String(expiresAt),
+    signature,
+    api_key: cloudinary.apiKey
+  });
+  return `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinary.cloudName)}/${encodeURIComponent(resourceType)}/download?${query.toString()}`;
+}
 const webDirCandidates = [path.resolve(__dirname, "..", "web"), path.resolve(__dirname, "..", "..", "web")];
 const webDir = webDirCandidates.find((candidate) => fs.existsSync(path.join(candidate, "index.html"))) || webDirCandidates[0];
 const webIndex = path.join(webDir, "index.html");
@@ -792,6 +810,9 @@ const resources = {
       field("tariff_no", ["tariffNo", "tariff_no"]),
       field("tariff_name", ["tariffName", "tariff_name"]),
       field("chargeable_weight", ["chargeableWeight", "chargeable_weight"]),
+      field("gross_weight", ["grossWeight", "gross_weight"]),
+      field("volume_weight", ["volumeWeight", "volume_weight"]),
+      field("currency"),
       field("revenue"),
       field("supplier_cost", ["supplierCost", "supplier_cost"]),
       field("total_cost", ["totalCost", "total_cost"]),
@@ -799,6 +820,7 @@ const resources = {
       field("tax_amount", ["taxAmount", "tax_amount"]),
       field("grand_total", ["grandTotal", "grand_total"]),
       field("profit_percent", ["profitPercent", "profit_percent"]),
+      field("gross_profit", ["grossProfit", "gross_profit"]),
       field("invoice_lines_json", ["invoiceLinesJson", "invoice_lines_json"]),
       field("tariff_snapshot_json", ["tariffSnapshotJson", "tariff_snapshot_json"]),
       field("invoice_snapshot_json", ["invoiceSnapshotJson", "invoice_snapshot_json"]),
@@ -2043,6 +2065,39 @@ app.get("/api/employee-profile-documents", requireEmployeePortalAuth, async (req
       [userName, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
     );
     return response.json({ ok: true, rows: result.rows });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/employee-profile-documents/:documentNo/view", requireEmployeePortalAuth, async (request, response, next) => {
+  const userName = String(request.appSession?.userName || "").trim();
+  const documentNo = String(request.params.documentNo || "").trim();
+  if (!userName || !documentNo) return response.status(400).json({ ok: false, error: "Document not found." });
+  try {
+    const result = await query(
+      `select document_no, linked_no, type, file_name, storage_url, notes
+       from documents
+       where document_no = $1 and lower(linked_no) = lower($2) and type = any($3::text[])
+       limit 1`,
+      [documentNo, userName, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
+    );
+    const documentItem = result.rows[0];
+    if (!documentItem?.storage_url) return response.status(404).json({ ok: false, error: "Uploaded file not found." });
+    const typeConfig = employeeDocumentType(documentItem.type);
+    if (!typeConfig?.privateAsset) return response.json({ ok: true, url: documentItem.storage_url });
+
+    const cloudinary = cloudinaryConfig();
+    if (!cloudinary) return response.status(503).json({ ok: false, error: "Cloudinary is not configured on the server." });
+    let metadata = {};
+    try { metadata = JSON.parse(documentItem.notes || "{}"); } catch { metadata = {}; }
+    const url = cloudinaryPrivateDownloadUrl(cloudinary, {
+      publicId: String(metadata.cloudinaryPublicId || ""),
+      fileName: documentItem.file_name,
+      resourceType: String(metadata.resourceType || typeConfig.kind)
+    });
+    if (!url) return response.status(404).json({ ok: false, error: "The private file details are incomplete. Upload the file again." });
+    return response.json({ ok: true, url });
   } catch (error) {
     return next(error);
   }
