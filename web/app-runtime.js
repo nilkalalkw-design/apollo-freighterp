@@ -819,7 +819,7 @@ function invoiceDialogBody(record = {}) {
     input('chargeableWeight', 'Chargeable Weight', chargeableWeight, true, 'number') +
     input('grossWeight', 'Gross Weight', grossWeight, true, 'number') +
     input('volumeWeight', 'Volume Weight', volumeWeight, true, 'number') +
-    selectEditable('currency', 'Currency', 'currency', currencyOptions(), record.currency || shipmentItem?.currency || 'KD') +
+    selectEditable('currency', 'Currency', 'currency', currencyOptions(), record.currency || snapshot.currency || shipmentItem?.currency || 'KD') +
     input('taxPercent', 'Tax %', taxPercent, false, 'number') +
     (canBillingSalesEntry() ? input('revenue', 'Revenue', revenue, true, 'number') : '') +
     (canBillingCostEntry() ? input('supplierCost', 'Cost', supplierCost, false, 'number') + input('totalCost', 'Total Cost', supplierCost, true, 'number') : '') +
@@ -829,7 +829,7 @@ function invoiceDialogBody(record = {}) {
     input('date', 'Date', record.date || today(), false, 'date') +
     '<input type="hidden" name="invoiceLinesJson" value="' + escapeHtml(record.invoiceLinesJson || JSON.stringify(lines)) + '" />' +
     '<input type="hidden" name="tariffSnapshotJson" value="' + escapeHtml(record.tariffSnapshotJson || JSON.stringify(tariffItem || {})) + '" />' +
-    '<input type="hidden" name="invoiceSnapshotJson" value="' + escapeHtml(record.invoiceSnapshotJson || JSON.stringify(snapshot || invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent))) + '" />'
+    '<input type="hidden" name="invoiceSnapshotJson" value="' + escapeHtml(record.invoiceSnapshotJson || JSON.stringify(snapshot || invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent, record.currency || snapshot.currency || shipmentItem?.currency || 'KD'))) + '" />'
   );
 }
 
@@ -2232,13 +2232,14 @@ function apiQuotation(row) {
 
 function apiInvoice(row) {
   const item = invoice(row.invoice_no, row.customer, row.shipment_no, Number(row.revenue || 0), Number(row.supplier_cost || 0), row.status, String(row.date || today()).slice(0, 10), row.created_by || "admin");
+  const snapshot = parseJsonObject(row.invoice_snapshot_json || "{}");
   item.customerCode = row.customer_code || "";
   item.tariffNo = row.tariff_no || "";
   item.tariffName = row.tariff_name || "";
   item.chargeableWeight = Number(row.chargeable_weight || 0);
-  item.grossWeight = Number(row.gross_weight || 0);
-  item.volumeWeight = Number(row.volume_weight || 0);
-  item.currency = row.currency || "KD";
+  item.grossWeight = Number(row.gross_weight || snapshot.grossWeight || 0);
+  item.volumeWeight = Number(row.volume_weight || snapshot.volumeWeight || 0);
+  item.currency = row.currency || snapshot.currency || "KD";
   item.totalCost = Number(row.total_cost || row.supplier_cost || 0);
   item.taxPercent = Number(row.tax_percent || 0);
   item.taxAmount = Number(row.tax_amount || 0);
@@ -4975,6 +4976,8 @@ function openRecord(type, id, presetRecord) {
       onSave: async () => {
         const data = collectFormValues(dialogBody.closest("form"));
         rememberDropdownOptions(data);
+        const selectedCurrency = String(data.currency || record.currency || "KD").trim();
+        const invoiceSnapshot = parseJsonObject(data.invoiceSnapshotJson || record.invoiceSnapshotJson || "{}");
         const updatedRecord = {
           ...record,
           date: data.date || record.date || today(),
@@ -5106,7 +5109,7 @@ function openRecord(type, id, presetRecord) {
           chargeableWeight: Number(data.chargeableWeight || record.chargeableWeight || 0),
           grossWeight: Number(data.grossWeight || record.grossWeight || 0),
           volumeWeight: Number(data.volumeWeight || record.volumeWeight || 0),
-          currency: data.currency || record.currency || "KD",
+          currency: selectedCurrency,
           taxPercent: Number(data.taxPercent || record.taxPercent || 0),
           revenue: canBillingSalesEntry() ? Number(data.revenue || record.revenue || 0) : Number(record.revenue || 0),
           supplierCost: canBillingCostEntry() ? Number(data.supplierCost || data.totalCost || record.supplierCost || 0) : Number(record.supplierCost || 0),
@@ -5119,13 +5122,24 @@ function openRecord(type, id, presetRecord) {
           date: data.date || record.date || today(),
           invoiceLinesJson: data.invoiceLinesJson || record.invoiceLinesJson || "[]",
           tariffSnapshotJson: data.tariffSnapshotJson || record.tariffSnapshotJson || "{}",
-          invoiceSnapshotJson: data.invoiceSnapshotJson || record.invoiceSnapshotJson || "{}"
+          invoiceSnapshotJson: JSON.stringify({
+            ...invoiceSnapshot,
+            currency: selectedCurrency,
+            grossWeight: Number(data.grossWeight || record.grossWeight || invoiceSnapshot.grossWeight || 0),
+            volumeWeight: Number(data.volumeWeight || record.volumeWeight || invoiceSnapshot.volumeWeight || 0)
+          })
         };
+        const saved = await persistRecord("invoice", updatedRecord);
+        if (!saved) {
+          notifyDenied("Invoice not saved", "The live database could not save this invoice. Please correct the displayed error and try again.");
+          return false;
+        }
         state.invoices = state.invoices.map((row) => rowId("invoice", row) === id ? updatedRecord : row);
-        await persistRecord("invoice", updatedRecord);
         saveState();
         recordDialog.close();
         render();
+        notifySuccess("Invoice saved", `${id} was saved successfully.`);
+        return true;
       },
       afterOpen: bindInvoiceShipmentTariff
     });
@@ -7303,7 +7317,7 @@ function invoiceLinesFromTariff(shipmentItem, tariffItem, chargeableWeight = eff
   return lines.concat(extras);
 }
 
-function invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent) {
+function invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent, currency = "KD") {
   var summary = invoiceTotals(lines, taxPercent);
   return {
     customerCode: shipmentItem?.customerCode || '',
@@ -7314,6 +7328,7 @@ function invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercen
     chargeableWeight: effectiveChargeableWeightForShipment(shipmentItem),
     grossWeight: Number(shipmentItem?.actualKg || 0),
     volumeWeight: Number(shipmentItem?.cbm || 0),
+    currency: String(currency || shipmentItem?.currency || "KD").trim(),
     lines: lines,
     taxPercent: Number(taxPercent || 0),
     revenue: summary.revenue,
@@ -7531,6 +7546,7 @@ function bindInvoiceShipmentTariff() {
   const chargeableWeightField = dialogBody.querySelector('input[name="chargeableWeight"]');
   const grossWeightField = dialogBody.querySelector('input[name="grossWeight"]');
   const volumeWeightField = dialogBody.querySelector('input[name="volumeWeight"]');
+  const currencyField = dialogBody.querySelector('[name="currency"]');
   const tariffNameField = dialogBody.querySelector('input[name="tariffName"]');
   const previewContainer = dialogBody.querySelector('[data-tariff-preview="invoice"]');
   const shipmentDatalist = shipmentField?.getAttribute('list') ? dialogBody.querySelector('#' + shipmentField.getAttribute('list') + 'Options') : null;
@@ -7603,7 +7619,7 @@ function bindInvoiceShipmentTariff() {
     if (profitPercentField) profitPercentField.value = summary.profitPercent;
     if (invoiceLinesField) invoiceLinesField.value = JSON.stringify(lines);
     if (tariffSnapshotField) tariffSnapshotField.value = JSON.stringify(tariffItem || {});
-    if (invoiceSnapshotField) invoiceSnapshotField.value = JSON.stringify(invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent));
+    if (invoiceSnapshotField) invoiceSnapshotField.value = JSON.stringify(invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercent, currencyField?.value || shipmentItem?.currency || "KD"));
     if (previewContainer) {
       if (renderPreview || !previewContainer.querySelector('[data-invoice-preview-ready]')) {
         renderInvoicePreview(shipmentItem, tariffItem, taxPercent);
@@ -9728,6 +9744,8 @@ async function createInvoice(data) {
   const lines = parseInvoiceLineItems(data.invoiceLinesJson || JSON.stringify(invoiceLinesFromTariff(shipmentItem, tariffItem, chargeableWeight)));
   const totals = invoiceTotals(lines, Number(data.taxPercent || 0));
   const customer = shipmentItem?.customer || data.customer;
+  const selectedCurrency = String(data.currency || shipmentItem?.currency || "KD").trim();
+  const invoiceSnapshot = parseJsonObject(data.invoiceSnapshotJson || "{}");
   const record = invoice(invoiceNo, customer, data.shipmentNo, canBillingSalesEntry() ? Number(data.revenue || totals.revenue || 0) : 0, canBillingCostEntry() ? Number(data.supplierCost || data.totalCost || totals.cost || 0) : 0, data.status || "Draft", data.date || today());
   Object.assign(record, {
     customerCode: shipmentItem?.customerCode || data.customerCode || "",
@@ -9736,7 +9754,7 @@ async function createInvoice(data) {
     chargeableWeight,
     grossWeight: Number(data.grossWeight || shipmentItem?.actualKg || 0),
     volumeWeight: Number(data.volumeWeight || shipmentItem?.cbm || 0),
-    currency: String(data.currency || shipmentItem?.currency || "KD").trim(),
+    currency: selectedCurrency,
     totalCost: canBillingCostEntry() ? Number(data.totalCost || data.supplierCost || totals.cost || 0) : 0,
     taxPercent: Number(data.taxPercent || 0),
     taxAmount: Number(data.taxAmount || totals.taxAmount || 0),
@@ -9744,10 +9762,20 @@ async function createInvoice(data) {
     profitPercent: Number(data.profitPercent || totals.profitPercent || 0),
     invoiceLinesJson: data.invoiceLinesJson || JSON.stringify(lines),
     tariffSnapshotJson: data.tariffSnapshotJson || JSON.stringify(tariffItem || {}),
-    invoiceSnapshotJson: data.invoiceSnapshotJson || JSON.stringify(invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, Number(data.taxPercent || 0)))
+    invoiceSnapshotJson: JSON.stringify({
+      ...invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, Number(data.taxPercent || 0), selectedCurrency),
+      ...invoiceSnapshot,
+      currency: selectedCurrency,
+      grossWeight: Number(data.grossWeight || shipmentItem?.actualKg || invoiceSnapshot.grossWeight || 0),
+      volumeWeight: Number(data.volumeWeight || shipmentItem?.cbm || invoiceSnapshot.volumeWeight || 0)
+    })
   });
+  const saved = await postRecord("invoice", record);
+  if (!saved) {
+    notifyDenied("Invoice not saved", "The live database could not save this invoice. Please correct the displayed error and try again.");
+    return false;
+  }
   state.invoices.unshift(record);
-  await postRecord("invoice", record);
   if (shipmentItem) shipmentItem.invoiceStatus = invoiceNo;
   addHistory("Generated invoice", invoiceNo);
   notifySuccess("Invoice saved", invoiceNo + " was saved successfully.");
