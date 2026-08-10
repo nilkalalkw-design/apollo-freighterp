@@ -1934,13 +1934,15 @@ async function refreshSharedShipmentData() {
   if (!canRefreshSharedShipmentData() || sharedShipmentRefreshInProgress) return;
   sharedShipmentRefreshInProgress = true;
   try {
-    const [shipments, documents, shipmentStatusHistory] = await Promise.all([
+    const [shipments, documents, invoices, shipmentStatusHistory] = await Promise.all([
       fetchJson("/api/shipments"),
       fetchJson("/api/documents"),
+      fetchJson("/api/invoices"),
       fetchJson("/api/shipment-status-history")
     ]);
     state.shipments = (shipments.rows || []).map(apiShipment);
     state.documents = (documents.rows || []).map(apiDocument);
+    state.invoices = (invoices.rows || []).map(apiInvoice);
     state.shipmentStatusHistory = (shipmentStatusHistory.rows || []).map(apiShipmentStatusHistory);
     saveState();
     render();
