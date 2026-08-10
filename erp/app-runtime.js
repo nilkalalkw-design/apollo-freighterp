@@ -54,6 +54,9 @@ let skipNextDialogCloseReset = false;
 let lastPendingNotificationCount = 0;
 let activeDropdownMenu = null;
 let customerPortalData = null;
+let sharedShipmentRefreshTimer = null;
+let sharedShipmentRefreshInProgress = false;
+let sharedShipmentRefreshEventsBound = false;
 
 const loginScreen = document.querySelector("#loginScreen");
 const appShell = document.querySelector("#appShell");
@@ -1349,6 +1352,7 @@ function boot() {
   });
   logoutButton.addEventListener("click", () => {
     sessionStorage.removeItem(SESSION_KEY);
+    stopSharedShipmentRefresh();
     showLogin();
   });
   changePasswordButton?.addEventListener("click", openChangePasswordDialog);
@@ -1918,7 +1922,50 @@ function showApp() {
   // manually refresh - syncFromApi() replaces this render with live data as soon as it's ready.
   showSyncingIndicator();
   syncFromApi();
+  startSharedShipmentRefresh();
   render();
+}
+
+function canRefreshSharedShipmentData() {
+  return Boolean(currentSession()?.token) && !isCustomerSession() && !isHrSession() && !document.hidden && !recordDialog?.open;
+}
+
+async function refreshSharedShipmentData() {
+  if (!canRefreshSharedShipmentData() || sharedShipmentRefreshInProgress) return;
+  sharedShipmentRefreshInProgress = true;
+  try {
+    const [shipments, documents, shipmentStatusHistory] = await Promise.all([
+      fetchJson("/api/shipments"),
+      fetchJson("/api/documents"),
+      fetchJson("/api/shipment-status-history")
+    ]);
+    state.shipments = (shipments.rows || []).map(apiShipment);
+    state.documents = (documents.rows || []).map(apiDocument);
+    state.shipmentStatusHistory = (shipmentStatusHistory.rows || []).map(apiShipmentStatusHistory);
+    saveState();
+    render();
+  } catch {
+    // A background refresh must never interrupt a person who is working. The next focus or timer refresh will retry.
+  } finally {
+    sharedShipmentRefreshInProgress = false;
+  }
+}
+
+function startSharedShipmentRefresh() {
+  if (sharedShipmentRefreshTimer) window.clearInterval(sharedShipmentRefreshTimer);
+  sharedShipmentRefreshTimer = window.setInterval(refreshSharedShipmentData, 30000);
+  if (sharedShipmentRefreshEventsBound) return;
+  sharedShipmentRefreshEventsBound = true;
+  window.addEventListener("focus", refreshSharedShipmentData);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshSharedShipmentData();
+  });
+}
+
+function stopSharedShipmentRefresh() {
+  if (!sharedShipmentRefreshTimer) return;
+  window.clearInterval(sharedShipmentRefreshTimer);
+  sharedShipmentRefreshTimer = null;
 }
 
 function showSyncingIndicator() {
