@@ -5025,8 +5025,6 @@ function openRecord(type, id, presetRecord) {
       onSave: async () => {
         const data = collectFormValues(dialogBody.closest("form"));
         rememberDropdownOptions(data);
-        const selectedCurrency = String(data.currency || record.currency || "KD").trim();
-        const invoiceSnapshot = parseJsonObject(data.invoiceSnapshotJson || record.invoiceSnapshotJson || "{}");
         const updatedRecord = {
           ...record,
           date: data.date || record.date || today(),
@@ -5149,6 +5147,8 @@ function openRecord(type, id, presetRecord) {
       onSave: async () => {
         const data = collectFormValues(dialogBody.closest("form"));
         rememberDropdownOptions(data);
+        const selectedCurrency = String(data.currency || record.currency || "KD").trim();
+        const invoiceSnapshot = parseJsonObject(data.invoiceSnapshotJson || record.invoiceSnapshotJson || "{}");
         const updatedRecord = {
           ...record,
           customer: data.customer || record.customer || "",
@@ -5411,6 +5411,9 @@ async function saveDialogRecord() {
   dialogSave.textContent = "Saving...";
   try {
     await saveDialogRecordInner();
+  } catch (error) {
+    console.error("Dialog save failed:", error);
+    notifyFailed("Save failed", error?.message || "The record could not be saved. Please try again.");
   } finally {
     isSavingDialogRecord = false;
     dialogSave.disabled = false;
