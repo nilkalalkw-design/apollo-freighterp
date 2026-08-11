@@ -272,6 +272,7 @@ function shipmentMetaNotes(data) {
     shipmentDate: String(data.shipmentDate || "").trim(),
     expectedArrivalDate: String(data.expectedArrivalDate || "").trim(),
     transportMode: String(data.transportMode || "").trim(),
+    shipmentVia: String(data.shipmentVia || data.transportMode || "").trim(),
     loadType: String(data.loadType || "").trim(),
     expectedArrivalDate: String(data.expectedArrivalDate || "").trim(),
     customerCode: String(data.customerCode || "").trim(),
@@ -438,6 +439,7 @@ function shipment(
     expectedArrivalDate: meta.expectedArrivalDate || "",
     transportMode: meta.transportMode || "",
     loadType: meta.loadType || "",
+    shipmentVia: meta.shipmentVia || meta.transportMode || "",
     expectedArrivalDate: meta.expectedArrivalDate || "",
     customerCode: meta.customerCode || "",
     customerContactPerson: meta.customerContactPerson || "",
@@ -2147,6 +2149,8 @@ function apiShipment(row) {
     row.created_by || "admin",
     row.notes || ""
   );
+  const shipmentMeta = parseJsonMeta(row.notes || "{}");
+  item.shipmentVia = shipmentMeta.shipmentVia || shipmentMeta.transportMode || "";
   item.transporter = row.transporter || "";
   item.transporterCode = row.transporter_code || "";
   item.vehicleNo = row.vehicle_no || "";
@@ -2281,7 +2285,7 @@ function apiQuotation(row) {
 
 function apiInvoice(row) {
   const item = invoice(row.invoice_no, row.customer, row.shipment_no, Number(row.revenue || 0), Number(row.supplier_cost || 0), row.status, String(row.date || today()).slice(0, 10), row.created_by || "admin");
-  const snapshot = parseJsonObject(row.invoice_snapshot_json || "{}");
+  const snapshot = parseJsonMeta(row.invoice_snapshot_json || "{}");
   item.customerCode = row.customer_code || "";
   item.tariffNo = row.tariff_no || "";
   item.tariffName = row.tariff_name || "";
@@ -2721,15 +2725,14 @@ function renderHrAdminEmployees() {
   if (!isHrAdmin()) return `<section class="panel">${panelHeader("Access Denied")}${empty("Only HR Admin can manage employee records.")}</section>`;
   return `<section class="panel">${panelHeader("Manage Employees")}
     <div class="action-row"><button type="button" data-action="new-record" data-type="employee">New Employee</button></div>
-    ${table("employee", state.employees, employeeColumns(), false)}
-    ${hrAdminDeletePanel("employee", "Employee")}
+    ${table("employee", state.employees, employeeColumns())}
   </section>`;
 }
 
 function renderHrAdminLeaveApprovals() {
   if (!isHrAdmin()) return `<section class="panel">${panelHeader("Access Denied")}${empty("Only HR Admin can review leave requests.")}</section>`;
   return `<section class="panel">${panelHeader("Leave Approvals")}
-    ${table("leaveRequest", state.leaveRequests, leaveRequestColumns(), false)}
+    ${table("leaveRequest", state.leaveRequests, leaveRequestColumns())}
   </section>`;
 }
 
@@ -3809,6 +3812,13 @@ function tableActionButton(type, id) {
     </div>`;
   }
 
+  if (type === "employee") {
+    return `<div class="row-action-group">
+      <button class="ghost-button" data-action="open" data-type="employee" data-id="${escapeHtml(id)}">Open</button>
+      <button class="ghost-button" data-action="view-employee-documents" data-id="${escapeHtml(id)}">Documents</button>
+    </div>`;
+  }
+
   return `<button class="ghost-button" data-action="open" data-type="${escapeHtml(type)}" data-id="${escapeHtml(id)}">Load</button>`;
 }
 
@@ -4644,6 +4654,16 @@ async function handleModuleClick(event) {
     return;
   }
 
+  if (action === "view-employee-documents") {
+    await openEmployeeDocumentsDialog(id);
+    return;
+  }
+
+  if (action === "upload-employee-document-admin") {
+    await uploadEmployeeProfileDocumentAsAdmin(button.dataset.employee || "", button.dataset.documentType || "");
+    return;
+  }
+
   if (action === "new-record") {
     openNewDialog(selectedNewRecordType(type), mode || "");
     return;
@@ -5148,7 +5168,7 @@ function openRecord(type, id, presetRecord) {
         const data = collectFormValues(dialogBody.closest("form"));
         rememberDropdownOptions(data);
         const selectedCurrency = String(data.currency || record.currency || "KD").trim();
-        const invoiceSnapshot = parseJsonObject(data.invoiceSnapshotJson || record.invoiceSnapshotJson || "{}");
+        const invoiceSnapshot = parseJsonMeta(data.invoiceSnapshotJson || record.invoiceSnapshotJson || "{}");
         const updatedRecord = {
           ...record,
           customer: data.customer || record.customer || "",
@@ -5174,6 +5194,10 @@ function openRecord(type, id, presetRecord) {
           invoiceSnapshotJson: JSON.stringify({
             ...invoiceSnapshot,
             currency: selectedCurrency,
+            shipmentVia: shipmentViaValue(state.shipments.find((shipmentItem) => shipmentItem.jobNo === (data.shipmentNo || record.shipmentNo))),
+            from: (() => { const s = state.shipments.find((shipmentItem) => shipmentItem.jobNo === (data.shipmentNo || record.shipmentNo)); return s?.origin || s?.shipperName || s?.pickupLocation || ""; })(),
+            to: (() => { const s = state.shipments.find((shipmentItem) => shipmentItem.jobNo === (data.shipmentNo || record.shipmentNo)); return s?.destination || s?.consigneeName || s?.deliveryLocation || ""; })(),
+            loadType: (() => { const s = state.shipments.find((shipmentItem) => shipmentItem.jobNo === (data.shipmentNo || record.shipmentNo)); return s?.loadType || ""; })(),
             grossWeight: Number(data.grossWeight || record.grossWeight || invoiceSnapshot.grossWeight || 0),
             volumeWeight: Number(data.volumeWeight || record.volumeWeight || invoiceSnapshot.volumeWeight || 0)
           })
@@ -6011,6 +6035,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("shipmentDate", "Shipment Date", fieldValue("shipmentDate", today()), false, "date")}
       ${strictSelect("status", "Status", statusOptions(), fieldValue("status", ""))}
       ${select("loadType", "Load Type", ["LTL", "FTL"], fieldValue("loadType", "LTL"))}
+      ${select("shipmentVia", "Shipment Via", ["Air", "Sea", "Land", "FTL", "Warehouse", "Consolidation"], fieldValue("shipmentVia", shipmentViaValue(record) || ""))}
       ${strictSelect("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", ""))}
       ${strictSelect("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "")), fieldValue("shipmentService", ""))}
       ${selectEditable("origin", "Origin", "origin", ["Kuwait City"], fieldValue("origin"))}
@@ -6149,7 +6174,11 @@ function shipmentRequestDialogBody(record) {
       ${input("invoiceValue", "Invoice Value", fieldValue("invoiceValue"), true)}
     `)}
     ${textarea("remarks", "Customer Remarks", fieldValue("remarks"), true, 2)}
-    ${attachments.length ? `<div class="form-section"><h3>Attachments</h3>${attachments.map((file) => `<p>${escapeHtml(file.name || file.fileName || String(file))}</p>`).join("")}</div>` : ""}
+    ${attachments.length ? `<div class="form-section"><h3>Attachments</h3>${attachments.map((file) => {
+      const fileName = escapeHtml(file.name || file.fileName || String(file));
+      const fileUrl = String(file.url || file.storageUrl || "").trim();
+      return fileUrl ? `<p><a href="${escapeHtml(fileUrl)}" target="_blank" rel="noopener">Open ${fileName}</a></p>` : `<p>${fileName}</p>`;
+    }).join("")}</div>` : ""}
     ${textarea("approvalNotes", "Approval / Send Back Notes", fieldValue("approvalNotes"), false, 3)}
     ${["SUBMITTED", "PENDING_REVIEW"].includes(String(fieldValue("status")).toUpperCase()) ? `<div class="action-row"><button type="button" class="secondary-button" data-dialog-action="send-back-request">Send Back to Customer</button></div>` : ""}
     <input type="hidden" name="convertedJobNo" value="${escapeHtml(fieldValue("convertedJobNo"))}" />
@@ -8326,7 +8355,7 @@ function invoiceDocumentHtml(record) {
       </tbody></table>
       <table class="invoice-info-table"><tbody>
         <tr><th>SHIP VIA</th><th>TRACKING NO.</th><th>FROM / TO</th><th>GR / VOL WEIGHT</th><th>JOB NO.</th></tr>
-        <tr><td>${escapeHtml(shipmentItem?.loadType || "")}</td><td>${escapeHtml(shipmentItem?.airwayBillNo || shipmentItem?.tcnNumber || "")}</td><td>${escapeHtml(invoiceFromTo(shipmentItem))}</td><td>${escapeHtml(invoiceWeightText(shipmentItem))}</td><td>${escapeHtml(record.shipmentNo)}</td></tr>
+        <tr><td>${escapeHtml(shipmentViaValue(shipmentItem))}</td><td>${escapeHtml(shipmentItem?.airwayBillNo || shipmentItem?.tcnNumber || "")}</td><td>${escapeHtml(invoiceFromTo(shipmentItem))}</td><td>${escapeHtml(invoiceWeightText(shipmentItem))}</td><td>${escapeHtml(record.shipmentNo)}</td></tr>
       </tbody></table>
       <table class="invoice-lines-table">
         <thead><tr><th>ACTIVITY</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead>
@@ -8381,6 +8410,22 @@ function invoiceDueDate(dateValue, terms = "") {
   if (Number.isNaN(base.getTime())) return "";
   base.setDate(base.getDate() + days);
   return base.toISOString().slice(0, 10);
+}
+
+function shipmentViaValue(shipmentItem) {
+  if (!shipmentItem) return "";
+  const explicit = String(shipmentItem.shipmentVia || shipmentItem.transportMode || "").trim();
+  if (explicit) return explicit;
+  const service = String(shipmentItem.shipmentService || "").trim().toUpperCase();
+  const viaByService = {
+    AE: "Air", AI: "Air",
+    SE: "Sea", SI: "Sea",
+    LE: "Land", LI: "Land",
+    FE: "FTL", FI: "FTL",
+    WHC: "Warehouse",
+    CONSOLIDATION: "Consolidation"
+  };
+  return viaByService[service] || "";
 }
 
 function invoiceFromTo(shipmentItem) {
@@ -9514,13 +9559,14 @@ async function createLeaveRequest(data) {
   return true;
 }
 
-async function decideLeaveRequest(requestNo, status) {
+async function decideLeaveRequest(requestNo, approved) {
   if (!isHrAdmin()) {
     notifyDenied("Not allowed", "Only HR admins can approve or reject leave requests.");
     return;
   }
   const record = state.leaveRequests.find((row) => row.requestNo === requestNo);
   if (!record) return;
+  const status = approved ? "Approved" : "Rejected";
   const updated = {
     ...record,
     status,
@@ -9797,7 +9843,7 @@ async function createInvoice(data) {
   const totals = invoiceTotals(lines, Number(data.taxPercent || 0));
   const customer = shipmentItem?.customer || data.customer;
   const selectedCurrency = String(data.currency || shipmentItem?.currency || "KD").trim();
-  const invoiceSnapshot = parseJsonObject(data.invoiceSnapshotJson || "{}");
+  const invoiceSnapshot = parseJsonMeta(data.invoiceSnapshotJson || "{}");
   const record = invoice(invoiceNo, customer, data.shipmentNo, canBillingSalesEntry() ? Number(data.revenue || totals.revenue || 0) : 0, canBillingCostEntry() ? Number(data.supplierCost || data.totalCost || totals.cost || 0) : 0, data.status || "Draft", data.date || today());
   Object.assign(record, {
     customerCode: shipmentItem?.customerCode || data.customerCode || "",
@@ -9818,6 +9864,10 @@ async function createInvoice(data) {
       ...invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, Number(data.taxPercent || 0), selectedCurrency),
       ...invoiceSnapshot,
       currency: selectedCurrency,
+      shipmentVia: shipmentViaValue(shipmentItem),
+      from: shipmentItem?.origin || shipmentItem?.shipperName || shipmentItem?.pickupLocation || "",
+      to: shipmentItem?.destination || shipmentItem?.consigneeName || shipmentItem?.deliveryLocation || "",
+      loadType: shipmentItem?.loadType || "",
       grossWeight: Number(data.grossWeight || shipmentItem?.actualKg || invoiceSnapshot.grossWeight || 0),
       volumeWeight: Number(data.volumeWeight || shipmentItem?.cbm || invoiceSnapshot.volumeWeight || 0)
     })
@@ -10132,9 +10182,21 @@ async function removeJobFromLoad(loadNo, jobNo) {
 async function submitCustomerShipmentRequest(data, form) {
   const session = currentSession();
   if (!session?.token) { notifyDenied("Login required", "Please login again."); return false; }
-  const files = Array.from(form.querySelector("input[type='file']")?.files || []).map((file) => ({ name: file.name, type: file.type, size: file.size }));
-  const result = await fetchJson("/api/customer/shipment-requests", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify({ ...data, attachments: files }) });
-  notifySuccess("Request submitted", "Shipment request saved with " + (result.status || "submitted") + " status.");
+  const files = Array.from(form.querySelector("input[type='file']")?.files || []);
+  if (files.length > 5) throw new Error("You can upload a maximum of 5 attachments per shipment request.");
+  const result = await fetchJson("/api/customer/shipment-requests", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify({ ...data, attachments: [] }) });
+  const requestNo = result?.row?.requestNo || result?.row?.request_no;
+  if (!requestNo) throw new Error("Shipment request was created but its reference number was not returned.");
+  for (const file of files) {
+    if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} is larger than 10 MB.`);
+    const contentBase64 = await readFileAsBase64(file);
+    await fetchJson(`/api/customer/shipment-requests/${encodeURIComponent(requestNo)}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token },
+      body: JSON.stringify({ fileName: file.name, mimeType: file.type, contentBase64 })
+    });
+  }
+  notifySuccess("Request submitted", "Shipment request " + requestNo + " was saved with " + files.length + " attachment(s).");
   await syncCustomerPortal();
   activeModule = "Customer Shipments";
   return true;
@@ -10222,6 +10284,96 @@ async function viewEmployeeProfileDocument(documentNo) {
     if (viewer) viewer.close();
     notifyDenied("File not opened", error.message || "The file could not be opened.");
   }
+}
+
+const EMPLOYEE_DOCUMENT_TYPES_FOR_DIALOG = [
+  ["Employee Photo", "Profile Photo", "JPG, JPEG or PNG • Maximum 5 MB"],
+  ["Civil ID Front", "Civil ID — Front", "PDF • Maximum 10 MB"],
+  ["Civil ID Back", "Civil ID — Back", "PDF • Maximum 10 MB"],
+  ["Passport Front", "Passport — Front", "PDF • Maximum 10 MB"],
+  ["Passport Back", "Passport — Back", "PDF • Maximum 10 MB"]
+];
+
+function employeeDocumentsDialogBody(userName, documents) {
+  return `<div class="employee-document-grid">
+    ${EMPLOYEE_DOCUMENT_TYPES_FOR_DIALOG.map(([type, label, help]) => {
+      const documentItem = documents.find((item) => item.type === type);
+      return `<article class="employee-document-card">
+        <strong>${escapeHtml(label)}</strong>
+        <small>${escapeHtml(help)}</small>
+        ${type === "Employee Photo" && documentItem?.storageUrl ? `<img class="employee-profile-thumbnail" src="${escapeHtml(documentItem.storageUrl)}" alt="Employee profile" />` : ""}
+        <span class="${documentItem?.storageUrl ? "document-uploaded" : "document-missing"}">${documentItem?.storageUrl ? "Uploaded" : "Not uploaded"}</span>
+        <div class="employee-document-card-actions">
+          ${documentItem?.documentNo ? `<button type="button" class="secondary-button" data-action="view-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">View file</button>` : ""}
+          <button type="button" class="secondary-button" data-action="upload-employee-document-admin" data-document-type="${escapeHtml(type)}" data-employee="${escapeHtml(userName)}">${documentItem?.storageUrl ? "Replace file" : "Upload file"}</button>
+        </div>
+      </article>`;
+    }).join("")}
+  </div>`;
+}
+
+// HR Admin viewing/managing one employee's documents on their behalf - separate from the
+// employee's own state.employeeProfileDocuments (that array is specifically "my documents" and
+// must not get overwritten by whichever other employee an admin happens to be looking at).
+async function openEmployeeDocumentsDialog(userName) {
+  if (!userName || !isHrAdmin()) return;
+  let documents = [];
+  try {
+    const result = await fetchJson(`/api/employee-profile-documents?employee=${encodeURIComponent(userName)}`);
+    documents = (result.rows || []).map(apiDocument);
+  } catch (error) {
+    notifyDenied("Could not load documents", error.message || "The employee's documents could not be loaded.");
+    return;
+  }
+  const employeeRecord = state.employees.find((row) => row.userName === userName);
+  openDialog({
+    title: `Documents - ${employeeRecord?.fullName || userName}`,
+    typeLabel: "Employee Documents",
+    body: employeeDocumentsDialogBody(userName, documents),
+    saveLabel: "Close",
+    singleColumn: true,
+    onSave() {
+      recordDialog.close();
+    }
+  });
+}
+
+// Same upload flow as the employee's own self-service upload, but tagged with employeeUserName so
+// the server saves it against that employee instead of the admin's own account, and refreshes the
+// currently-open admin dialog in place afterward instead of touching the employee's own
+// state.employeeProfileDocuments (which belongs to whoever is logged in, not who's being viewed).
+async function uploadEmployeeProfileDocumentAsAdmin(userName, documentType) {
+  const rule = employeeDocumentUploadRule(documentType);
+  if (!rule || !userName || !isHrAdmin()) return;
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = rule.accept;
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    if (!rule.mimeTypes.includes(String(file.type || "").toLowerCase())) {
+      notifyDenied("File not uploaded", `${documentType} must be a ${rule.label} file.`);
+      return;
+    }
+    if (file.size > rule.maxBytes) {
+      notifyDenied("File not uploaded", `${documentType} must be ${rule.maxBytes / 1024 / 1024} MB or smaller.`);
+      return;
+    }
+    try {
+      notifySuccess("Uploading document", `Uploading ${documentType}...`);
+      const contentBase64 = await readFileAsBase64(file);
+      await fetchJson("/api/employee-profile-documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeUserName: userName, documentType, fileName: file.name, mimeType: file.type, contentBase64 })
+      });
+      notifySuccess("Document uploaded", `${documentType} was uploaded for ${userName}.`);
+      await openEmployeeDocumentsDialog(userName);
+    } catch (error) {
+      notifyDenied("File not uploaded", error.message || "The document could not be uploaded.");
+    }
+  }, { once: true });
+  fileInput.click();
 }
 
 async function updateEmployeeProfile(data) {

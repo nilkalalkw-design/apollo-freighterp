@@ -497,6 +497,13 @@ function requireEmployeePortalAuth(request, response, next) {
   request.appSession = session;
   return next();
 }
+
+// Admins from EITHER portal (the main ERP login or the Employee Portal login) can view/manage any
+// employee's documents - HR staff commonly only have Employee Portal access, ERP admins commonly
+// only use the main login, and both need this.
+function isPrivilegedForEmployeeDocs(session) {
+  return ["admin", "hr"].includes(String(session?.role || "").trim().toLowerCase());
+}
 async function getCustomerAccount(identifier) {
   const result = await query(
     `select cu.id, cu.customer_code, cu.username, cu.email, cu.password_hash, cu.status, cu.last_login,
@@ -810,6 +817,9 @@ const resources = {
       field("tariff_no", ["tariffNo", "tariff_no"]),
       field("tariff_name", ["tariffName", "tariff_name"]),
       field("chargeable_weight", ["chargeableWeight", "chargeable_weight"]),
+      field("gross_weight", ["grossWeight", "gross_weight"]),
+      field("volume_weight", ["volumeWeight", "volume_weight"]),
+      field("currency"),
       field("revenue"),
       field("supplier_cost", ["supplierCost", "supplier_cost"]),
       field("total_cost", ["totalCost", "total_cost"]),
@@ -1941,6 +1951,62 @@ app.post("/api/customer/shipment-requests", requireCustomerPortalAuth, async (re
   }
 });
 
+// Customer attachments are uploaded only after the shipment request exists.  Keeping the
+// files on the request itself makes them available to company users during request review.
+app.post("/api/customer/shipment-requests/:requestNo/documents", requireCustomerPortalAuth, async (request, response, next) => {
+  const requestNo = String(request.params.requestNo || "").trim();
+  const fileName = String(request.body?.fileName || "").trim();
+  const mimeType = String(request.body?.mimeType || "").toLowerCase().trim();
+  const contentBase64 = String(request.body?.contentBase64 || "").replace(/^data:[^,]+,/, "").trim();
+  const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]);
+  if (!requestNo || !fileName || !contentBase64 || !allowedTypes.has(mimeType)) {
+    return response.status(400).json({ ok: false, error: "Attachments must be PDF, JPG, PNG, DOCX, or XLSX files." });
+  }
+  const cloudinary = cloudinaryConfig();
+  if (!cloudinary) return response.status(503).json({ ok: false, error: "Cloudinary is not configured on the server." });
+
+  try {
+    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
+    if (!account) return response.status(404).json({ ok: false, error: "Customer account not found." });
+    const requestResult = await query(
+      `select request_no, attachments_json from shipment_requests
+       where lower(request_no) = lower($1)
+         and (lower(customer_code) = lower($2) or lower(customer_name) = lower($3)) limit 1`,
+      [requestNo, account.customer_code || "", account.customer_name || ""]
+    );
+    if (!requestResult.rows[0]) return response.status(404).json({ ok: false, error: "Shipment request not found." });
+    const fileBuffer = Buffer.from(contentBase64, "base64");
+    if (!fileBuffer.length || fileBuffer.length > 10 * 1024 * 1024) {
+      return response.status(400).json({ ok: false, error: "Each attachment must be 10 MB or smaller." });
+    }
+    const kind = mimeType.startsWith("image/") ? "image" : "raw";
+    const timestamp = Math.floor(Date.now() / 1000);
+    const folder = "apollo-freight/customer-requests";
+    const publicId = `${safeEmployeeDocumentPart(requestNo)}-attachment-${Date.now()}`;
+    const signatureBase = `folder=${folder}&public_id=${publicId}&timestamp=${timestamp}${cloudinary.apiSecret}`;
+    const signature = crypto.createHash("sha1").update(signatureBase).digest("hex");
+    const form = new FormData();
+    form.append("file", new Blob([fileBuffer], { type: mimeType }), fileName);
+    form.append("api_key", cloudinary.apiKey);
+    form.append("timestamp", String(timestamp));
+    form.append("folder", folder);
+    form.append("public_id", publicId);
+    form.append("signature", signature);
+    const cloudinaryResponse = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinary.cloudName)}/${kind}/upload`, { method: "POST", body: form });
+    const uploaded = await cloudinaryResponse.json().catch(() => ({}));
+    if (!cloudinaryResponse.ok || !uploaded.secure_url) throw new Error(uploaded.error?.message || "Cloudinary upload failed.");
+    let attachments = [];
+    try { attachments = JSON.parse(requestResult.rows[0].attachments_json || "[]"); } catch { attachments = []; }
+    if (!Array.isArray(attachments)) attachments = [];
+    const attachment = { name: fileName, type: mimeType, size: uploaded.bytes || fileBuffer.length, url: uploaded.secure_url, publicId: uploaded.public_id || publicId };
+    attachments.push(attachment);
+    await query(`update shipment_requests set attachments_json = $1, updated_at = now() where lower(request_no) = lower($2)`, [JSON.stringify(attachments), requestNo]);
+    return response.status(201).json({ ok: true, attachment });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.get("/api/customer/profile", requireCustomerPortalAuth, async (request, response, next) => {
   try {
     const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
@@ -2049,8 +2115,14 @@ app.put("/api/customer/profile", requireCustomerPortalAuth, async (request, resp
     return next(error);
   }
 });
-app.get("/api/employee-profile-documents", requireEmployeePortalAuth, async (request, response, next) => {
-  const userName = String(request.appSession?.userName || "").trim();
+app.get("/api/employee-profile-documents", requireAppAuth, async (request, response, next) => {
+  const session = request.appSession;
+  const requestedUser = String(request.query?.employee || "").trim();
+  const privileged = isPrivilegedForEmployeeDocs(session);
+  if (requestedUser && !privileged && requestedUser.toLowerCase() !== String(session?.userName || "").toLowerCase()) {
+    return response.status(403).json({ ok: false, error: "You can only view your own documents." });
+  }
+  const userName = requestedUser || String(session?.userName || "").trim();
   if (!userName) return response.status(401).json({ ok: false, error: "Login required." });
   try {
     const result = await query(
@@ -2066,19 +2138,27 @@ app.get("/api/employee-profile-documents", requireEmployeePortalAuth, async (req
   }
 });
 
-app.get("/api/employee-profile-documents/:documentNo/view", requireEmployeePortalAuth, async (request, response, next) => {
-  const userName = String(request.appSession?.userName || "").trim();
+// Returns a fresh, working link for one document - required for the private (Civil ID / Passport)
+// documents, since the stored storage_url alone does not work for those. Self-service for the
+// document's own owner, or any admin/HR user (from either portal) viewing on behalf of an employee.
+app.get("/api/employee-profile-documents/:documentNo/view", requireAppAuth, async (request, response, next) => {
+  const session = request.appSession;
   const documentNo = String(request.params.documentNo || "").trim();
-  if (!userName || !documentNo) return response.status(400).json({ ok: false, error: "Document not found." });
+  if (!documentNo) return response.status(400).json({ ok: false, error: "Document not found." });
   try {
     const result = await query(
       `select document_no, linked_no, type, file_name, storage_url, notes
        from documents
-       where document_no = $1 and lower(linked_no) = lower($2) and type = any($3::text[])
+       where document_no = $1 and type = any($2::text[])
        limit 1`,
-      [documentNo, userName, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
+      [documentNo, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
     );
     const documentItem = result.rows[0];
+    if (!documentItem) return response.status(404).json({ ok: false, error: "Document not found." });
+    const isOwner = String(documentItem.linked_no || "").toLowerCase() === String(session?.userName || "").toLowerCase();
+    if (!isOwner && !isPrivilegedForEmployeeDocs(session)) {
+      return response.status(403).json({ ok: false, error: "You do not have permission to view this document." });
+    }
     if (!documentItem?.storage_url) return response.status(404).json({ ok: false, error: "Uploaded file not found." });
     const typeConfig = employeeDocumentType(documentItem.type);
     if (!typeConfig?.privateAsset) return response.json({ ok: true, url: documentItem.storage_url });
@@ -2099,8 +2179,14 @@ app.get("/api/employee-profile-documents/:documentNo/view", requireEmployeePorta
   }
 });
 
-app.post("/api/employee-profile-documents", requireEmployeePortalAuth, async (request, response, next) => {
-  const userName = String(request.appSession?.userName || "").trim();
+app.post("/api/employee-profile-documents", requireAppAuth, async (request, response, next) => {
+  const session = request.appSession;
+  const requestedUser = String(request.body?.employeeUserName || "").trim();
+  const privileged = isPrivilegedForEmployeeDocs(session);
+  if (requestedUser && !privileged && requestedUser.toLowerCase() !== String(session?.userName || "").toLowerCase()) {
+    return response.status(403).json({ ok: false, error: "You can only upload your own documents." });
+  }
+  const userName = requestedUser || String(session?.userName || "").trim();
   const documentTypeName = String(request.body?.documentType || "").trim();
   const typeConfig = employeeDocumentType(documentTypeName);
   const fileName = String(request.body?.fileName || "").trim();
