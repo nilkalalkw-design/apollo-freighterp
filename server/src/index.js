@@ -908,6 +908,7 @@ const resources = {
       field("invoice_value", ["invoiceValue", "invoice_value"]),
       field("remarks", ["remarks"]),
       field("attachments_json", ["attachmentsJson", "attachments_json"]),
+      field("request_details_json", ["requestDetailsJson", "request_details_json"]),
       field("status", ["status"]),
       field("approval_notes", ["approvalNotes", "approval_notes"]),
       field("auto_approved", ["autoApproved", "auto_approved"]),
@@ -1882,6 +1883,7 @@ app.post("/api/customer/shipment-requests", requireCustomerPortalAuth, async (re
     }, account);
     const requestNo = await nextShipmentRequestNo();
     const attachments = Array.isArray(data.attachments) ? data.attachments : Array.isArray(data.attachmentsJson) ? data.attachmentsJson : [];
+    const requestDetails = data.requestDetails && typeof data.requestDetails === "object" ? data.requestDetails : {};
     const row = {
       request_no: requestNo,
       customer_code: account.customer_code,
@@ -1898,6 +1900,7 @@ app.post("/api/customer/shipment-requests", requireCustomerPortalAuth, async (re
       invoice_value: Number(data.invoiceValue || data.invoice_value || 0),
       remarks: String(data.remarks || "").trim(),
       attachments_json: JSON.stringify(attachments),
+      request_details_json: JSON.stringify(requestDetails),
       status,
       approval_notes: status === "AUTO_APPROVED" ? "Auto approved by portal rules." : "",
       auto_approved: status === "AUTO_APPROVED",

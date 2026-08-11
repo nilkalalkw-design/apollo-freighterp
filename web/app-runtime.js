@@ -2237,6 +2237,7 @@ function apiShipmentRequest(row) {
     invoiceValue: Number(row.invoice_value || 0),
     remarks: row.remarks || "",
     attachmentsJson: row.attachments_json || "[]",
+    requestDetailsJson: row.request_details_json || "{}",
     status: row.status || "SUBMITTED",
     approvalNotes: row.approval_notes || "",
     autoApproved: Boolean(row.auto_approved),
@@ -2527,6 +2528,7 @@ function render() {
     "Post Announcement": renderHrAdminAnnouncements
   };
   moduleContent.innerHTML = (renderers[activeModule] || renderDashboard)();
+  if (activeModule === "Customer New Shipment") bindCustomerShipmentRequestForm();
 }
 
 function updateUserContext() {
@@ -2557,7 +2559,67 @@ function updateDateFilterStatus() {
 function portalRows(name) { return Array.isArray(customerPortalData?.[name]) ? customerPortalData[name] : []; }
 function portalStatus(value) { return String(value || "").toUpperCase().replace(/\s+/g, "_"); }
 function renderCustomerDashboard() { const requests = portalRows("shipmentRequests"); const shipments = portalRows("shipments"); const notifications = portalRows("notifications"); const activity = portalRows("activityLogs"); const pending = requests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))).length; const approved = requests.filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))).length; const sentBack = requests.filter((row) => portalStatus(row.status) === "SENT_BACK").length; return "<section class=\"kpi-grid\">" + kpi("Total Shipments", shipments.length + requests.length, "Your shipment records", "customer-total-shipments") + kpi("Pending Requests", pending, "Waiting company review", "customer-pending-requests") + kpi("Approved Requests", approved, "Approved or auto approved", "customer-approved-requests") + kpi("Sent Back Requests", sentBack, "Needs your attention", "customer-sent-back-requests") + kpi("Notifications", notifications.length, "Portal messages", "customer-notifications") + "</section><section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Recent Requests", "Customer Portal") + table("customerRequest", requests.slice(0, 8), customerRequestColumns(), false, "customerRequest:dashboard") + "</article><article class=\"panel\">" + panelHeader("Recent Activity", "Customer Portal") + table("customerActivity", activity.slice(0, 8), customerActivityColumns(), false, "customerActivity:dashboard") + "</article></section>"; }
-function renderCustomerNewShipment() { const hsOptions = portalRows("hsCodeMaster").map((row) => ({ value: row.item_name || row.itemName || "", label: [row.hs_code || row.hsCode, row.item_code || row.itemCode, row.alternate_name || row.alternateName].filter(Boolean).join(" | ") })); return "<section class=\"panel\">" + panelHeader("New Shipment Request", "Customer Portal") + "<form class=\"stack-form\" data-form=\"customer-shipment-request\">" + select("shipmentType", "Shipment Type", ["Export", "Import", "Cross Trade", "Local Delivery"], "Export") + input("origin", "Origin", "") + input("destination", "Destination", "") + input("consignee", "Consignee", currentSession()?.customerName || "") + selectFrom("itemName", "Item Name", hsOptions, "") + input("hsCode", "HS Code", "") + input("itemCode", "Item Code", "") + input("quantity", "Quantity", "1", false, "number") + input("weight", "Weight", "0", false, "number") + input("invoiceValue", "Invoice Value", "0", false, "number") + textarea("remarks", "Remarks", "", false, 3) + "<label>Attachments<input name=\"attachments\" type=\"file\" multiple accept=\".pdf,.jpg,.jpeg,.png,.docx,.xlsx\" /></label><button type=\"submit\">Submit Request</button></form></section>"; }
+function renderCustomerNewShipment() {
+  const hsOptions = portalRows("hsCodeMaster").map((row) => ({ value: row.item_name || row.itemName || "", label: [row.hs_code || row.hsCode, row.item_code || row.itemCode, row.alternate_name || row.alternateName].filter(Boolean).join(" | ") }));
+  const session = currentSession() || {};
+  return `<section class="panel customer-booking-panel">
+    ${panelHeader("New Shipment Request", "Customer Portal")}
+    <p class="customer-booking-intro">Complete the booking details, attach the supporting documents, then select your item and HS code. The cargo calculator uses the same CBM and chargeable-weight rules as the company shipment portal.</p>
+    <form class="stack-form customer-booking-form" data-form="customer-shipment-request" novalidate>
+      <section class="customer-booking-step"><span class="customer-step-number">1</span><div><h3>Booking & Delivery Details</h3><p>Tell us where and when your cargo needs to move.</p></div>
+        <div class="form-section-grid">
+          ${strictSelect("shipmentType", "Shipment Type", ["Export", "Import", "Cross Trade", "Local Delivery"], "Export")}
+          ${strictSelect("shipmentVia", "Shipment Via", ["Air", "Sea", "Land"], "")}
+          ${input("origin", "Origin", "")}
+          ${input("destination", "Destination", "")}
+          ${input("pickupDate", "Preferred Pickup Date", "", false, "date")}
+          ${input("deliveryDate", "Requested Delivery Date", "", false, "date")}
+          ${input("consignee", "Consignee / Delivery Company", "")}
+          ${input("consigneeContactPerson", "Delivery Contact Person", "")}
+          ${input("consigneeMobile", "Delivery Mobile", "")}
+          ${input("deliveryLocation", "Delivery Location", "")}
+          ${textarea("deliveryAddress", "Delivery Address", "", false, 2)}
+          ${input("customerReference", "Customer Reference", "")}
+        </div>
+      </section>
+      <section class="customer-booking-step customer-document-step"><span class="customer-step-number">2</span><div><h3>Upload Shipment Documents</h3><p>Upload invoice, packing list, or other supporting files first. This unlocks item and HS-code selection.</p></div>
+        <label class="customer-file-picker">Shipment Documents <input name="attachments" type="file" multiple required accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" /><small data-customer-document-status>Select at least one file. Maximum 5 files, 10 MB each.</small></label>
+      </section>
+      <section class="customer-booking-step" data-customer-hs-step hidden><span class="customer-step-number">3</span><div><h3>Item & Customs Information</h3><p>Select the item from the approved item list. Its HS code is filled automatically.</p></div>
+        <div class="form-section-grid">
+          ${selectFrom("itemName", "Item Name", hsOptions, "")}
+          ${input("hsCode", "HS Code", "", true)}
+          ${input("itemCode", "Item Code", "", true)}
+          ${input("invoiceValue", "Declared Invoice Value", "", false, "number")}
+          ${textarea("remarks", "Special Instructions / Remarks", "", false, 3)}
+        </div>
+      </section>
+      <section class="customer-booking-step" data-customer-cargo><span class="customer-step-number">4</span><div><h3>Cargo Dimensions & Chargeable Weight</h3><p>Add every pallet, carton, or package. CBM and chargeable weight calculate automatically.</p></div>
+        <input type="hidden" name="cargoItemsJson" value="[]" />
+        <div class="tariff-charge-entry cargo-entry">
+          ${strictSelect("cargoPackageType", "Package Type", ["Pallet", "Carton", "Crate", "Box", "Package", "Drum"], "Pallet")}
+          ${input("cargoQuantity", "Quantity", "1", false, "number")}
+          ${input("cargoLength", "Length", "", false, "number")}
+          ${input("cargoWidth", "Width", "", false, "number")}
+          ${input("cargoHeight", "Height", "", false, "number")}
+          ${strictSelect("cargoDimensionUnit", "Unit", ["CM", "M", "INCH"], "CM")}
+          ${input("cargoWeightPerUnit", "Weight Per Unit (KG)", "", false, "number")}
+          <button type="button" class="secondary-button" data-customer-add-cargo>Add Cargo</button>
+        </div>
+        <div class="tariff-charge-table" data-customer-cargo-lines></div>
+        <div class="form-section-grid cargo-totals">
+          ${strictSelect("volumeCategory", "CBM Divisor", volumeCategoryOptions(), "1 CBM = 250 KG")}
+          ${input("cbm", "Grand Total CBM", "0", true, "number")}
+          ${input("actualKg", "Total Gross Weight (KG)", "0", true, "number")}
+          ${input("chargeableKg", "Chargeable Weight (KG)", "0", true, "number")}
+          <input type="hidden" name="pieces" value="0" />
+          <input type="hidden" name="chargeableDivisor" value="250" />
+        </div>
+      </section>
+      <div class="action-row"><button type="submit">Submit Shipment Request</button></div>
+    </form>
+  </section>`;
+}
 function renderCustomerShipments() { return "<section class=\"split-grid wide-left\"><article class=\"panel\">" + panelHeader("Shipment Requests", "History") + table("customerRequest", portalRows("shipmentRequests"), customerRequestColumns(), false) + "</article><article class=\"panel\">" + panelHeader("Company Shipments", "Tracking") + table("customerShipment", portalRows("shipments"), customerShipmentColumns(), false) + "</article></section>"; }
 function renderCustomerTracking() { return "<section class=\"panel\">" + panelHeader("Tracking", "Customer Portal") + table("customerShipment", portalRows("shipments"), customerShipmentColumns(), false) + "</section>"; }
 function renderCustomerProfile() { const session = currentSession() || {}; return "<section class=\"panel\">" + panelHeader("Profile", "Customer Portal") + "<form class=\"stack-form\" data-form=\"customer-profile\">" + input("customerCode", "Customer Code", session.customerCode || "", true) + input("customerName", "Customer Name", session.customerName || "", true) + input("email", "Email", session.email || "") + passwordField("password", "New Password", "") + "<button type=\"submit\">Save Profile</button></form></section>"; }
@@ -6145,6 +6207,7 @@ function formSection(title, body, collapsible = false, open = false) {
 
 function shipmentRequestDialogBody(record) {
   const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
+  const requestDetails = parseJsonMeta(record?.requestDetailsJson || "{}");
   const attachments = (() => {
     try {
       const parsed = JSON.parse(record?.attachmentsJson || "[]");
@@ -6163,15 +6226,28 @@ function shipmentRequestDialogBody(record) {
     `)}
     ${formSection("Shipment Details", `
       ${input("shipmentType", "Shipment Type", fieldValue("shipmentType"), true)}
+      ${input("shipmentVia", "Shipment Via", requestDetails.shipmentVia || "", true)}
       ${input("origin", "Origin", fieldValue("origin"), true)}
       ${input("destination", "Destination", fieldValue("destination"), true)}
       ${input("consignee", "Consignee", fieldValue("consignee"), true)}
+      ${input("consigneeContactPerson", "Delivery Contact Person", requestDetails.consigneeContactPerson || "", true)}
+      ${input("consigneeMobile", "Delivery Mobile", requestDetails.consigneeMobile || "", true)}
+      ${textarea("deliveryAddress", "Delivery Address", requestDetails.deliveryAddress || "", true, 2)}
+      ${input("pickupDate", "Preferred Pickup Date", requestDetails.pickupDate || "", true)}
+      ${input("deliveryDate", "Requested Delivery Date", requestDetails.deliveryDate || "", true)}
       ${input("itemName", "Item Name", fieldValue("itemName"), true)}
       ${input("hsCode", "HS Code", fieldValue("hsCode"), true)}
       ${input("itemCode", "Item Code", fieldValue("itemCode"), true)}
       ${input("quantity", "Quantity", fieldValue("quantity"), true)}
       ${input("weight", "Weight (KG)", fieldValue("weight"), true)}
       ${input("invoiceValue", "Invoice Value", fieldValue("invoiceValue"), true)}
+    `)}
+    ${formSection("Cargo Calculation", `
+      ${input("pieces", "Total Pieces", requestDetails.pieces || fieldValue("quantity"), true)}
+      ${input("cbm", "Grand Total CBM", requestDetails.cbm || "0", true)}
+      ${input("actualKg", "Gross Weight (KG)", requestDetails.actualKg || fieldValue("weight"), true)}
+      ${input("chargeableKg", "Chargeable Weight (KG)", requestDetails.chargeableKg || "0", true)}
+      ${input("volumeCategory", "CBM Divisor", requestDetails.volumeCategory || "", true)}
     `)}
     ${textarea("remarks", "Customer Remarks", fieldValue("remarks"), true, 2)}
     ${attachments.length ? `<div class="form-section"><h3>Attachments</h3>${attachments.map((file) => {
@@ -8853,14 +8929,31 @@ function convertShipmentRequestToShipment(id) {
   editing = null;
   dialogState = null;
   const directionMap = { export: "Export", import: "Import", consolidation: "Consolidation" };
+  const requestDetails = parseJsonMeta(record.requestDetailsJson || "{}");
   const prefillRecord = {
     customer: record.customerName || "",
     shipmentDirection: directionMap[String(record.shipmentType || "").toLowerCase()] || "",
     origin: record.origin || "",
     destination: record.destination || "",
     consigneeName: record.consignee || "",
+    consigneeContactPerson: requestDetails.consigneeContactPerson || "",
+    consigneeMobile: requestDetails.consigneeMobile || "",
+    deliveryLocation: requestDetails.deliveryLocation || "",
+    deliveryAddress: requestDetails.deliveryAddress || "",
+    pickupDate: requestDetails.pickupDate || "",
+    deliveryDate: requestDetails.deliveryDate || "",
+    shipmentVia: requestDetails.shipmentVia || "",
+    cargoItemsJson: requestDetails.cargoItemsJson || "[]",
+    palletDimensionsJson: requestDetails.cargoItemsJson || "[]",
+    pieces: Number(requestDetails.pieces || record.quantity || 0),
+    cbm: Number(requestDetails.cbm || 0),
+    actualKg: Number(requestDetails.actualKg || record.weight || 0),
+    chargeableKg: Number(requestDetails.chargeableKg || 0),
+    volumeCategory: requestDetails.volumeCategory || "1 CBM = 250 KG",
+    chargeableDivisor: Number(requestDetails.chargeableDivisor || 250),
     natureOfGoods: [record.itemName, record.hsCode ? `HS Code: ${record.hsCode}` : ""].filter(Boolean).join(" - "),
-    customerReference: record.itemCode || "",
+    customerReference: requestDetails.customerReference || record.itemCode || "",
+    shipmentRemarks: record.remarks || "",
     branch: defaultUserBranch()
   };
   openDialog({
@@ -10182,9 +10275,30 @@ async function removeJobFromLoad(loadNo, jobNo) {
 async function submitCustomerShipmentRequest(data, form) {
   const session = currentSession();
   if (!session?.token) { notifyDenied("Login required", "Please login again."); return false; }
+  const requiredFields = ["shipmentType", "shipmentVia", "origin", "destination", "pickupDate", "consignee", "consigneeContactPerson", "consigneeMobile", "deliveryLocation", "deliveryAddress"];
+  for (const fieldName of requiredFields) {
+    const field = form.querySelector(`[name='${fieldName}']`);
+    if (!String(field?.value || "").trim()) {
+      notifyDenied("Missing booking details", `Please complete ${field?.closest("label")?.textContent?.trim() || fieldName}.`);
+      field?.focus();
+      return false;
+    }
+  }
   const files = Array.from(form.querySelector("input[type='file']")?.files || []);
+  if (!files.length) { notifyDenied("Documents required", "Upload at least one shipment document before selecting the item and submitting the request."); return false; }
   if (files.length > 5) throw new Error("You can upload a maximum of 5 attachments per shipment request.");
-  const result = await fetchJson("/api/customer/shipment-requests", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify({ ...data, attachments: [] }) });
+  if (!String(data.itemName || "").trim() || !String(data.hsCode || "").trim()) { notifyDenied("Item required", "Select an item after uploading the documents so its HS code can be applied."); return false; }
+  const cargoItems = parsePalletDimensions(data.cargoItemsJson || "[]");
+  if (!cargoItems.length) { notifyDenied("Cargo details required", "Add at least one pallet, carton, or package before submitting."); return false; }
+  const requestDetails = {
+    shipmentVia: data.shipmentVia || "", pickupDate: data.pickupDate || "", deliveryDate: data.deliveryDate || "",
+    consigneeContactPerson: data.consigneeContactPerson || "", consigneeMobile: data.consigneeMobile || "",
+    deliveryLocation: data.deliveryLocation || "", deliveryAddress: data.deliveryAddress || "", customerReference: data.customerReference || "",
+    cargoItemsJson: data.cargoItemsJson || "[]", pieces: Number(data.pieces || 0), cbm: Number(data.cbm || 0),
+    actualKg: Number(data.actualKg || 0), chargeableKg: Number(data.chargeableKg || 0),
+    volumeCategory: data.volumeCategory || "1 CBM = 250 KG", chargeableDivisor: Number(data.chargeableDivisor || 0)
+  };
+  const result = await fetchJson("/api/customer/shipment-requests", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify({ ...data, quantity: Number(data.pieces || 0), weight: Number(data.actualKg || 0), attachments: [], requestDetails }) });
   const requestNo = result?.row?.requestNo || result?.row?.request_no;
   if (!requestNo) throw new Error("Shipment request was created but its reference number was not returned.");
   for (const file of files) {
@@ -10200,6 +10314,73 @@ async function submitCustomerShipmentRequest(data, form) {
   await syncCustomerPortal();
   activeModule = "Customer Shipments";
   return true;
+}
+
+function bindCustomerShipmentRequestForm() {
+  const form = moduleContent.querySelector("form[data-form='customer-shipment-request']");
+  if (!form) return;
+  const documentField = form.querySelector("input[name='attachments']");
+  const documentStatus = form.querySelector("[data-customer-document-status]");
+  const hsStep = form.querySelector("[data-customer-hs-step]");
+  const itemField = form.querySelector("input[name='itemName']");
+  const hsCodeField = form.querySelector("input[name='hsCode']");
+  const itemCodeField = form.querySelector("input[name='itemCode']");
+  const masterItems = portalRows("hsCodeMaster");
+  const syncDocuments = () => {
+    const files = Array.from(documentField?.files || []);
+    const valid = files.length > 0 && files.length <= 5 && files.every((file) => file.size <= 10 * 1024 * 1024);
+    if (hsStep) hsStep.hidden = !valid;
+    if (documentStatus) documentStatus.textContent = !files.length ? "Select at least one file. Maximum 5 files, 10 MB each." : valid ? `${files.length} document(s) selected. You can now select the item and HS code.` : "Use up to 5 files, each 10 MB or smaller.";
+  };
+  const syncHsCode = () => {
+    const selected = masterItems.find((row) => String(row.item_name || row.itemName || "").trim().toLowerCase() === String(itemField?.value || "").trim().toLowerCase());
+    if (!selected) return;
+    if (hsCodeField) hsCodeField.value = selected.hs_code || selected.hsCode || "";
+    if (itemCodeField) itemCodeField.value = selected.item_code || selected.itemCode || "";
+  };
+  documentField?.addEventListener("change", syncDocuments);
+  itemField?.addEventListener("change", syncHsCode);
+  itemField?.addEventListener("input", syncHsCode);
+  syncDocuments();
+
+  const cargoRoot = form.querySelector("[data-customer-cargo]");
+  if (!cargoRoot) return;
+  const linesField = cargoRoot.querySelector("input[name='cargoItemsJson']");
+  const list = cargoRoot.querySelector("[data-customer-cargo-lines]");
+  const fields = Object.fromEntries(["cargoPackageType", "cargoQuantity", "cargoLength", "cargoWidth", "cargoHeight", "cargoDimensionUnit", "cargoWeightPerUnit", "volumeCategory", "cbm", "actualKg", "chargeableKg", "pieces", "chargeableDivisor"].map((name) => [name, form.querySelector(`[name='${name}']`)]));
+  const lines = parsePalletDimensions(linesField?.value || "[]");
+  const syncCargo = () => {
+    const category = fields.volumeCategory?.value || "1 CBM = 250 KG";
+    const divisor = volumeDivisorFor(category);
+    const pieces = lines.reduce((sum, line) => sum + Number(line.count || 0), 0);
+    const gross = lines.reduce((sum, line) => sum + Number(line.weightKg || 0), 0);
+    const rawCbm = lines.reduce((sum, line) => sum + Number(line.total || 0), 0);
+    const cbm = roundUpToHalf(rawCbm);
+    const volumeWeight = isSameAsGrossWeightCategory(category) ? gross : cbm * divisor;
+    const chargeable = roundUpToWholeKg(Math.max(gross, volumeWeight));
+    if (linesField) linesField.value = JSON.stringify(lines);
+    if (fields.pieces) fields.pieces.value = String(pieces);
+    if (fields.cbm) fields.cbm.value = String(cbm);
+    if (fields.actualKg) fields.actualKg.value = String(Number(gross.toFixed(3)));
+    if (fields.chargeableKg) fields.chargeableKg.value = String(chargeable);
+    if (fields.chargeableDivisor) fields.chargeableDivisor.value = isSameAsGrossWeightCategory(category) ? "" : String(divisor);
+    if (list) list.innerHTML = lines.length ? `<div class="table-wrap"><table class="tariff-charges-table"><thead><tr><th>Package</th><th>Qty</th><th>Dimensions</th><th>Gross KG</th><th>CBM</th><th></th></tr></thead><tbody>${lines.map((line, index) => `<tr><td>${escapeHtml(line.packageType)}</td><td>${line.count}</td><td>${line.length} × ${line.width} × ${line.height} ${escapeHtml(line.dimensionUnit)}</td><td>${money(line.weightKg)}</td><td>${money(line.total)}</td><td><button type="button" class="ghost-button" data-customer-remove-cargo="${index}">Remove</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="empty-state">No cargo added yet.</p>`;
+  };
+  cargoRoot.addEventListener("click", (event) => {
+    const add = event.target.closest("[data-customer-add-cargo]");
+    if (add) {
+      const count = Number(fields.cargoQuantity?.value || 0); const length = Number(fields.cargoLength?.value || 0); const width = Number(fields.cargoWidth?.value || 0); const height = Number(fields.cargoHeight?.value || 0); const weight = Number(fields.cargoWeightPerUnit?.value || 0);
+      if (count <= 0 || length <= 0 || width <= 0 || height <= 0 || weight < 0) { notifyDenied("Cargo line not added", "Enter quantity, dimensions, and gross weight per unit."); return; }
+      const dimensionUnit = fields.cargoDimensionUnit?.value || "CM";
+      lines.push({ packageType: fields.cargoPackageType?.value || "Package", count, quantity: count, length, width, height, dimensionUnit, weight, weightKg: weight * count, totalWeight: weight * count, total: cargoVolumeCbm(count, length, width, height, dimensionUnit) });
+      syncCargo();
+      return;
+    }
+    const remove = event.target.closest("[data-customer-remove-cargo]");
+    if (remove) { lines.splice(Number(remove.dataset.customerRemoveCargo), 1); syncCargo(); }
+  });
+  fields.volumeCategory?.addEventListener("change", syncCargo);
+  syncCargo();
 }
 
 async function updateCustomerProfile(data) {
