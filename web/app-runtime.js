@@ -5342,7 +5342,7 @@ function openRecord(type, id, presetRecord) {
             shipmentVia: shipmentViaValue(state.shipments.find((shipmentItem) => shipmentItem.jobNo === (data.shipmentNo || record.shipmentNo))),
             from: (() => { const s = state.shipments.find((shipmentItem) => shipmentItem.jobNo === (data.shipmentNo || record.shipmentNo)); return s?.origin || s?.shipperName || s?.pickupLocation || ""; })(),
             to: (() => { const s = state.shipments.find((shipmentItem) => shipmentItem.jobNo === (data.shipmentNo || record.shipmentNo)); return s?.destination || s?.consigneeName || s?.deliveryLocation || ""; })(),
-            loadType: (() => { const s = state.shipments.find((shipmentItem) => shipmentItem.jobNo === (data.shipmentNo || record.shipmentNo)); return s?.loadType || ""; })(),
+            loadType: shipmentLoadType(state.shipments.find((shipmentItem) => shipmentItem.jobNo === (data.shipmentNo || record.shipmentNo))) || String(invoiceSnapshot.loadType || invoiceSnapshot.load_type || "").trim(),
             grossWeight: Number(data.grossWeight || record.grossWeight || invoiceSnapshot.grossWeight || 0),
             volumeWeight: Number(data.volumeWeight || record.volumeWeight || invoiceSnapshot.volumeWeight || 0)
           })
@@ -7562,7 +7562,7 @@ function invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercen
     customerCode: shipmentItem?.customerCode || '',
     customerName: shipmentItem?.customer || '',
     shipmentNo: shipmentItem?.jobNo || '',
-    loadType: String(shipmentItem?.loadType || "").trim(),
+    loadType: shipmentLoadType(shipmentItem),
     shipmentVia: shipmentViaValue(shipmentItem),
     tariffNo: tariffItem?.tariffNo || '',
     tariffName: tariffItem?.customer || '',
@@ -8589,8 +8589,20 @@ function shipmentViaValue(shipmentItem) {
   return viaByService[service] || "";
 }
 
+function shipmentLoadType(shipmentItem) {
+  if (!shipmentItem) return "";
+  const shipmentMeta = parseJsonMeta(shipmentItem.notes || shipmentItem.meta || "{}");
+  return String(
+    shipmentItem.loadType ||
+    shipmentItem.load_type ||
+    shipmentMeta.loadType ||
+    shipmentMeta.load_type ||
+    ""
+  ).trim();
+}
+
 function invoiceShipVia(record, shipmentItem, snapshot = {}) {
-  return String(shipmentItem?.loadType || snapshot.loadType || "").trim();
+  return shipmentLoadType(shipmentItem) || String(snapshot.loadType || snapshot.load_type || "").trim();
 }
 
 function invoiceFromTo(shipmentItem, snapshot = {}) {
@@ -10052,7 +10064,7 @@ async function createInvoice(data) {
       shipmentVia: shipmentViaValue(shipmentItem),
       from: shipmentItem?.origin || shipmentItem?.shipperName || shipmentItem?.pickupLocation || "",
       to: shipmentItem?.destination || shipmentItem?.consigneeName || shipmentItem?.deliveryLocation || "",
-      loadType: shipmentItem?.loadType || "",
+      loadType: shipmentLoadType(shipmentItem) || String(invoiceSnapshot.loadType || invoiceSnapshot.load_type || "").trim(),
       grossWeight: Number(data.grossWeight || shipmentItem?.actualKg || invoiceSnapshot.grossWeight || 0),
       volumeWeight: Number(data.volumeWeight || shipmentItem?.cbm || invoiceSnapshot.volumeWeight || 0)
     })
