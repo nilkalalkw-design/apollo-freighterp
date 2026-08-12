@@ -3373,7 +3373,7 @@ function shipmentStatusExpandRowMarkup(row, colSpan) {
     .filter((entry) => entry.jobNo === jobNo)
     .sort((left, right) => new Date(left.updatedAt || 0) - new Date(right.updatedAt || 0));
   return `<tr class="status-expand-row"><td colspan="${colSpan}">
-    <div class="status-expand-panel">
+    <div class="status-expand-panel" data-status-panel-job="${escapeHtml(jobNo)}">
       <div class="status-expand-panel-header">
         <h4>Update Status - ${escapeHtml(jobNo)}</h4>
         <button type="button" class="ghost-button" data-action="toggle-status-row" data-id="${escapeHtml(jobNo)}">Collapse ▲</button>
@@ -4841,9 +4841,11 @@ async function handleModuleClick(event) {
   }
 
   if (action === "toggle-status-row") {
+    const viewport = captureStatusPanelViewport(id);
     state.ui.expandedStatusJob = state.ui.expandedStatusJob === id ? "" : id;
     saveState();
     render();
+    restoreStatusPanelViewport(viewport);
     return;
   }
 
@@ -5010,6 +5012,24 @@ function handleModuleKeydown(event) {
 
 function selectedRecordId(type) {
   return moduleContent.querySelector(`[data-load-select='${type}']`)?.value || "";
+}
+
+function statusPanelSelector(jobNo) {
+  return `[data-status-panel-job="${CSS.escape(String(jobNo || ""))}"]`;
+}
+
+function captureStatusPanelViewport(jobNo) {
+  const panel = moduleContent.querySelector(statusPanelSelector(jobNo));
+  return { jobNo: String(jobNo || ""), scrollY: window.scrollY, top: panel?.getBoundingClientRect().top ?? null };
+}
+
+function restoreStatusPanelViewport(viewport) {
+  if (!viewport?.jobNo) return;
+  window.requestAnimationFrame(() => {
+    const panel = moduleContent.querySelector(statusPanelSelector(viewport.jobNo));
+    if (panel && viewport.top !== null) window.scrollBy(0, panel.getBoundingClientRect().top - viewport.top);
+    else window.scrollTo(0, viewport.scrollY || 0);
+  });
 }
 
 function selectedNewRecordType(type) {
@@ -7527,6 +7547,8 @@ function invoiceSnapshotFromSelection(shipmentItem, tariffItem, lines, taxPercen
     customerCode: shipmentItem?.customerCode || '',
     customerName: shipmentItem?.customer || '',
     shipmentNo: shipmentItem?.jobNo || '',
+    loadType: String(shipmentItem?.loadType || "").trim(),
+    shipmentVia: shipmentViaValue(shipmentItem),
     tariffNo: tariffItem?.tariffNo || '',
     tariffName: tariffItem?.customer || '',
     chargeableWeight: effectiveChargeableWeightForShipment(shipmentItem),
@@ -8455,6 +8477,7 @@ function qrMarkup(value) {
 
 function invoiceDocumentHtml(record) {
   const shipmentItem = state.shipments.find((row) => row.jobNo === record.shipmentNo);
+  const invoiceSnapshot = parseJsonMeta(record.invoiceSnapshotJson || "{}");
   const tariffItem = assignedTariffForShipment(shipmentItem);
   const customerItem = state.customers.find((row) => row.name === record.customer || row.code === shipmentItem?.customerCode);
   const invoiceLines = invoiceChargeLines(record, shipmentItem, tariffItem);
@@ -8478,7 +8501,7 @@ function invoiceDocumentHtml(record) {
       </tbody></table>
       <table class="invoice-info-table"><tbody>
         <tr><th>SHIP VIA</th><th>TRACKING NO.</th><th>FROM / TO</th><th>GR / VOL WEIGHT</th><th>JOB NO.</th></tr>
-        <tr><td>${escapeHtml(shipmentItem?.loadType || "")}</td><td>${escapeHtml(shipmentItem?.airwayBillNo || shipmentItem?.tcnNumber || "")}</td><td>${escapeHtml(invoiceFromTo(shipmentItem))}</td><td>${escapeHtml(invoiceWeightText(shipmentItem))}</td><td>${escapeHtml(record.shipmentNo)}</td></tr>
+        <tr><td>${escapeHtml(invoiceShipVia(record, shipmentItem, invoiceSnapshot))}</td><td>${escapeHtml(shipmentItem?.airwayBillNo || shipmentItem?.tcnNumber || invoiceSnapshot.airwayBillNo || invoiceSnapshot.tcnNumber || "")}</td><td>${escapeHtml(invoiceFromTo(shipmentItem, invoiceSnapshot))}</td><td>${escapeHtml(invoiceWeightText(shipmentItem, invoiceSnapshot))}</td><td>${escapeHtml(record.shipmentNo)}</td></tr>
       </tbody></table>
       <table class="invoice-lines-table">
         <thead><tr><th>ACTIVITY</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead>
@@ -8551,17 +8574,19 @@ function shipmentViaValue(shipmentItem) {
   return viaByService[service] || "";
 }
 
-function invoiceFromTo(shipmentItem) {
-  if (!shipmentItem) return "";
-  const from = shipmentItem.origin || shipmentItem.shipperName || shipmentItem.pickupLocation || "";
-  const to = shipmentItem.destination || shipmentItem.consigneeName || shipmentItem.deliveryLocation || "";
+function invoiceShipVia(record, shipmentItem, snapshot = {}) {
+  return String(shipmentItem?.loadType || snapshot.loadType || shipmentItem?.shipmentVia || snapshot.shipmentVia || "").trim();
+}
+
+function invoiceFromTo(shipmentItem, snapshot = {}) {
+  const from = shipmentItem?.origin || shipmentItem?.shipperName || shipmentItem?.pickupLocation || snapshot.from || "";
+  const to = shipmentItem?.destination || shipmentItem?.consigneeName || shipmentItem?.deliveryLocation || snapshot.to || "";
   return [from, to].filter(Boolean).join(" / ");
 }
 
-function invoiceWeightText(shipmentItem) {
-  if (!shipmentItem) return "";
-  const gross = Number(shipmentItem.actualKg || 0);
-  const chargeable = effectiveChargeableWeightForShipment(shipmentItem);
+function invoiceWeightText(shipmentItem, snapshot = {}) {
+  const gross = Number(shipmentItem?.actualKg ?? snapshot.grossWeight ?? 0);
+  const chargeable = shipmentItem ? effectiveChargeableWeightForShipment(shipmentItem) : Number(snapshot.chargeableWeight || 0);
   return `${money(gross || chargeable)} KGS`;
 }
 
@@ -9371,6 +9396,7 @@ async function handleModuleSubmit(event) {
   const data = Object.fromEntries(new FormData(form).entries());
   rememberDropdownOptions(data);
   const type = form.dataset.form;
+  const statusViewport = type === "status" ? captureStatusPanelViewport(data.jobNo) : null;
   const handlers = {
     shipment: () => createShipment(data),
     load: () => createLoad(data),
@@ -9396,6 +9422,7 @@ async function handleModuleSubmit(event) {
   }
   saveState();
   render();
+  if (statusViewport) restoreStatusPanelViewport(statusViewport);
 }
 
 async function updateSettings(data) {
