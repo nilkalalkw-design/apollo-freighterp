@@ -900,6 +900,7 @@ const resources = {
       field("invoice_value", ["invoiceValue", "invoice_value"]),
       field("remarks", ["remarks"]),
       field("attachments_json", ["attachmentsJson", "attachments_json"]),
+      field("request_details_json", ["requestDetailsJson", "request_details_json"]),
       field("status", ["status"]),
       field("approval_notes", ["approvalNotes", "approval_notes"]),
       field("auto_approved", ["autoApproved", "auto_approved"]),
@@ -1489,16 +1490,18 @@ async function updateRow(config, id, body) {
   if (config.table === "shipment_requests") {
     const row = result.rows[0];
     const status = String(row.status || "").toUpperCase();
-    if (status === "APPROVED" || status === "SENT_BACK") {
+    if (status === "APPROVED" || status === "SENT_BACK" || status === "REJECTED") {
       try {
         await createCustomerNotification({
           userType: "customer",
           customerCode: row.customer_code || "",
-          type: status === "APPROVED" ? "REQUEST_APPROVED" : "REQUEST_SENT_BACK",
-          title: status === "APPROVED" ? `Shipment request ${row.request_no} approved` : `Shipment request ${row.request_no} needs your attention`,
+          type: status === "APPROVED" ? "REQUEST_APPROVED" : status === "REJECTED" ? "REQUEST_REJECTED" : "REQUEST_SENT_BACK",
+          title: status === "APPROVED" ? `Shipment request ${row.request_no} approved` : status === "REJECTED" ? `Shipment request ${row.request_no} rejected` : `Shipment request ${row.request_no} needs your attention`,
           message: status === "APPROVED"
             ? `Your shipment request ${row.request_no} (${row.origin} to ${row.destination}) has been approved.${row.approval_notes ? ` Note: ${row.approval_notes}` : ""}`
-            : `Your shipment request ${row.request_no} (${row.origin} to ${row.destination}) was sent back for review.${row.approval_notes ? ` Details: ${row.approval_notes}` : ""}`
+            : status === "REJECTED"
+              ? `Your shipment request ${row.request_no} (${row.origin} to ${row.destination}) was rejected.${row.approval_notes ? ` Reason: ${row.approval_notes}` : ""}`
+              : `Your shipment request ${row.request_no} (${row.origin} to ${row.destination}) was sent back for review.${row.approval_notes ? ` Details: ${row.approval_notes}` : ""}`
         });
       } catch (notificationError) {
         console.error("Failed to create customer notification for shipment request update:", notificationError);
@@ -1878,11 +1881,9 @@ app.post("/api/customer/shipment-requests", requireCustomerPortalAuth, async (re
       [String(data.itemName || data.item_code || data.itemCode || "").trim()]
     );
     const hsCode = hsCodeResult.rows[0] || null;
-    const status = await evaluateShipmentRequestStatus({
-      ...data,
-      hsCode: data.hsCode || hsCode?.hs_code || "",
-      itemCode: data.itemCode || hsCode?.item_code || ""
-    }, account);
+    // Customer portal bookings always enter the company review queue.  An unmatched
+    // HS code is allowed, so operations can review and correct it before approval.
+    const status = "PENDING_REVIEW";
     const requestNo = await nextShipmentRequestNo();
     const attachments = Array.isArray(data.attachments) ? data.attachments : Array.isArray(data.attachmentsJson) ? data.attachmentsJson : [];
     const row = {
@@ -1901,9 +1902,10 @@ app.post("/api/customer/shipment-requests", requireCustomerPortalAuth, async (re
       invoice_value: Number(data.invoiceValue || data.invoice_value || 0),
       remarks: String(data.remarks || "").trim(),
       attachments_json: JSON.stringify(attachments),
+      request_details_json: JSON.stringify(data.requestDetails || data.request_details || {}),
       status,
-      approval_notes: status === "AUTO_APPROVED" ? "Auto approved by portal rules." : "",
-      auto_approved: status === "AUTO_APPROVED",
+      approval_notes: "",
+      auto_approved: false,
       created_by: request.customerSession.userName
     };
 
@@ -1950,6 +1952,106 @@ app.post("/api/customer/shipment-requests", requireCustomerPortalAuth, async (re
       });
     }
 
+    return next(error);
+  }
+});
+
+app.put("/api/customer/shipment-requests/:requestNo", requireCustomerPortalAuth, async (request, response, next) => {
+  const requestNo = String(request.params.requestNo || "").trim();
+  const data = request.body || {};
+  try {
+    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
+    if (!account || !requestNo) return response.status(404).json({ ok: false, error: "Shipment request not found." });
+
+    const current = await query(
+      `select request_no, status, attachments_json
+       from shipment_requests
+       where lower(request_no) = lower($1) and lower(customer_code) = lower($2)
+       limit 1`,
+      [requestNo, account.customer_code]
+    );
+    const existing = current.rows[0];
+    if (!existing) return response.status(404).json({ ok: false, error: "Shipment request not found." });
+    if (String(existing.status || "").toUpperCase() !== "SENT_BACK") {
+      return response.status(409).json({ ok: false, error: "Only a request sent back by the company can be edited and re-submitted." });
+    }
+
+    const saved = await query(
+      `update shipment_requests
+       set shipment_type = $1, origin = $2, destination = $3, consignee = $4,
+           item_name = $5, hs_code = $6, item_code = $7, quantity = $8, weight = $9,
+           invoice_value = $10, remarks = $11, request_details_json = $12,
+           status = 'PENDING_REVIEW', approval_notes = '', auto_approved = false, updated_at = now()
+       where lower(request_no) = lower($13) and lower(customer_code) = lower($14)
+       returning *`,
+      [
+        String(data.shipmentType || "").trim(), String(data.origin || "").trim(), String(data.destination || "").trim(), String(data.consignee || "").trim(),
+        String(data.itemName || "").trim(), String(data.hsCode || "").trim(), String(data.itemCode || "").trim(), Number(data.quantity || 0), Number(data.weight || 0),
+        Number(data.invoiceValue || 0), String(data.remarks || "").trim(), JSON.stringify(data.requestDetails || data.request_details || {}), requestNo, account.customer_code
+      ]
+    );
+
+    await Promise.all([
+      createCustomerNotification({ userId: request.customerSession.userName, customerCode: account.customer_code, userType: "customer", type: "Shipment Re-submitted", title: `Shipment request ${requestNo} re-submitted`, message: "Your corrected shipment request was sent to the company for review." }),
+      createCustomerNotification({ userId: "admin", customerCode: account.customer_code, userType: "company", type: "Shipment Re-submitted", title: `Customer request ${requestNo} re-submitted`, message: (account.customer_name || account.customer_code) + " re-submitted a corrected shipment request." }),
+      createCustomerActivity({ customerUserId: request.customerSession.customerUserId, customerCode: account.customer_code, action: "Shipment Re-submission", description: "Re-submitted " + requestNo + " for company review", ipAddress: request.ip || "" })
+    ]);
+    return response.json({ ok: true, row: saved.rows[0] });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/customer/shipment-requests/:requestNo/documents", requireCustomerPortalAuth, async (request, response, next) => {
+  const requestNo = String(request.params.requestNo || "").trim();
+  const fileName = String(request.body?.fileName || "").trim();
+  const mimeType = String(request.body?.mimeType || "").toLowerCase().trim();
+  const contentBase64 = String(request.body?.contentBase64 || "").replace(/^data:[^,]+,/, "").trim();
+  const allowedTypes = new Set(["application/pdf", "image/jpeg"]);
+  if (!requestNo || !fileName || !contentBase64 || !allowedTypes.has(mimeType)) {
+    return response.status(400).json({ ok: false, error: "Shipment documents must be PDF, JPG, or JPEG files." });
+  }
+  try {
+    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
+    if (!account) return response.status(404).json({ ok: false, error: "Customer account not found." });
+    const requestRow = await query(
+      `select request_no, status, attachments_json from shipment_requests
+       where lower(request_no) = lower($1) and lower(customer_code) = lower($2) limit 1`,
+      [requestNo, account.customer_code]
+    );
+    const booking = requestRow.rows[0];
+    if (!booking) return response.status(404).json({ ok: false, error: "Shipment request not found." });
+    if (["APPROVED", "AUTO_APPROVED", "COMPLETED", "REJECTED", "CANCELLED"].includes(String(booking.status || "").toUpperCase())) {
+      return response.status(409).json({ ok: false, error: "Documents are locked because this request is no longer editable." });
+    }
+    let attachments = [];
+    try { attachments = JSON.parse(booking.attachments_json || "[]"); } catch { attachments = []; }
+    if (!Array.isArray(attachments)) attachments = [];
+    if (attachments.length >= 3) return response.status(400).json({ ok: false, error: "A maximum of three shipment documents is allowed." });
+    const fileBuffer = Buffer.from(contentBase64, "base64");
+    if (!fileBuffer.length || fileBuffer.length > 10 * 1024 * 1024) return response.status(400).json({ ok: false, error: "Each shipment document must be 10 MB or smaller." });
+    const cloudinary = cloudinaryConfig();
+    if (!cloudinary) return response.status(503).json({ ok: false, error: "Cloudinary is not configured on the server." });
+    const kind = mimeType === "application/pdf" ? "raw" : "image";
+    const timestamp = Math.floor(Date.now() / 1000);
+    const folder = "apollo-freight/customer-shipments";
+    const publicId = `${safeEmployeeDocumentPart(requestNo)}-${attachments.length + 1}`;
+    const signature = crypto.createHash("sha1").update(`folder=${folder}&overwrite=true&public_id=${publicId}&timestamp=${timestamp}` + cloudinary.apiSecret).digest("hex");
+    const form = new FormData();
+    form.append("file", new Blob([fileBuffer], { type: mimeType }), fileName);
+    form.append("api_key", cloudinary.apiKey);
+    form.append("timestamp", String(timestamp));
+    form.append("folder", folder);
+    form.append("public_id", publicId);
+    form.append("overwrite", "true");
+    form.append("signature", signature);
+    const cloudinaryResponse = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinary.cloudName)}/${kind}/upload`, { method: "POST", body: form });
+    const uploaded = await cloudinaryResponse.json().catch(() => ({}));
+    if (!cloudinaryResponse.ok || !uploaded.secure_url) throw new Error(uploaded.error?.message || "Cloudinary upload failed.");
+    attachments.push({ name: fileName, url: uploaded.secure_url, mimeType, size: uploaded.bytes || fileBuffer.length, uploadedAt: new Date().toISOString() });
+    const saved = await query(`update shipment_requests set attachments_json = $1, updated_at = now() where lower(request_no) = lower($2) and lower(customer_code) = lower($3) returning *`, [JSON.stringify(attachments), requestNo, account.customer_code]);
+    return response.status(201).json({ ok: true, row: saved.rows[0], attachment: attachments.at(-1) });
+  } catch (error) {
     return next(error);
   }
 });
