@@ -6180,7 +6180,6 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("shipmentDate", "Shipment Date", fieldValue("shipmentDate", today()), false, "date")}
       ${strictSelect("status", "Status", statusOptions(), fieldValue("status", ""))}
       ${select("loadType", "Load Type", ["LTL", "FTL"], fieldValue("loadType", "LTL"))}
-      ${select("shipmentVia", "Shipment Via", ["Air", "Sea", "Land", "FTL", "Warehouse", "Consolidation"], fieldValue("shipmentVia", shipmentViaValue(record) || ""))}
       ${strictSelect("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", ""))}
       ${strictSelect("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "")), fieldValue("shipmentService", ""))}
       ${selectEditable("origin", "Origin", "origin", ["Kuwait City"], fieldValue("origin"))}
@@ -8591,7 +8590,7 @@ function shipmentViaValue(shipmentItem) {
 }
 
 function invoiceShipVia(record, shipmentItem, snapshot = {}) {
-  return String(shipmentItem?.loadType || snapshot.loadType || shipmentItem?.shipmentVia || snapshot.shipmentVia || "").trim();
+  return String(shipmentItem?.loadType || snapshot.loadType || "").trim();
 }
 
 function invoiceFromTo(shipmentItem, snapshot = {}) {
