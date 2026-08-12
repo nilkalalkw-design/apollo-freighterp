@@ -2379,8 +2379,24 @@ function apiAudit(row) {
     dateTime: String(row.date_time || "").replace("T", " ").slice(0, 16),
     user: row.user_name,
     action: row.action,
-    reference: row.reference
+    reference: row.reference,
+    details: auditDetailsText(row.details)
   };
+}
+
+function auditDetailsText(value) {
+  if (!value) return "";
+  let details = value;
+  if (typeof details === "string") {
+    try { details = JSON.parse(details); } catch { return details; }
+  }
+  if (!details || typeof details !== "object") return String(details || "");
+  if (typeof details.text === "string") return details.text;
+  if (typeof details.details === "string") return details.details;
+  if (Array.isArray(details.changes)) {
+    return details.changes.map((change) => `${change.field || "Field"}: ${change.before ?? ""} -> ${change.after ?? ""}`).join(" | ");
+  }
+  return "";
 }
 
 function apiEmployee(row) {

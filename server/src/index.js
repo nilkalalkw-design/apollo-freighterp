@@ -1362,6 +1362,17 @@ async function prepareRecordForConfig(config, body) {
     prepared.invoice_snapshot_json = stringify(prepared.invoice_snapshot_json || prepared.invoiceSnapshotJson, "{}");
   }
 
+  if (config.table === "audit_log") {
+    const details = prepared.details;
+    if (typeof details === "string") {
+      prepared.details = JSON.stringify({ text: details });
+    } else if (details && typeof details === "object") {
+      prepared.details = JSON.stringify(details);
+    } else {
+      prepared.details = JSON.stringify({ text: "" });
+    }
+  }
+
   if (config.table === "notifications" && !String(prepared.read_status || "").trim()) {
     prepared.read_status = "UNREAD";
   }
