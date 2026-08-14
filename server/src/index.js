@@ -546,7 +546,7 @@ async function nextShipmentRequestNo() {
 async function customerPortalSnapshot(customerSession) {
   const customerCode = String(customerSession?.customerCode || "").trim();
   const customerName = String(customerSession?.customerName || "").trim();
-  const [shipments, requests, notifications, activityLogs, hsCodes, settings] = await Promise.all([
+  const [shipments, requests, notifications, activityLogs, hsCodes, settings, shipmentStatusHistory] = await Promise.all([
     customerName ? query(`select * from shipments where lower(customer_name) = lower($1) order by booking_date desc, created_at desc limit 500`, [customerName]) : Promise.resolve({ rows: [] }),
     query(
       `select * from shipment_requests
@@ -571,7 +571,8 @@ async function customerPortalSnapshot(customerSession) {
       [customerCode, String(customerSession?.customerUserId || "")]
     ),
     query(`select * from hs_code_master where lower(status) = 'active' order by item_name asc, item_code asc limit 500`),
-    query(`select * from app_settings where settings_key = 'default' limit 1`)
+    query(`select * from app_settings where settings_key = 'default' limit 1`),
+    customerName ? query(`select h.* from shipment_status_history h inner join shipments s on s.job_no = h.job_no where lower(s.customer_name) = lower($1) order by h.updated_at asc`, [customerName]) : Promise.resolve({ rows: [] })
   ]);
 
   return {
@@ -580,7 +581,8 @@ async function customerPortalSnapshot(customerSession) {
     notifications: notifications.rows,
     activityLogs: activityLogs.rows,
     hsCodeMaster: hsCodes.rows,
-    settings: settings.rows[0] || null
+    settings: settings.rows[0] || null,
+    shipmentStatusHistory: shipmentStatusHistory.rows
   };
 }
 
@@ -657,7 +659,6 @@ async function demoCustomerPortalSnapshot(identifier) {
 const resources = {
   shipments: {
     table: "shipments",
-    dateColumn: "booking_date",
     key: "job_no",
     order: "created_at desc",
     fields: [
@@ -696,7 +697,6 @@ const resources = {
   },
   "shipment-status-history": {
     table: "shipment_status_history",
-    dateColumn: "updated_at",
     order: "updated_at desc",
     metaFields: [],
     fields: [
@@ -711,7 +711,6 @@ const resources = {
   },
   consolidations: {
     table: "consolidations",
-    dateColumn: "trip_date",
     key: "load_no",
     order: "trip_date desc, created_at desc",
     fields: [
@@ -763,7 +762,6 @@ const resources = {
   },
   documents: {
     table: "documents",
-    dateColumn: "date",
     key: "document_no",
     order: "date desc, created_at desc",
     fields: [
@@ -781,7 +779,6 @@ const resources = {
   },
   quotations: {
     table: "quotations",
-    dateColumn: "date",
     key: "quotation_no",
     order: "created_at desc",
     fields: [
@@ -805,7 +802,6 @@ const resources = {
   },
   invoices: {
     table: "invoices",
-    dateColumn: "created_at",
     key: "invoice_no",
     order: "date desc, created_at desc",
     fields: [
@@ -886,7 +882,6 @@ const resources = {
   },
   "shipment-requests": {
     table: "shipment_requests",
-    dateColumn: "created_at",
     key: "request_no",
     order: "created_at desc",
     fields: [
@@ -977,7 +972,6 @@ const resources = {
   },
   "additional-charges": {
     table: "additional_charges",
-    dateColumn: "charge_date",
     key: "ref_no",
     order: "charge_date desc, created_at desc",
     readonlyFields: ["tax_amount", "total_amount"],
@@ -1021,7 +1015,6 @@ const resources = {
   },
   audit: {
     table: "audit_log",
-    dateColumn: "date_time",
     key: "id",
     order: "date_time desc",
     metaFields: [],
@@ -1096,7 +1089,6 @@ const resources = {
   },
   "leave-requests": {
     table: "leave_requests",
-    dateColumn: "start_date",
     key: "request_no",
     order: "applied_at desc",
     fields: [
@@ -1116,7 +1108,6 @@ const resources = {
   },
   payslips: {
     table: "payslips",
-    dateColumn: "pay_date",
     key: "payslip_no",
     order: "created_at desc",
     fields: [
@@ -1134,7 +1125,6 @@ const resources = {
   },
   "hr-announcements": {
     table: "hr_announcements",
-    dateColumn: "date",
     key: "id",
     order: "pinned desc, posted_at desc",
     fields: [
@@ -1241,34 +1231,16 @@ function requireFields(config, columns) {
   }
 }
 
-async function getRows(resourceName, config, request = null) {
-  const queryParams = request?.query || {};
-  const requestedPage = Math.max(1, Number.parseInt(queryParams.page || "1", 10) || 1);
-  const requestedPageSize = Number.parseInt(queryParams.pageSize || "500", 10) || 500;
-  const pageSize = Math.min(500, Math.max(1, requestedPageSize));
-  const offset = (requestedPage - 1) * pageSize;
-  const from = String(queryParams.from || queryParams.fromDate || "").trim();
-  const to = String(queryParams.to || queryParams.toDate || "").trim();
-  const dateColumn = config.dateColumn || "";
-  const where = [];
-  const values = [];
-  if (dateColumn && from) { values.push(from); where.push(`${dateColumn} >= $${values.length}`); }
-  if (dateColumn && to) { values.push(to); where.push(`${dateColumn} < ($${values.length}::date + interval '1 day')`); }
-  const whereSql = where.length ? `where ${where.join(" and ")}` : "";
-  const countResult = await query(`select count(*)::int as total from ${config.table} ${whereSql}`, values);
+async function getRows(resourceName, config) {
   const result = await query(
     `select ${columnsFor(config)}
      from ${config.table}
-     ${whereSql}
      order by ${config.order}
-     limit ${pageSize} offset ${offset}`,
-    values
+     limit 500`
   );
-  const total = Number(countResult.rows[0]?.total || 0);
   return {
     ok: true,
-    rows: result.rows,
-    pagination: { page: requestedPage, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)), from: from || null, to: to || null }
+    rows: result.rows
   };
 }
 
@@ -1388,6 +1360,17 @@ async function prepareRecordForConfig(config, body) {
     prepared.invoice_lines_json = stringify(prepared.invoice_lines_json || prepared.invoiceLinesJson, "[]");
     prepared.tariff_snapshot_json = stringify(prepared.tariff_snapshot_json || prepared.tariffSnapshotJson, "{}");
     prepared.invoice_snapshot_json = stringify(prepared.invoice_snapshot_json || prepared.invoiceSnapshotJson, "{}");
+  }
+
+  if (config.table === "audit_log") {
+    const details = prepared.details;
+    if (typeof details === "string") {
+      prepared.details = JSON.stringify({ text: details });
+    } else if (details && typeof details === "object") {
+      prepared.details = JSON.stringify(details);
+    } else {
+      prepared.details = JSON.stringify({ text: "" });
+    }
   }
 
   if (config.table === "notifications" && !String(prepared.read_status || "").trim()) {
@@ -2248,7 +2231,7 @@ app.get("/api/:resource", requireAppAuth, async (request, response, next) => {
   }
 
   try {
-    const result = await getRows(resourceName, config, request);
+    const result = await getRows(resourceName, config);
     if (resourceName === "documents") {
       result.rows = result.rows.filter((row) => !EMPLOYEE_DOCUMENT_TYPE_NAMES.has(String(row.type || "")));
     }
