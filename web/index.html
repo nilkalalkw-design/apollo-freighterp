@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Apollo Freight ERP</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <section id="loginScreen" class="login-screen">
+      <div class="login-layout">
+        <aside class="login-brand-panel">
+          <div class="login-brand-block">
+            <div class="brand-row brand-row-large">
+              <img class="brand-logo brand-logo-large" src="./assets/logo.png" alt="Apollo Freight Solutions logo" onerror="this.hidden=true" />
+              <div>
+                <p class="eyebrow eyebrow-light company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions</p>
+                <h1 class="brand-heading">Cargo Shipments</h1>
+              </div>
+            </div>
+            <p class="login-tagline">We Bring Continents closer...</p>
+            <div class="brand-divider"></div>
+            <p class="brand-description">Land freight consolidation, tariffs, POD, documents, billing, and audit controls.</p>
+          </div>
+        </aside>
+
+        <div class="login-card-shell">
+          <div class="login-card">
+            <p class="auth-eyebrow company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions</p>
+            <h2>Sign in</h2>
+
+            <form id="loginForm" class="login-form">
+              <label>
+                User name
+                <input name="userName" autocomplete="username" value="" required />
+              </label>
+              <label>
+                Password
+                <span class="password-input-wrap">
+                  <input name="password" type="password" autocomplete="current-password" value="" required />
+                  <button type="button" class="password-toggle" data-toggle-password aria-label="Show password" title="Show password">View</button>
+                </span>
+              </label>
+              <div class="login-mode-switch" role="group" aria-label="Login mode">
+                <button type="button" class="login-mode-button is-active" data-login-mode-option="company" aria-pressed="true">Company Portal</button>
+                <button type="button" class="login-mode-button" data-login-mode-option="customer" aria-pressed="false">Customer Portal</button>
+                <button type="button" class="login-mode-button" data-login-mode-option="employee" aria-pressed="false">Employee Login</button>
+              </div>
+              <input id="loginModeField" type="hidden" name="loginMode" value="company" />
+              <p class="login-mode-help">Choose Customer Portal to sign in with the customer user ID created in Company Portal, or Employee Login to access the HR Portal with your existing company user ID.</p>
+              <p id="loginMessage" class="form-message" role="status"></p>
+              <button type="submit">Login</button>
+            </form>
+
+            <details class="reset-panel">
+              <summary>Reset password by email</summary>
+              <div class="reset-panel-body">
+                <label>
+                  Email address
+                  <input id="resetEmail" type="email" placeholder="name@company.com" />
+                </label>
+                <button id="resetPasswordButton" type="button" class="navy-button">Send Reset Link</button>
+                <p id="resetMessage" class="reset-message" role="status"></p>
+                <p class="reset-help">For the live server version, this will send a real email reset link once SMTP or Microsoft 365 is configured on the API.</p>
+              </div>
+            </details>
+
+            <p class="auth-footer">Designed by ApolloIT | Copyright 2026 <span class="company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions</span>. All rights reserved.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="appShell" class="app-shell is-hidden">
+      <aside class="sidebar">
+        <div class="sidebar-brand-shell">
+          <div class="sidebar-brand">
+            <img class="brand-logo" src="./assets/logo.png" alt="Apollo Freight Solutions logo" onerror="this.hidden=true" />
+            <div>
+              <p class="eyebrow eyebrow-light company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions</p>
+              <h2>Freight ERP</h2>
+            </div>
+          </div>
+          <p class="sidebar-tagline">We Bring Continents closer...</p>
+          <div class="brand-divider"></div>
+        </div>
+        <nav id="moduleNav" class="nav-list" aria-label="ERP sections"></nav>
+      </aside>
+
+      <div class="workspace-shell">
+        <header class="topbar">
+          <div class="topbar-main">
+            <div class="brand-ribbon">
+              <p class="eyebrow company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions</p>
+              <span>We Bring Continents closer...</span>
+            </div>
+            <div class="page-heading">
+              <p id="pageEyebrow" class="eyebrow">Dashboard</p>
+              <h1 id="pageTitle">Dashboard</h1>
+              <p id="pageSubtitle">Live operational summary for land freight consolidation</p>
+              <p id="userContextText" class="context-copy">User: admin | Branch: Both</p>
+            </div>
+          </div>
+          <div class="top-actions">
+            <label>
+              Global search
+              <input id="globalSearch" placeholder="Search shipment, waybill, invoice, customer" />
+            </label>
+            <button id="changePasswordButton" type="button" class="secondary-button">Change Password</button>
+            <button id="logoutButton" type="button" class="navy-button">Logout</button>
+          </div>
+
+          <div class="date-filter-panel">
+            <span class="filter-label">Date Range Search</span>
+            <label>
+              From
+              <input id="fromDate" type="date" />
+            </label>
+            <label>
+              To
+              <input id="toDate" type="date" />
+            </label>
+            <button id="applyFilters" type="button" class="blue-button">Search</button>
+            <button id="resetFilters" type="button" class="secondary-button">Reset</button>
+            <div id="branchFilterPanel" class="branch-filter-panel"></div>
+            <span id="dateFilterStatusText" class="filter-status"></span>
+          </div>
+        </header>
+
+        <div id="apiBanner" class="api-banner"></div>
+        <main class="workspace">
+          <section id="moduleContent" class="module-content" aria-live="polite"></section>
+        </main>
+        <footer class="app-footer">Designed by ApolloIT | Copyright 2026 <span class="company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions</span>. All rights reserved.</footer>
+      </div>
+    </div>
+
+    <dialog id="recordDialog" class="record-dialog">
+      <form method="dialog">
+        <div class="dialog-header">
+          <div>
+            <p id="dialogType" class="eyebrow">Record</p>
+            <h2 id="dialogTitle">Record details</h2>
+          </div>
+          <div class="dialog-window-controls" aria-label="Window controls">
+            <button id="recordDialogMinimize" type="button" class="window-control-button" aria-label="Minimize dialog" title="Minimize">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M3 8h10" />
+              </svg>
+            </button>
+            <button id="recordDialogMaximize" type="button" class="window-control-button" aria-label="Maximize dialog" title="Maximize">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <rect x="3.5" y="3.5" width="9" height="9" rx="1.2" />
+              </svg>
+            </button>
+            <button id="recordDialogClose" type="button" class="window-control-button window-control-close" aria-label="Close dialog" title="Close">
+              <svg class="window-control-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div id="dialogBody" class="dialog-body"></div>
+        <div class="dialog-actions">
+          <button id="dialogSecondary" type="button" class="secondary-button is-hidden">Secondary</button>
+          <button id="dialogSave" type="button">Save Changes</button>
+        </div>
+      </form>
+    </dialog>
+    <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="./config.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
