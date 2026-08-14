@@ -75,11 +75,6 @@ const toDate = document.querySelector("#toDate");
 const applyFilters = document.querySelector("#applyFilters");
 const dateFilterStatusText = document.querySelector("#dateFilterStatusText");
 const resetFilters = document.querySelector("#resetFilters");
-const dataLoadModeSelect = document.querySelector("#dataLoadMode");
-const dataLoadFromInput = document.querySelector("#dataLoadFrom");
-const dataLoadToInput = document.querySelector("#dataLoadTo");
-const loadDataButton = document.querySelector("#loadDataButton");
-const dataLoadStatusText = document.querySelector("#dataLoadStatusText");
 const branchFilterPanel = document.querySelector("#branchFilterPanel");
 const newShipmentButton = document.querySelector("#newShipmentButton");
 const changePasswordButton = document.querySelector("#changePasswordButton");
@@ -255,11 +250,7 @@ function seedState() {
       reportFormat: "PDF",
       reportType: "Daily shipments",
       reportPreview: null,
-      selectedLoadNo: "",
-      tablePages: {},
-      dataLoadMode: "today",
-      dataLoadFrom: "",
-      dataLoadTo: ""
+      selectedLoadNo: ""
     },
     dropdownOptions: {}
   };
@@ -1032,10 +1023,6 @@ function normalizeState(stored) {
         toDate: "",
         ...((stored.ui || {}).auditFilters || {})
       },
-      tablePages: { ...((stored.ui || {}).tablePages || {}) },
-      dataLoadMode: (stored.ui || {}).dataLoadMode || "today",
-      dataLoadFrom: (stored.ui || {}).dataLoadFrom || "",
-      dataLoadTo: (stored.ui || {}).dataLoadTo || "",
       adminBranchFilter: Object.prototype.hasOwnProperty.call(stored.ui || {}, "adminBranchFilter") && Array.isArray((stored.ui || {}).adminBranchFilter)
         ? (stored.ui || {}).adminBranchFilter
         : null
@@ -1371,29 +1358,14 @@ function boot() {
     showLogin();
   });
   changePasswordButton?.addEventListener("click", openChangePasswordDialog);
-  globalSearch.addEventListener("input", () => { resetTablePages(); render(); });
-  applyFilters.addEventListener("click", () => { resetTablePages(); render(); });
-  dataLoadModeSelect?.addEventListener("change", () => {
-    state.ui.dataLoadMode = dataLoadModeSelect.value;
-    const isRange = dataLoadModeSelect.value === "range";
-    if (!isRange) { state.ui.dataLoadFrom = ""; state.ui.dataLoadTo = ""; }
-    saveState();
-    syncDataLoadControls();
-  });
-  dataLoadFromInput?.addEventListener("change", () => { state.ui.dataLoadFrom = dataLoadFromInput.value; saveState(); updateDataLoadStatus(); });
-  dataLoadToInput?.addEventListener("change", () => { state.ui.dataLoadTo = dataLoadToInput.value; saveState(); updateDataLoadStatus(); });
-  loadDataButton?.addEventListener("click", applyDataLoadSelection);
+  globalSearch.addEventListener("input", render);
+  applyFilters.addEventListener("click", render);
   branchFilterPanel?.addEventListener("change", handleAdminBranchFilterChange);
   resetFilters.addEventListener("click", () => {
     globalSearch.value = "";
     fromDate.value = "";
     toDate.value = "";
     state.ui.adminBranchFilter = ["Both"];
-    state.ui.dataLoadMode = "today";
-    state.ui.dataLoadFrom = "";
-    state.ui.dataLoadTo = "";
-    syncDataLoadControls();
-    resetTablePages();
     saveState();
     render();
   });
@@ -1939,20 +1911,10 @@ function showLogin() {
   resetMessage.textContent = "";
 }
 
-function ensureTablePaginationStyles() {
-  if (document.querySelector("#apolloTablePaginationStyles")) return;
-  const style = document.createElement("style");
-  style.id = "apolloTablePaginationStyles";
-  style.textContent = `.table-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0;flex-wrap:wrap}.table-pagination-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.table-pagination .secondary-button.is-active{font-weight:700}.table-pagination-summary{font-size:12px;opacity:.8}.table-pagination button:disabled{opacity:.45;cursor:not-allowed}`;
-  document.head.appendChild(style);
-}
-
 function showApp() {
   loginScreen.classList.add("is-hidden");
   appShell.classList.remove("is-hidden");
   appShell.classList.toggle("hr-portal-theme", isHrSession());
-  ensureTablePaginationStyles();
-  syncDataLoadControls();
   renderModuleNav();
   updateUserContext();
   // This first render happens before syncFromApi()'s data has arrived - it uses whatever was
@@ -1970,94 +1932,15 @@ function canRefreshSharedShipmentData() {
   return Boolean(currentSession()?.token) && !isCustomerSession() && !isHrSession() && !document.hidden && !recordDialog?.open;
 }
 
-function localDateString(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getDataLoadRange() {
-  const mode = String(dataLoadModeSelect?.value || state.ui.dataLoadMode || "today").toLowerCase();
-  const today = new Date();
-  const todayText = localDateString(today);
-  let from = todayText;
-  let to = todayText;
-
-  if (mode === "week") {
-    const start = new Date(today);
-    const day = start.getDay();
-    const mondayOffset = day === 0 ? 6 : day - 1;
-    start.setDate(start.getDate() - mondayOffset);
-    from = localDateString(start);
-  } else if (mode === "month") {
-    from = localDateString(new Date(today.getFullYear(), today.getMonth(), 1));
-  } else if (mode === "range") {
-    from = String(dataLoadFromInput?.value || state.ui.dataLoadFrom || "").trim();
-    to = String(dataLoadToInput?.value || state.ui.dataLoadTo || "").trim();
-  }
-
-  return { mode, from, to };
-}
-
-function dataLoadQuery(path, options = {}) {
-  const { mode, from, to } = getDataLoadRange();
-  const shouldFilter = !isCustomerSession() && ["shipments", "consolidations", "documents", "additional-charges", "invoices", "quotations", "shipment-requests", "shipment-status-history", "audit", "leave-requests", "payslips", "hr-announcements"].includes(String(path).replace(/^\/api\//, ""));
-  if (!shouldFilter || !from || !to) return path;
-  const separator = path.includes("?") ? "&" : "?";
-  return `${path}${separator}from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&dataLoad=${encodeURIComponent(mode)}`;
-}
-
-function updateDataLoadStatus() {
-  if (!dataLoadStatusText) return;
-  const { mode, from, to } = getDataLoadRange();
-  const labels = { today: "Today", week: "This Week", month: "This Month", range: "Date Range" };
-  dataLoadStatusText.textContent = from && to ? `${labels[mode] || "Date Range"}: ${from} → ${to}` : "Select From and To dates";
-}
-
-function syncDataLoadControls() {
-  if (!dataLoadModeSelect) return;
-  const mode = String(state.ui.dataLoadMode || "today").toLowerCase();
-  dataLoadModeSelect.value = ["today", "week", "month", "range"].includes(mode) ? mode : "today";
-  if (dataLoadFromInput) dataLoadFromInput.value = state.ui.dataLoadFrom || "";
-  if (dataLoadToInput) dataLoadToInput.value = state.ui.dataLoadTo || "";
-  const disabled = dataLoadModeSelect.value !== "range";
-  if (dataLoadFromInput) dataLoadFromInput.disabled = disabled;
-  if (dataLoadToInput) dataLoadToInput.disabled = disabled;
-  updateDataLoadStatus();
-}
-
-async function applyDataLoadSelection() {
-  const mode = String(dataLoadModeSelect?.value || "today").toLowerCase();
-  const from = String(dataLoadFromInput?.value || "").trim();
-  const to = String(dataLoadToInput?.value || "").trim();
-  if (mode === "range" && (!from || !to)) {
-    notifyError("Date range required", "Please select both From and To dates.");
-    return;
-  }
-  if (mode === "range" && from > to) {
-    notifyError("Invalid date range", "From date cannot be later than To date.");
-    return;
-  }
-  state.ui.dataLoadMode = mode;
-  state.ui.dataLoadFrom = from;
-  state.ui.dataLoadTo = to;
-  resetTablePages();
-  saveState();
-  updateDataLoadStatus();
-  showSyncingIndicator();
-  await syncFromApi();
-}
-
 async function refreshSharedShipmentData() {
   if (!canRefreshSharedShipmentData() || sharedShipmentRefreshInProgress) return;
   sharedShipmentRefreshInProgress = true;
   try {
     const [shipments, documents, invoices, shipmentStatusHistory] = await Promise.all([
-      fetchJson(dataLoadQuery("/api/shipments")),
-      fetchJson(dataLoadQuery("/api/documents")),
-      fetchJson(dataLoadQuery("/api/invoices")),
-      fetchJson(dataLoadQuery("/api/shipment-status-history"))
+      fetchJson("/api/shipments"),
+      fetchJson("/api/documents"),
+      fetchJson("/api/invoices"),
+      fetchJson("/api/shipment-status-history")
     ]);
     state.shipments = (shipments.rows || []).map(apiShipment);
     state.documents = (documents.rows || []).map(apiDocument);
@@ -2107,7 +1990,6 @@ function hideSyncingIndicator() {
 
 async function syncFromApi() {
   try {
-    syncDataLoadControls();
     if (isCustomerSession()) {
       await syncCustomerPortal();
       return;
@@ -2138,27 +2020,27 @@ async function syncFromApi() {
       employeeProfileDocuments
     ] = await Promise.all([
       fetchJson("/api/health"),
-      fetchJson(dataLoadQuery("/api/shipments")),
-      fetchJson(dataLoadQuery("/api/consolidations")),
+      fetchJson("/api/shipments"),
+      fetchJson("/api/consolidations"),
       fetchJson("/api/customers"),
       fetchJson("/api/suppliers"),
       fetchJson("/api/tariffs"),
-      fetchJson(dataLoadQuery("/api/documents")),
-      fetchJson(dataLoadQuery("/api/additional-charges")),
-      fetchJson(dataLoadQuery("/api/invoices")),
-      fetchJson(dataLoadQuery("/api/quotations")),
-      fetchJson(dataLoadQuery("/api/shipment-requests")),
-      fetchJson(dataLoadQuery("/api/shipment-status-history")),
+      fetchJson("/api/documents"),
+      fetchJson("/api/additional-charges"),
+      fetchJson("/api/invoices"),
+      fetchJson("/api/quotations"),
+      fetchJson("/api/shipment-requests"),
+      fetchJson("/api/shipment-status-history"),
       fetchJson("/api/users"),
       fetchJson("/api/customer-users"),
       fetchJson("/api/unblock-requests"),
       fetchJson("/api/admin-requests"),
-      fetchJson(dataLoadQuery("/api/audit")),
+      fetchJson("/api/audit"),
       fetchJson("/api/settings"),
       fetchJson("/api/employees"),
-      fetchJson(dataLoadQuery("/api/leave-requests")),
-      fetchJson(dataLoadQuery("/api/payslips")),
-      fetchJson(dataLoadQuery("/api/hr-announcements")),
+      fetchJson("/api/leave-requests"),
+      fetchJson("/api/payslips"),
+      fetchJson("/api/hr-announcements"),
       isHrSession() ? fetchJson("/api/employee-profile-documents") : Promise.resolve({ rows: [] })
     ]);
 
@@ -2692,67 +2574,44 @@ function updateDateFilterStatus() {
 
 function portalRows(name) { return Array.isArray(customerPortalData?.[name]) ? customerPortalData[name] : []; }
 function portalStatus(value) { return String(value || "").toUpperCase().replace(/\s+/g, "_"); }
-function customerRequestValue(row, camelName, snakeName = camelName.replace(/[A-Z]/g, (letter) => "_" + letter.toLowerCase())) { return row?.[camelName] ?? row?.[snakeName] ?? ""; }
-function customerRequestDetails(row) { return parseJsonMeta(customerRequestValue(row, "requestDetailsJson") || "{}"); }
-function customerRequestAttachments(row) {
-  const attachments = parseJsonMeta(customerRequestValue(row, "attachmentsJson") || "[]");
-  return Array.isArray(attachments) ? attachments : [];
-}
-function customerRequestNo(row) { return String(customerRequestValue(row, "requestNo") || "").trim(); }
-function customerRequestIsLocked(row) { return ["APPROVED", "AUTO_APPROVED", "COMPLETED", "REJECTED", "CANCELLED"].includes(portalStatus(customerRequestValue(row, "status"))); }
-function customerRequestCanEdit(row) { return portalStatus(customerRequestValue(row, "status")) === "SENT_BACK"; }
-function customerRequestForEditing() {
-  const requestNo = String(customerPortalData?.editingRequestNo || "").trim();
-  return portalRows("shipmentRequests").find((row) => customerRequestNo(row) === requestNo) || null;
-}
 function renderCustomerDashboard() { const requests = portalRows("shipmentRequests"); const shipments = portalRows("shipments"); const notifications = portalRows("notifications"); const activity = portalRows("activityLogs"); const pending = requests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))).length; const approved = requests.filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))).length; const sentBack = requests.filter((row) => portalStatus(row.status) === "SENT_BACK").length; return "<section class=\"kpi-grid\">" + kpi("Total Shipments", shipments.length + requests.length, "Your shipment records", "customer-total-shipments") + kpi("Pending Requests", pending, "Waiting company review", "customer-pending-requests") + kpi("Approved Requests", approved, "Approved or auto approved", "customer-approved-requests") + kpi("Sent Back Requests", sentBack, "Needs your attention", "customer-sent-back-requests") + kpi("Notifications", notifications.length, "Portal messages", "customer-notifications") + "</section><section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Recent Requests", "Customer Portal") + table("customerRequest", requests.slice(0, 8), customerRequestColumns(), false, "customerRequest:dashboard") + "</article><article class=\"panel\">" + panelHeader("Recent Activity", "Customer Portal") + table("customerActivity", activity.slice(0, 8), customerActivityColumns(), false, "customerActivity:dashboard") + "</article></section>"; }
 function renderCustomerNewShipment() {
-  const editingRequest = customerRequestForEditing();
-  const details = customerRequestDetails(editingRequest);
-  const attachments = customerRequestAttachments(editingRequest);
   const hsOptions = portalRows("hsCodeMaster").map((row) => ({ value: row.item_name || row.itemName || "", label: [row.hs_code || row.hsCode, row.item_code || row.itemCode, row.alternate_name || row.alternateName].filter(Boolean).join(" | ") }));
-  const value = (name, fallback = "") => editingRequest?.[name] ?? editingRequest?.[name.replace(/[A-Z]/g, (letter) => "_" + letter.toLowerCase())] ?? details[name] ?? fallback;
-  const title = editingRequest ? `Update Shipment Request - ${customerRequestNo(editingRequest)}` : "New Shipment Request";
+  const session = currentSession() || {};
   return `<section class="panel customer-booking-panel">
-    ${panelHeader(title, "Customer Portal")}
-    <p class="customer-booking-intro">Complete the shipment, pickup, delivery and cargo details. Your job number stays <strong>Pending company approval</strong> until the company accepts the booking. CBM and chargeable weight follow the same rules as the company shipment portal.</p>
+    ${panelHeader("New Shipment Request", "Customer Portal")}
+    <p class="customer-booking-intro">Complete the booking details, attach the supporting documents, then select your item and HS code. The cargo calculator uses the same CBM and chargeable-weight rules as the company shipment portal.</p>
     <form class="stack-form customer-booking-form" data-form="customer-shipment-request" novalidate>
-      <input type="hidden" name="requestNo" value="${escapeHtml(customerRequestNo(editingRequest))}" />
-      <input type="hidden" name="existingAttachmentCount" value="${attachments.length}" />
-      <section class="customer-booking-step"><span class="customer-step-number">1</span><div><h3>Shipment Information</h3><p>Job number is generated by the company after approval.</p></div>
+      <section class="customer-booking-step"><span class="customer-step-number">1</span><div><h3>Booking & Delivery Details</h3><p>Tell us where and when your cargo needs to move.</p></div>
         <div class="form-section-grid">
-          ${input("jobNumberPreview", "Job Number", editingRequest?.convertedJobNo || details.convertedJobNo || "Pending company approval", true)}
-          ${input("bookingDate", "Booking Date", value("bookingDate", today()), true, "date")}
-          ${strictSelect("shipmentType", "Shipment Type", ["Export", "Import", "Cross Trade", "Local Delivery"], value("shipmentType", "Export"))}
-          ${strictSelect("shipmentVia", "Shipment Via", ["Air", "Sea", "Land"], value("shipmentVia", ""))}
-          ${strictSelect("loadType", "Load Type", ["LTL", "FTL"], value("loadType", "LTL"))}
-          ${strictSelect("shipmentService", "Service Type", ["AI", "SI", "LI", "FI"], value("shipmentService", ""))}
-          ${input("origin", "Origin", value("origin"))}
-          ${input("destination", "Destination", value("destination"))}
-          ${input("customerReference", "Customer Reference", value("customerReference"))}
+          ${strictSelect("shipmentType", "Shipment Type", ["Export", "Import", "Cross Trade", "Local Delivery"], "Export")}
+          ${strictSelect("shipmentVia", "Shipment Via", ["Air", "Sea", "Land"], "")}
+          ${input("origin", "Origin", "")}
+          ${input("destination", "Destination", "")}
+          ${input("pickupDate", "Preferred Pickup Date", "", false, "date")}
+          ${input("deliveryDate", "Requested Delivery Date", "", false, "date")}
+          ${input("consignee", "Consignee / Delivery Company", "")}
+          ${input("consigneeContactPerson", "Delivery Contact Person", "")}
+          ${input("consigneeMobile", "Delivery Mobile", "")}
+          ${input("deliveryLocation", "Delivery Location", "")}
+          ${textarea("deliveryAddress", "Delivery Address", "", false, 2)}
+          ${input("customerReference", "Customer Reference", "")}
         </div>
       </section>
-      <section class="customer-booking-step"><span class="customer-step-number">1</span><div><h3>Pickup Information</h3><p>Provide collection contact and address details.</p></div>
+      <section class="customer-booking-step customer-document-step"><span class="customer-step-number">2</span><div><h3>Upload Shipment Documents</h3><p>Upload invoice, packing list, or other supporting files first. This unlocks item and HS-code selection.</p></div>
+        <label class="customer-file-picker">Shipment Documents <input name="attachments" type="file" multiple required accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" /><small data-customer-document-status>Select at least one file. Maximum 5 files, 10 MB each.</small></label>
+      </section>
+      <section class="customer-booking-step" data-customer-hs-step hidden><span class="customer-step-number">3</span><div><h3>Item & Customs Information</h3><p>Select the item from the approved item list. Its HS code is filled automatically.</p></div>
         <div class="form-section-grid">
-          ${input("pickupLocation", "Pickup Location", value("pickupLocation", value("origin")))}
-          ${input("pickupDate", "Preferred Pickup Date", value("pickupDate"), false, "date")}
-          ${input("pickupContactPerson", "Pickup Contact Person", value("pickupContactPerson"))}
-          ${input("pickupMobile", "Pickup Mobile", value("pickupMobile"), false, "tel")}
-          ${textarea("pickupAddress", "Pickup Address", value("pickupAddress"), false, 2)}
+          ${selectFrom("itemName", "Item Name", hsOptions, "")}
+          ${input("hsCode", "HS Code", "", true)}
+          ${input("itemCode", "Item Code", "", true)}
+          ${input("invoiceValue", "Declared Invoice Value", "", false, "number")}
+          ${textarea("remarks", "Special Instructions / Remarks", "", false, 3)}
         </div>
       </section>
-      <section class="customer-booking-step"><span class="customer-step-number">1</span><div><h3>Delivery Information</h3><p>Provide consignee and final delivery details.</p></div>
-        <div class="form-section-grid">
-          ${input("consignee", "Consignee / Delivery Company", value("consignee"))}
-          ${input("consigneeContactPerson", "Delivery Contact Person", value("consigneeContactPerson"))}
-          ${input("consigneeMobile", "Delivery Mobile", value("consigneeMobile"), false, "tel")}
-          ${input("deliveryLocation", "Delivery Location", value("deliveryLocation", value("destination")))}
-          ${input("deliveryDate", "Requested Delivery Date", value("deliveryDate"), false, "date")}
-          ${textarea("deliveryAddress", "Delivery Address", value("deliveryAddress"), false, 2)}
-        </div>
-      </section>
-      <section class="customer-booking-step" data-customer-cargo><span class="customer-step-number">1</span><div><h3>Cargo Details</h3><p>Add every pallet, carton, or package. CBM and chargeable weight calculate automatically.</p></div>
-        <input type="hidden" name="cargoItemsJson" value="${escapeHtml(value("cargoItemsJson", "[]"))}" />
+      <section class="customer-booking-step" data-customer-cargo><span class="customer-step-number">4</span><div><h3>Cargo Dimensions & Chargeable Weight</h3><p>Add every pallet, carton, or package. CBM and chargeable weight calculate automatically.</p></div>
+        <input type="hidden" name="cargoItemsJson" value="[]" />
         <div class="tariff-charge-entry cargo-entry">
           ${strictSelect("cargoPackageType", "Package Type", ["Pallet", "Carton", "Crate", "Box", "Package", "Drum"], "Pallet")}
           ${input("cargoQuantity", "Quantity", "1", false, "number")}
@@ -2765,27 +2624,15 @@ function renderCustomerNewShipment() {
         </div>
         <div class="tariff-charge-table" data-customer-cargo-lines></div>
         <div class="form-section-grid cargo-totals">
-          ${strictSelect("volumeCategory", "CBM Divisor", volumeCategoryOptions(), value("volumeCategory", "1 CBM = 250 KG"))}
-          ${input("cbm", "Grand Total CBM", value("cbm", "0"), true, "number")}
-          ${input("actualKg", "Total Gross Weight (KG)", value("actualKg", "0"), true, "number")}
-          ${input("chargeableKg", "Chargeable Weight (KG)", value("chargeableKg", "0"), true, "number")}
-          <input type="hidden" name="pieces" value="${escapeHtml(value("pieces", "0"))}" />
-          <input type="hidden" name="chargeableDivisor" value="${escapeHtml(value("chargeableDivisor", "250"))}" />
+          ${strictSelect("volumeCategory", "CBM Divisor", volumeCategoryOptions(), "1 CBM = 250 KG")}
+          ${input("cbm", "Grand Total CBM", "0", true, "number")}
+          ${input("actualKg", "Total Gross Weight (KG)", "0", true, "number")}
+          ${input("chargeableKg", "Chargeable Weight (KG)", "0", true, "number")}
+          <input type="hidden" name="pieces" value="0" />
+          <input type="hidden" name="chargeableDivisor" value="250" />
         </div>
       </section>
-      <section class="customer-booking-step customer-document-step"><span class="customer-step-number">2</span><div><h3>Upload Shipment Documents</h3><p>Upload up to three invoice, packing list, or supporting files. PDF, JPG and JPEG files are accepted.</p></div>
-        <label class="customer-file-picker">Shipment Documents <input name="attachments" type="file" multiple accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" /><small data-customer-document-status>${attachments.length ? `${attachments.length} existing document(s) saved. You may add replacement/supporting files up to a total of three.` : "Select at least one file. Maximum 3 files, 10 MB each."}</small></label>
-      </section>
-      <section class="customer-booking-step" data-customer-hs-step ${attachments.length ? "" : "hidden"}><span class="customer-step-number">4</span><div><h3>Item & Customs Information</h3><p>Select a known item to fill its HS code automatically, or enter an item and HS code manually. An unknown HS code can still be submitted for company review.</p></div>
-        <div class="form-section-grid">
-          ${selectFrom("itemName", "Item Name / Description", hsOptions, value("itemName"))}
-          ${input("hsCode", "HS Code", value("hsCode"))}
-          ${input("itemCode", "Item Code", value("itemCode"))}
-          ${input("invoiceValue", "Declared Invoice Value", value("invoiceValue"), false, "number")}
-          ${textarea("remarks", "Special Instructions / Remarks", value("remarks"), false, 3)}
-        </div>
-      </section>
-      <div class="action-row"><button type="submit">${editingRequest ? "Update & Re-submit to Company" : "Book & Submit to Company"}</button>${editingRequest ? '<button type="button" class="secondary-button" data-action="customer-cancel-edit-request">Cancel</button>' : ""}</div>
+      <div class="action-row"><button type="submit">Submit Shipment Request</button></div>
     </form>
   </section>`;
 }
@@ -2813,7 +2660,7 @@ function customerTrackingDetailMarkup(row) {
   const status = row.status || "Booked";
   return `<section class="customer-tracking-detail">
     <div class="customer-tracking-summary">
-      <div><span class="eyebrow">Shipment</span><h3>${escapeHtml(row.jobNo || row.job_no || "")}</h3><p>${escapeHtml(row.tcnNumber || row.tcn_number || row.airwayBillNo || row.airway_bill_no || "No TCN / tracking number")}</p></div>
+      <div><span class="eyebrow">Shipment</span><h3>${escapeHtml(row.jobNo || row.job_no || "")}</h3><p>${escapeHtml(row.airwayBillNo || row.airway_bill_no || "No AWB / tracking number")}</p></div>
       <div><span class="eyebrow">Current Status</span><strong class="customer-tracking-status">${escapeHtml(status)}</strong></div>
       <div><span class="eyebrow">Route</span><strong>${escapeHtml(row.origin || "—")} → ${escapeHtml(row.destination || "—")}</strong></div>
       <div><span class="eyebrow">Shipment Via</span><strong>${escapeHtml(row.shipmentVia || row.loadType || shipmentViaValue(row) || "—")}</strong></div>
@@ -2821,60 +2668,8 @@ function customerTrackingDetailMarkup(row) {
     <div class="shipment-journey"><div class="shipment-journey-heading"><div><p class="eyebrow">Shipment Journey</p><h4>Tracking Timeline</h4><p class="empty-state">Updates from the operations team</p></div></div><div class="shipment-timeline">${historyMarkup}</div></div>
   </section>`;
 }
-function customerRequestRowMarkup(row, selectedRequestNo) {
-  const requestNo = customerRequestNo(row);
-  const status = customerRequestValue(row, "status") || "PENDING_REVIEW";
-  const selected = requestNo === String(selectedRequestNo || "");
-  return `<tr class="${selected ? "is-expanded" : ""}">
-    <td><button type="button" class="table-inline-link" data-action="customer-request-open" data-id="${escapeHtml(requestNo)}">${escapeHtml(requestNo || "Pending")}</button></td>
-    <td>${escapeHtml(customerRequestValue(row, "itemName") || "—")}</td>
-    <td>${escapeHtml(customerRequestValue(row, "origin") || "—")}</td>
-    <td>${escapeHtml(customerRequestValue(row, "destination") || "—")}</td>
-    <td>${escapeHtml(status)}</td>
-    <td>${escapeHtml(String(customerRequestValue(row, "createdAt") || "").slice(0, 10) || "—")}</td>
-  </tr>`;
-}
-function customerRequestDetailMarkup(row) {
-  if (!row) return `<div class="empty-state">Select a booking request to view the submitted details, company notes, and available actions.</div>`;
-  const details = customerRequestDetails(row);
-  const attachments = customerRequestAttachments(row);
-  const requestNo = customerRequestNo(row);
-  const status = customerRequestValue(row, "status") || "PENDING_REVIEW";
-  const shipmentNo = customerRequestValue(row, "convertedJobNo") || details.convertedJobNo || "";
-  const shipmentItem = portalRows("shipments").find((item) => String(item.jobNo || item.job_no || "") === String(shipmentNo));
-  const locked = customerRequestIsLocked(row);
-  return `<section class="customer-request-detail">
-    <div class="customer-tracking-summary">
-      <div><span class="eyebrow">Booking Request</span><h3>${escapeHtml(requestNo)}</h3><p>${escapeHtml(String(customerRequestValue(row, "createdAt") || "").slice(0, 10))}</p></div>
-      <div><span class="eyebrow">Job Number</span><strong>${escapeHtml(shipmentNo || (locked ? "Pending company setup" : "Pending company approval"))}</strong></div>
-      <div><span class="eyebrow">Status</span><strong class="customer-tracking-status">${escapeHtml(status)}</strong></div>
-      <div><span class="eyebrow">Route</span><strong>${escapeHtml(customerRequestValue(row, "origin") || "—")} → ${escapeHtml(customerRequestValue(row, "destination") || "—")}</strong></div>
-    </div>
-    ${customerRequestValue(row, "approvalNotes") ? `<article class="alert"><strong>Company Review Note</strong><span>${escapeHtml(customerRequestValue(row, "approvalNotes"))}</span></article>` : ""}
-    ${locked ? `<article class="alert"><strong>Booking locked</strong><span>This request was ${escapeHtml(String(status).toLowerCase())}. Customer shipment details can no longer be changed.</span></article>` : ""}
-    <div class="detail-grid">
-      <div><span class="eyebrow">Shipment Via</span><strong>${escapeHtml(details.shipmentVia || "—")}</strong></div>
-      <div><span class="eyebrow">Load Type</span><strong>${escapeHtml(details.loadType || "—")}</strong></div>
-      <div><span class="eyebrow">Pickup</span><strong>${escapeHtml(details.pickupLocation || "—")}</strong></div>
-      <div><span class="eyebrow">Delivery</span><strong>${escapeHtml(details.deliveryLocation || customerRequestValue(row, "consignee") || "—")}</strong></div>
-      <div><span class="eyebrow">Cargo</span><strong>${escapeHtml(`${details.pieces || customerRequestValue(row, "quantity") || 0} pieces · ${details.cbm || 0} CBM`)}</strong></div>
-      <div><span class="eyebrow">Chargeable Weight</span><strong>${escapeHtml(`${details.chargeableKg || 0} KG`)}</strong></div>
-    </div>
-    <section class="form-section"><h3>Item & Customs Information</h3><p><strong>${escapeHtml(customerRequestValue(row, "itemName") || "—")}</strong>${customerRequestValue(row, "hsCode") ? ` · HS Code: ${escapeHtml(customerRequestValue(row, "hsCode"))}` : " · HS code pending company review"}</p>${customerRequestValue(row, "remarks") ? `<p>${escapeHtml(customerRequestValue(row, "remarks"))}</p>` : ""}</section>
-    <section class="form-section"><h3>Uploaded Documents</h3>${attachments.length ? attachments.map((file) => { const name = escapeHtml(file.name || file.fileName || "Document"); const url = String(file.url || file.storageUrl || ""); return url ? `<p><a href="${escapeHtml(url)}" target="_blank" rel="noopener">Open ${name}</a></p>` : `<p>${name}</p>`; }).join("") : `<p class="empty-state">No documents uploaded yet.</p>`}</section>
-    <div class="action-row">${customerRequestCanEdit(row) ? `<button type="button" data-action="customer-edit-request" data-id="${escapeHtml(requestNo)}">Edit & Re-submit</button>` : ""}${shipmentItem ? `<button type="button" class="secondary-button" data-action="customer-track-open" data-id="${escapeHtml(shipmentNo)}">Track Approved Shipment${shipmentItem.tcnNumber || shipmentItem.tcn_number ? ` (${escapeHtml(shipmentItem.tcnNumber || shipmentItem.tcn_number)})` : ""}</button>` : ""}</div>
-  </section>`;
-}
-function customerShipmentRowMarkup(row) {
-  const jobNo = String(row.jobNo || row.job_no || "").trim();
-  return `<tr><td><button type="button" class="table-inline-link" data-action="customer-track-open" data-id="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button></td><td>${escapeHtml(row.origin || "—")}</td><td>${escapeHtml(row.destination || "—")}</td><td>${escapeHtml(row.status || "—")}</td><td>${escapeHtml(row.tcnNumber || row.tcn_number || "—")}</td></tr>`;
-}
 function renderCustomerShipments() {
-  const requests = portalRows("shipmentRequests");
-  const selectedRequestNo = customerPortalData?.selectedRequestNo || customerRequestNo(requests[0]);
-  const selected = requests.find((row) => customerRequestNo(row) === String(selectedRequestNo || "")) || null;
-  const shipments = portalRows("shipments");
-  return `<section class="split-grid wide-left"><article class="panel">${panelHeader("Shipment Requests", "Open a request to view details or re-submit a sent-back request")}<div class="table-wrap"><table><thead><tr><th>Request</th><th>Item</th><th>From</th><th>To</th><th>Status</th><th>Created</th></tr></thead><tbody>${requests.length ? requests.map((row) => customerRequestRowMarkup(row, selectedRequestNo)).join("") : `<tr><td colspan="6">${empty("No shipment requests yet.")}</td></tr>`}</tbody></table></div></article><article class="panel">${panelHeader("Booking Details", "Read-only unless the company sends it back")}${customerRequestDetailMarkup(selected)}</article></section><section class="panel">${panelHeader("Approved Shipments", "Only approved company shipments can be tracked")}<div class="table-wrap"><table><thead><tr><th>Shipment</th><th>From</th><th>To</th><th>Status</th><th>TCN</th></tr></thead><tbody>${shipments.length ? shipments.map(customerShipmentRowMarkup).join("") : `<tr><td colspan="5">${empty("No approved shipments are available for tracking yet.")}</td></tr>`}</tbody></table></div></section>`;
+  return `<section class="split-grid wide-left"><article class="panel">${panelHeader("Shipment Requests", "History")} ${table("customerRequest", portalRows("shipmentRequests"), customerRequestColumns(), false)}</article><article class="panel">${panelHeader("Company Shipments", "Open a shipment to track")} ${table("customerShipment", portalRows("shipments"), customerShipmentColumns(), false)}</article></section>`;
 }
 function renderCustomerTracking() {
   const shipments = portalRows("shipments");
@@ -4013,67 +3808,19 @@ function empty(text) {
   return `<p class="empty-state">${escapeHtml(text)}</p>`;
 }
 
-const TABLE_PAGE_SIZE = 15;
-
-function resetTablePages() {
-  state.ui.tablePages = {};
-  saveState();
-}
-
-function tablePageFor(scope) {
-  const value = Number(state.ui.tablePages?.[scope] || 1);
-  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
-}
-
-function setTablePage(scope, page) {
-  state.ui.tablePages = state.ui.tablePages || {};
-  state.ui.tablePages[scope] = Math.max(1, Math.floor(Number(page) || 1));
-  saveState();
-  render();
-}
-
-function tablePaginationMarkup(scope, totalRows, page, pageCount) {
-  if (totalRows <= TABLE_PAGE_SIZE) return "";
-  const safePage = Math.min(Math.max(page, 1), pageCount);
-  const start = ((safePage - 1) * TABLE_PAGE_SIZE) + 1;
-  const end = Math.min(safePage * TABLE_PAGE_SIZE, totalRows);
-  const buttons = [];
-  const startPage = Math.max(1, safePage - 2);
-  const endPage = Math.min(pageCount, startPage + 4);
-  for (let current = startPage; current <= endPage; current += 1) {
-    buttons.push(`<button type="button" class="secondary-button${current === safePage ? " is-active" : ""}" data-action="table-page" data-scope="${escapeHtml(scope)}" data-page="${current}">${current}</button>`);
-  }
-  return `<div class="table-pagination" role="navigation" aria-label="Table pagination">
-    <span class="table-pagination-summary">Showing ${start}–${end} of ${totalRows}</span>
-    <div class="table-pagination-actions">
-      <button type="button" class="secondary-button" data-action="table-page" data-scope="${escapeHtml(scope)}" data-page="${safePage - 1}" ${safePage <= 1 ? "disabled" : ""}>← Previous</button>
-      ${buttons.join("")}
-      <button type="button" class="secondary-button" data-action="table-page" data-scope="${escapeHtml(scope)}" data-page="${safePage + 1}" ${safePage >= pageCount ? "disabled" : ""}>Next →</button>
-    </div>
-  </div>`;
-}
-
 function table(type, rows, columns, showLoad = type !== "shipment", scope = type, sortable = true) {
   const sortedRows = sortable ? applySort(scope, rows) : rows;
-  const totalRows = sortedRows.length;
-  const pageCount = Math.max(1, Math.ceil(totalRows / TABLE_PAGE_SIZE));
-  const page = Math.min(tablePageFor(scope), pageCount);
-  if (state.ui.tablePages?.[scope] !== page) {
-    state.ui.tablePages = state.ui.tablePages || {};
-    state.ui.tablePages[scope] = page;
-  }
-  const pageRows = sortedRows.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE);
   const header = showLoad ? `<th>Load</th>` : "";
   const colSpan = columns.length + (showLoad ? 1 : 0);
-  const body = pageRows.length
-    ? pageRows.map((row, index) => tableRow(type, row, index + ((page - 1) * TABLE_PAGE_SIZE), columns, showLoad)).join("")
+  const body = sortedRows.length
+    ? sortedRows.map((row, index) => tableRow(type, row, index, columns, showLoad)).join("")
     : `<tr><td colspan="${colSpan}">${empty("No records found.")}</td></tr>`;
   const locked = isColumnWidthLocked(scope);
   const headCells = columns.map(([key, label]) => sortable ? sortableHeaderCell(type, scope, key, label, locked) : `<th>${escapeHtml(label)}</th>`).join("");
   const widths = (state.ui.columnWidths || {})[scope];
   const tableStyle = widths && Object.keys(widths).length ? ` style="table-layout:fixed"` : "";
   const lockToggle = sortable ? columnLockToggleMarkup(scope, locked) : "";
-  return `${lockToggle}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}${header}</tr></thead><tbody>${body}</tbody></table></div>${tablePaginationMarkup(scope, totalRows, page, pageCount)}`;
+  return `${lockToggle}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}${header}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function isColumnWidthLocked(scope) {
@@ -4170,7 +3917,6 @@ function tableActionButton(type, id) {
       <button class="ghost-button" data-action="open" data-type="shipmentRequest" data-id="${escapeHtml(id)}">Open</button>
       ${isPending ? `<button class="ghost-button" data-action="approve-shipment-request" data-id="${escapeHtml(id)}">Approve</button>` : ""}
       ${isPending ? `<button class="ghost-button" data-action="send-back-shipment-request" data-id="${escapeHtml(id)}">Send Back</button>` : ""}
-      ${isPending ? `<button class="ghost-button danger-text" data-action="reject-shipment-request" data-id="${escapeHtml(id)}">Reject</button>` : ""}
       ${isApprovedNotConverted ? `<button class="ghost-button" data-action="convert-shipment-request" data-id="${escapeHtml(id)}">Convert</button>` : ""}
     </div>`;
   }
@@ -4933,11 +4679,6 @@ async function handleModuleClick(event) {
   if (!button) return;
   const { action, type, id, mode } = button.dataset;
 
-  if (action === "table-page") {
-    setTablePage(button.dataset.scope || "default", Number(button.dataset.page || 1));
-    return;
-  }
-
   if (action === "toggle-column-lock") {
     const scope = button.dataset.scope;
     state.ui.columnWidthsLocked = state.ui.columnWidthsLocked || {};
@@ -4969,11 +4710,6 @@ async function handleModuleClick(event) {
 
   if (action === "send-back-shipment-request") {
     sendBackShipmentRequest(id);
-    return;
-  }
-
-  if (action === "reject-shipment-request") {
-    rejectShipmentRequest(id);
     return;
   }
 
@@ -5116,35 +4852,6 @@ async function handleModuleClick(event) {
   if (action === "customer-track-open") {
     if (!isCustomerSession()) return;
     if (customerPortalData) customerPortalData.selectedTrackingJobNo = id || "";
-    activeModule = "Customer Tracking";
-    render();
-    return;
-  }
-
-  if (action === "customer-request-open") {
-    if (!isCustomerSession()) return;
-    if (customerPortalData) customerPortalData.selectedRequestNo = id || "";
-    render();
-    return;
-  }
-
-  if (action === "customer-edit-request") {
-    if (!isCustomerSession()) return;
-    const record = portalRows("shipmentRequests").find((row) => customerRequestNo(row) === String(id || ""));
-    if (!record || !customerRequestCanEdit(record)) {
-      notifyDenied("Request locked", "Only a request sent back by the company can be edited and re-submitted.");
-      return;
-    }
-    customerPortalData.editingRequestNo = id || "";
-    activeModule = "Customer New Shipment";
-    render();
-    return;
-  }
-
-  if (action === "customer-cancel-edit-request") {
-    if (!isCustomerSession()) return;
-    if (customerPortalData) customerPortalData.editingRequestNo = "";
-    activeModule = "Customer Shipments";
     render();
     return;
   }
@@ -5454,45 +5161,12 @@ function openRecord(type, id, presetRecord) {
       saveLabel: "Save Notes",
       secondaryLabel: isPending ? "Approve" : "",
       onSecondary: isPending ? () => approveShipmentRequest(id, true) : null,
-      body: shipmentRequestDialogBody(record, isPending),
+      body: shipmentRequestDialogBody(record),
       onSave: async () => {
         const data = collectFormValues(dialogBody.closest("form"));
-        const requestDetails = parseJsonMeta(record.requestDetailsJson || "{}");
-        const updatedRecord = {
-          ...record,
-          shipmentType: data.shipmentType || record.shipmentType || "",
-          origin: data.origin || record.origin || "",
-          destination: data.destination || record.destination || "",
-          consignee: data.consignee || record.consignee || "",
-          itemName: data.itemName || record.itemName || "",
-          hsCode: data.hsCode || "",
-          itemCode: data.itemCode || "",
-          quantity: Number(data.quantity || record.quantity || 0),
-          weight: Number(data.weight || record.weight || 0),
-          invoiceValue: Number(data.invoiceValue || record.invoiceValue || 0),
-          remarks: data.remarks || "",
-          approvalNotes: data.approvalNotes || record.approvalNotes || "",
-          requestDetailsJson: JSON.stringify({
-            ...requestDetails,
-            shipmentVia: data.shipmentVia || requestDetails.shipmentVia || "",
-            loadType: data.loadType || requestDetails.loadType || "",
-            pickupLocation: data.pickupLocation || requestDetails.pickupLocation || "",
-            pickupAddress: data.pickupAddress || requestDetails.pickupAddress || "",
-            pickupDate: data.pickupDate || requestDetails.pickupDate || "",
-            deliveryLocation: data.deliveryLocation || requestDetails.deliveryLocation || "",
-            deliveryAddress: data.deliveryAddress || requestDetails.deliveryAddress || "",
-            deliveryDate: data.deliveryDate || requestDetails.deliveryDate || "",
-            consigneeContactPerson: data.consigneeContactPerson || requestDetails.consigneeContactPerson || "",
-            consigneeMobile: data.consigneeMobile || requestDetails.consigneeMobile || ""
-          })
-        };
+        const updatedRecord = { ...record, approvalNotes: data.approvalNotes || record.approvalNotes || "" };
         state.shipmentRequests = state.shipmentRequests.map((row) => rowId("shipmentRequest", row) === id ? updatedRecord : row);
-        const saved = await persistRecord("shipmentRequest", updatedRecord);
-        if (!saved) {
-          state.shipmentRequests = state.shipmentRequests.map((row) => rowId("shipmentRequest", row) === id ? record : row);
-          notifyFailed("Request not saved", "Could not save the company review changes. Please try again.");
-          return false;
-        }
+        await persistRecord("shipmentRequest", updatedRecord);
         saveState();
         recordDialog.close();
         render();
@@ -6613,10 +6287,9 @@ function formSection(title, body, collapsible = false, open = false) {
   return `<details class="form-section collapsible-section" ${open ? "open" : ""}><summary>${escapeHtml(title)}</summary>${sectionBody}</details>`;
 }
 
-function shipmentRequestDialogBody(record, editable = false) {
+function shipmentRequestDialogBody(record) {
   const fieldValue = (key, fallback = "") => record?.[key] ?? fallback;
   const requestDetails = parseJsonMeta(record?.requestDetailsJson || "{}");
-  const readOnly = !editable;
   const attachments = (() => {
     try {
       const parsed = JSON.parse(record?.attachmentsJson || "[]");
@@ -6634,26 +6307,22 @@ function shipmentRequestDialogBody(record, editable = false) {
       ${input("customerCode", "Customer Code", fieldValue("customerCode"), true)}
     `)}
     ${formSection("Shipment Details", `
-      ${input("shipmentType", "Shipment Type", fieldValue("shipmentType"), readOnly)}
-      ${input("shipmentVia", "Shipment Via", requestDetails.shipmentVia || "", readOnly)}
-      ${input("loadType", "Load Type", requestDetails.loadType || "", readOnly)}
-      ${input("origin", "Origin", fieldValue("origin"), readOnly)}
-      ${input("destination", "Destination", fieldValue("destination"), readOnly)}
-      ${input("consignee", "Consignee", fieldValue("consignee"), readOnly)}
-      ${input("consigneeContactPerson", "Delivery Contact Person", requestDetails.consigneeContactPerson || "", readOnly)}
-      ${input("consigneeMobile", "Delivery Mobile", requestDetails.consigneeMobile || "", readOnly)}
-      ${input("deliveryLocation", "Delivery Location", requestDetails.deliveryLocation || "", readOnly)}
-      ${textarea("deliveryAddress", "Delivery Address", requestDetails.deliveryAddress || "", readOnly, 2)}
-      ${input("pickupLocation", "Pickup Location", requestDetails.pickupLocation || "", readOnly)}
-      ${textarea("pickupAddress", "Pickup Address", requestDetails.pickupAddress || "", readOnly, 2)}
-      ${input("pickupDate", "Preferred Pickup Date", requestDetails.pickupDate || "", readOnly)}
-      ${input("deliveryDate", "Requested Delivery Date", requestDetails.deliveryDate || "", readOnly)}
-      ${input("itemName", "Item Name", fieldValue("itemName"), readOnly)}
-      ${input("hsCode", "HS Code", fieldValue("hsCode"), readOnly)}
-      ${input("itemCode", "Item Code", fieldValue("itemCode"), readOnly)}
-      ${input("quantity", "Quantity", fieldValue("quantity"), readOnly, "number")}
-      ${input("weight", "Weight (KG)", fieldValue("weight"), readOnly, "number")}
-      ${input("invoiceValue", "Invoice Value", fieldValue("invoiceValue"), readOnly, "number")}
+      ${input("shipmentType", "Shipment Type", fieldValue("shipmentType"), true)}
+      ${input("shipmentVia", "Shipment Via", requestDetails.shipmentVia || "", true)}
+      ${input("origin", "Origin", fieldValue("origin"), true)}
+      ${input("destination", "Destination", fieldValue("destination"), true)}
+      ${input("consignee", "Consignee", fieldValue("consignee"), true)}
+      ${input("consigneeContactPerson", "Delivery Contact Person", requestDetails.consigneeContactPerson || "", true)}
+      ${input("consigneeMobile", "Delivery Mobile", requestDetails.consigneeMobile || "", true)}
+      ${textarea("deliveryAddress", "Delivery Address", requestDetails.deliveryAddress || "", true, 2)}
+      ${input("pickupDate", "Preferred Pickup Date", requestDetails.pickupDate || "", true)}
+      ${input("deliveryDate", "Requested Delivery Date", requestDetails.deliveryDate || "", true)}
+      ${input("itemName", "Item Name", fieldValue("itemName"), true)}
+      ${input("hsCode", "HS Code", fieldValue("hsCode"), true)}
+      ${input("itemCode", "Item Code", fieldValue("itemCode"), true)}
+      ${input("quantity", "Quantity", fieldValue("quantity"), true)}
+      ${input("weight", "Weight (KG)", fieldValue("weight"), true)}
+      ${input("invoiceValue", "Invoice Value", fieldValue("invoiceValue"), true)}
     `)}
     ${formSection("Cargo Calculation", `
       ${input("pieces", "Total Pieces", requestDetails.pieces || fieldValue("quantity"), true)}
@@ -6662,7 +6331,7 @@ function shipmentRequestDialogBody(record, editable = false) {
       ${input("chargeableKg", "Chargeable Weight (KG)", requestDetails.chargeableKg || "0", true)}
       ${input("volumeCategory", "CBM Divisor", requestDetails.volumeCategory || "", true)}
     `)}
-    ${textarea("remarks", "Customer Remarks", fieldValue("remarks"), readOnly, 2)}
+    ${textarea("remarks", "Customer Remarks", fieldValue("remarks"), true, 2)}
     ${attachments.length ? `<div class="form-section"><h3>Attachments</h3>${attachments.map((file) => {
       const fileName = escapeHtml(file.name || file.fileName || String(file));
       const fileUrl = String(file.url || file.storageUrl || "").trim();
@@ -9313,18 +8982,7 @@ async function approveShipmentRequest(id, fromDialog = false) {
   const record = state.shipmentRequests.find((row) => row.requestNo === id);
   if (!record) return;
   const notes = fromDialog ? (dialogValue("approvalNotes") || record.approvalNotes || "") : (record.approvalNotes || "");
-  if (record.convertedJobNo) {
-    notifyDenied("Already approved", `${id} is already linked to shipment ${record.convertedJobNo}.`);
-    return;
-  }
-  const shipmentData = customerRequestShipmentData(record);
-  const shipmentCreated = await createShipment(shipmentData);
-  if (shipmentCreated === false) {
-    notifyFailed("Approval stopped", "The shipment could not be created, so this request was not approved.");
-    return;
-  }
-  const createdShipment = state.shipments.find((shipmentItem) => shipmentItem.jobNo === shipmentData.jobNo) || state.shipments[0];
-  const updatedRecord = { ...record, status: "APPROVED", approvalNotes: notes, convertedJobNo: createdShipment?.jobNo || shipmentData.jobNo };
+  const updatedRecord = { ...record, status: "APPROVED", approvalNotes: notes };
   const saved = await persistRecord("shipmentRequest", updatedRecord);
   if (!saved) {
     notifyFailed("Approval not saved", "Could not save this to the server. Please try again.");
@@ -9334,59 +8992,7 @@ async function approveShipmentRequest(id, fromDialog = false) {
   saveState();
   if (fromDialog) recordDialog.close();
   render();
-  notifySuccess("Request approved", `${id} was approved as shipment ${updatedRecord.convertedJobNo}, and the customer has been notified.`);
-}
-
-function customerRequestShipmentData(record) {
-  const details = parseJsonMeta(record.requestDetailsJson || "{}");
-  const via = String(details.shipmentVia || "").trim().toLowerCase();
-  const serviceByVia = { air: "AI", sea: "SI", land: "LI" };
-  const shipmentService = details.shipmentService || serviceByVia[via] || "LI";
-  const branch = normalizeBranchName(details.branch || defaultUserBranch());
-  return {
-    entryMode: "shipment",
-    jobNo: nextShipmentNumber(branch, shipmentService),
-    bookingDate: today(),
-    shipmentDate: today(),
-    status: "Booked",
-    branch,
-    customer: record.customerName || "",
-    customerCode: record.customerCode || "",
-    customerReference: details.customerReference || record.itemCode || record.requestNo || "",
-    shipmentDirection: record.shipmentType || "Export",
-    shipmentService,
-    shipmentVia: details.shipmentVia || "",
-    loadType: details.loadType || "LTL",
-    origin: record.origin || "",
-    destination: record.destination || "",
-    shipperName: record.customerName || "",
-    pickupLocation: details.pickupLocation || record.origin || "",
-    pickupAddress: details.pickupAddress || "",
-    pickupContactPerson: details.pickupContactPerson || "",
-    pickupMobile: details.pickupMobile || "",
-    pickupDate: details.pickupDate || today(),
-    consigneeName: record.consignee || "",
-    consigneeContactPerson: details.consigneeContactPerson || "",
-    consigneeMobile: details.consigneeMobile || "",
-    deliveryLocation: details.deliveryLocation || record.consignee || "",
-    deliveryAddress: details.deliveryAddress || "",
-    deliveryContactPerson: details.consigneeContactPerson || "",
-    deliveryMobile: details.consigneeMobile || "",
-    deliveryDate: details.deliveryDate || "",
-    cargoItemsJson: details.cargoItemsJson || "[]",
-    palletDimensionsJson: details.cargoItemsJson || "[]",
-    pieces: Number(details.pieces || record.quantity || 0),
-    cbm: Number(details.cbm || 0),
-    actualKg: Number(details.actualKg || record.weight || 0),
-    chargeableKg: Number(details.chargeableKg || 0),
-    volumeCategory: details.volumeCategory || "1 CBM = 250 KG",
-    chargeableDivisor: Number(details.chargeableDivisor || 250),
-    natureOfGoods: [record.itemName, record.hsCode ? `HS Code: ${record.hsCode}` : ""].filter(Boolean).join(" - "),
-    shipmentRemarks: record.remarks || "",
-    billTo1: record.customerName || "",
-    billingParty1Address: "",
-    airwayBillNo: ""
-  };
+  notifySuccess("Request approved", `${id} was approved and the customer has been notified.`);
 }
 
 async function sendBackShipmentRequest(id, fromDialog = false) {
@@ -9413,26 +9019,6 @@ async function sendBackShipmentRequest(id, fromDialog = false) {
   notifySuccess("Request sent back", `${id} was sent back to the customer for review.`);
 }
 
-async function rejectShipmentRequest(id) {
-  const record = state.shipmentRequests.find((row) => row.requestNo === id);
-  if (!record) return;
-  const notes = window.prompt("Enter the reason for rejecting this shipment request:", record.approvalNotes || "") || "";
-  if (!notes.trim()) {
-    notifyDenied("Rejection cancelled", "A rejection reason is required for the customer.");
-    return;
-  }
-  const updatedRecord = { ...record, status: "REJECTED", approvalNotes: notes };
-  const saved = await persistRecord("shipmentRequest", updatedRecord);
-  if (!saved) {
-    notifyFailed("Rejection not saved", "Could not save this to the server. Please try again.");
-    return;
-  }
-  state.shipmentRequests = state.shipmentRequests.map((row) => rowId("shipmentRequest", row) === id ? updatedRecord : row);
-  saveState();
-  render();
-  notifySuccess("Request rejected", `${id} was rejected and the customer has been notified.`);
-}
-
 function convertShipmentRequestToShipment(id) {
   const record = state.shipmentRequests.find((row) => row.requestNo === id);
   if (!record) {
@@ -9456,12 +9042,6 @@ function convertShipmentRequestToShipment(id) {
     pickupDate: requestDetails.pickupDate || "",
     deliveryDate: requestDetails.deliveryDate || "",
     shipmentVia: requestDetails.shipmentVia || "",
-    loadType: requestDetails.loadType || "LTL",
-    shipmentService: requestDetails.shipmentService || ({ air: "AI", sea: "SI", land: "LI" }[String(requestDetails.shipmentVia || "").toLowerCase()] || "LI"),
-    pickupLocation: requestDetails.pickupLocation || record.origin || "",
-    pickupAddress: requestDetails.pickupAddress || "",
-    pickupContactPerson: requestDetails.pickupContactPerson || "",
-    pickupMobile: requestDetails.pickupMobile || "",
     cargoItemsJson: requestDetails.cargoItemsJson || "[]",
     palletDimensionsJson: requestDetails.cargoItemsJson || "[]",
     pieces: Number(requestDetails.pieces || record.quantity || 0),
@@ -9473,7 +9053,6 @@ function convertShipmentRequestToShipment(id) {
     natureOfGoods: [record.itemName, record.hsCode ? `HS Code: ${record.hsCode}` : ""].filter(Boolean).join(" - "),
     customerReference: requestDetails.customerReference || record.itemCode || "",
     shipmentRemarks: record.remarks || "",
-    billTo1: record.customerName || "",
     branch: defaultUserBranch()
   };
   openDialog({
@@ -10800,8 +10379,7 @@ async function removeJobFromLoad(loadNo, jobNo) {
 async function submitCustomerShipmentRequest(data, form) {
   const session = currentSession();
   if (!session?.token) { notifyDenied("Login required", "Please login again."); return false; }
-  const requestNoToEdit = String(data.requestNo || customerPortalData?.editingRequestNo || "").trim();
-  const requiredFields = ["shipmentType", "shipmentVia", "origin", "destination", "pickupLocation", "pickupDate", "pickupContactPerson", "pickupMobile", "pickupAddress", "consignee", "consigneeContactPerson", "consigneeMobile", "deliveryLocation", "deliveryAddress"];
+  const requiredFields = ["shipmentType", "shipmentVia", "origin", "destination", "pickupDate", "consignee", "consigneeContactPerson", "consigneeMobile", "deliveryLocation", "deliveryAddress"];
   for (const fieldName of requiredFields) {
     const field = form.querySelector(`[name='${fieldName}']`);
     if (!String(field?.value || "").trim()) {
@@ -10811,27 +10389,22 @@ async function submitCustomerShipmentRequest(data, form) {
     }
   }
   const files = Array.from(form.querySelector("input[type='file']")?.files || []);
-  const existingAttachmentCount = Number(data.existingAttachmentCount || 0);
-  if (!files.length && !existingAttachmentCount) { notifyDenied("Documents required", "Upload at least one shipment document before submitting the request."); return false; }
-  if (files.length + existingAttachmentCount > 3) throw new Error("You can upload a maximum of 3 documents per shipment request.");
-  const allowedDocument = (file) => ["application/pdf", "image/jpeg"].includes(String(file.type || "").toLowerCase()) || /\.(pdf|jpe?g)$/i.test(String(file.name || ""));
-  if (files.some((file) => !allowedDocument(file))) throw new Error("Shipment documents must be PDF, JPG, or JPEG files.");
-  if (!String(data.itemName || "").trim()) { notifyDenied("Item required", "Enter the item name or description. The HS code may be left blank for company review."); return false; }
+  if (!files.length) { notifyDenied("Documents required", "Upload at least one shipment document before selecting the item and submitting the request."); return false; }
+  if (files.length > 5) throw new Error("You can upload a maximum of 5 attachments per shipment request.");
+  if (!String(data.itemName || "").trim() || !String(data.hsCode || "").trim()) { notifyDenied("Item required", "Select an item after uploading the documents so its HS code can be applied."); return false; }
   const cargoItems = parsePalletDimensions(data.cargoItemsJson || "[]");
   if (!cargoItems.length) { notifyDenied("Cargo details required", "Add at least one pallet, carton, or package before submitting."); return false; }
   const requestDetails = {
-    bookingDate: data.bookingDate || today(), shipmentVia: data.shipmentVia || "", loadType: data.loadType || "", shipmentService: data.shipmentService || "",
-    pickupLocation: data.pickupLocation || "", pickupAddress: data.pickupAddress || "", pickupContactPerson: data.pickupContactPerson || "", pickupMobile: data.pickupMobile || "", pickupDate: data.pickupDate || "", deliveryDate: data.deliveryDate || "",
+    shipmentVia: data.shipmentVia || "", pickupDate: data.pickupDate || "", deliveryDate: data.deliveryDate || "",
     consigneeContactPerson: data.consigneeContactPerson || "", consigneeMobile: data.consigneeMobile || "",
     deliveryLocation: data.deliveryLocation || "", deliveryAddress: data.deliveryAddress || "", customerReference: data.customerReference || "",
     cargoItemsJson: data.cargoItemsJson || "[]", pieces: Number(data.pieces || 0), cbm: Number(data.cbm || 0),
     actualKg: Number(data.actualKg || 0), chargeableKg: Number(data.chargeableKg || 0),
     volumeCategory: data.volumeCategory || "1 CBM = 250 KG", chargeableDivisor: Number(data.chargeableDivisor || 0)
   };
-  const endpoint = requestNoToEdit ? `/api/customer/shipment-requests/${encodeURIComponent(requestNoToEdit)}` : "/api/customer/shipment-requests";
-  const result = await fetchJson(endpoint, { method: requestNoToEdit ? "PUT" : "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify({ ...data, quantity: Number(data.pieces || 0), weight: Number(data.actualKg || 0), attachments: [], requestDetails }) });
+  const result = await fetchJson("/api/customer/shipment-requests", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify({ ...data, quantity: Number(data.pieces || 0), weight: Number(data.actualKg || 0), attachments: [], requestDetails }) });
   const requestNo = result?.row?.requestNo || result?.row?.request_no;
-  if (!requestNo) throw new Error("Shipment request was saved but its reference number was not returned.");
+  if (!requestNo) throw new Error("Shipment request was created but its reference number was not returned.");
   for (const file of files) {
     if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} is larger than 10 MB.`);
     const contentBase64 = await readFileAsBase64(file);
@@ -10841,12 +10414,8 @@ async function submitCustomerShipmentRequest(data, form) {
       body: JSON.stringify({ fileName: file.name, mimeType: file.type, contentBase64 })
     });
   }
-  notifySuccess(requestNoToEdit ? "Request re-submitted" : "Request submitted", "Shipment request " + requestNo + " was saved with " + (files.length + existingAttachmentCount) + " attachment(s).");
+  notifySuccess("Request submitted", "Shipment request " + requestNo + " was saved with " + files.length + " attachment(s).");
   await syncCustomerPortal();
-  if (customerPortalData) {
-    customerPortalData.editingRequestNo = "";
-    customerPortalData.selectedRequestNo = requestNo;
-  }
   activeModule = "Customer Shipments";
   return true;
 }
@@ -10861,13 +10430,11 @@ function bindCustomerShipmentRequestForm() {
   const hsCodeField = form.querySelector("input[name='hsCode']");
   const itemCodeField = form.querySelector("input[name='itemCode']");
   const masterItems = portalRows("hsCodeMaster");
-  const existingAttachmentCount = Number(form.querySelector("input[name='existingAttachmentCount']")?.value || 0);
   const syncDocuments = () => {
     const files = Array.from(documentField?.files || []);
-    const totalFiles = files.length + existingAttachmentCount;
-    const valid = totalFiles > 0 && totalFiles <= 3 && files.every((file) => file.size <= 10 * 1024 * 1024);
+    const valid = files.length > 0 && files.length <= 5 && files.every((file) => file.size <= 10 * 1024 * 1024);
     if (hsStep) hsStep.hidden = !valid;
-    if (documentStatus) documentStatus.textContent = !totalFiles ? "Select at least one file. Maximum 3 files, 10 MB each." : valid ? `${totalFiles} document(s) ready. You can now enter the item and HS code.` : "Use a total of up to 3 files, each 10 MB or smaller.";
+    if (documentStatus) documentStatus.textContent = !files.length ? "Select at least one file. Maximum 5 files, 10 MB each." : valid ? `${files.length} document(s) selected. You can now select the item and HS code.` : "Use up to 5 files, each 10 MB or smaller.";
   };
   const syncHsCode = () => {
     const selected = masterItems.find((row) => String(row.item_name || row.itemName || "").trim().toLowerCase() === String(itemField?.value || "").trim().toLowerCase());
