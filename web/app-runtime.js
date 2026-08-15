@@ -1342,6 +1342,9 @@ function boot() {
     const button = event.target.closest("button[data-module]");
     if (!button) return;
     activeModule = button.dataset.module;
+    // The navigation item always starts a brand-new customer request. Editing is
+    // available only by opening the specific Sent Back request number.
+    if (activeModule === "Customer New Shipment") state.ui.customerRequestEditNo = "";
     render();
   });
 
@@ -4718,7 +4721,7 @@ async function handleModuleClick(event) {
 
   if (action === "edit-customer-request") {
     state.ui.customerRequestEditNo = button.dataset.requestNo || "";
-    activeModule = "New Shipment";
+    activeModule = "Customer New Shipment";
     saveState();
     render();
     return;
