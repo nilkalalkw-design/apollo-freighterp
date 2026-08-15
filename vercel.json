@@ -11,6 +11,14 @@
       "destination": "/web/app-runtime.js"
     },
     {
+      "source": "/hs-code-customer-portal.js",
+      "destination": "/web/hs-code-customer-portal.js"
+    },
+    {
+      "source": "/hs-code-master.json",
+      "destination": "/web/hs-code-master.json"
+    },
+    {
       "source": "/config.js",
       "destination": "/web/config.js"
     },
