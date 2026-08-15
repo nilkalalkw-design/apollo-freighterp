@@ -2868,7 +2868,7 @@ function renderDashboard() {
       ${canViewProfitMargin() ? kpi("Gross Profit", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0) - Number(row.supplierCost || 0), 0)), "Invoiced revenue minus cost", "gross-profit") : ""}
     </section>
     <section class="split-grid single-panel dashboard-shipment-register">
-      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${dashboardTableNote} ${dashboardShipmentColumnsMarkup()} ${table("shipment", recentRows, dashboardShipmentColumns(), undefined, "shipment:dashboard")}</article>
+      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${dashboardTableNote} ${table("shipment", recentRows, shipmentColumns(), undefined, "shipment:dashboard")}</article>
     </section>
     <section class="split-grid single-panel dashboard-alert-row">
       <details class="panel collapsible-section dashboard-alert-panel">
@@ -3107,7 +3107,7 @@ function renderShipments() {
   const rows = filteredRows(visibleRows(state.shipments));
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Shipment Register", "Editable records")} ${shipmentRegisterColumnsMarkup()} ${table("shipment", rows, shipmentColumns(), undefined, "shipment", true, 15)}</article>
+      <article class="panel">${panelHeader("Shipment Register", "Editable records")} ${shipmentRegisterColumnsMarkup()} ${table("shipment", rows, shipmentColumns())}</article>
       ${moduleActionPanel("Shipment Actions", "shipment", "Use separate desktop-style windows for new shipment entry and load/edit shipment details.", quickOpenShipmentMarkup() + actionChecklist([
         "New button opens the shipment popup window.",
         "Click a shipment number or AWB number to open the record.",
@@ -3756,45 +3756,19 @@ function empty(text) {
   return `<p class="empty-state">${escapeHtml(text)}</p>`;
 }
 
-function table(type, rows, columns, showLoad = type !== "shipment", scope = type, sortable = true, pageSize = 0) {
+function table(type, rows, columns, showLoad = type !== "shipment", scope = type, sortable = true) {
   const sortedRows = sortable ? applySort(scope, rows) : rows;
-  const usePagination = Number(pageSize) > 0 && sortedRows.length > 0;
-  const safePageSize = usePagination ? Math.max(1, Number(pageSize)) : 0;
-  const totalPages = usePagination ? Math.ceil(sortedRows.length / safePageSize) : 1;
-  state.ui.tablePages = state.ui.tablePages || {};
-  let currentPage = Number(state.ui.tablePages[scope] || 1);
-  if (!Number.isFinite(currentPage) || currentPage < 1) currentPage = 1;
-  currentPage = Math.min(currentPage, totalPages);
-  state.ui.tablePages[scope] = currentPage;
-  const pageOffset = usePagination ? (currentPage - 1) * safePageSize : 0;
-  const pageRows = usePagination ? sortedRows.slice(pageOffset, pageOffset + safePageSize) : sortedRows;
   const header = showLoad ? `<th>Load</th>` : "";
   const colSpan = columns.length + (showLoad ? 1 : 0);
-  const body = pageRows.length
-    ? pageRows.map((row, index) => tableRow(type, row, index + pageOffset, columns, showLoad)).join("")
+  const body = sortedRows.length
+    ? sortedRows.map((row, index) => tableRow(type, row, index, columns, showLoad)).join("")
     : `<tr><td colspan="${colSpan}">${empty("No records found.")}</td></tr>`;
   const locked = isColumnWidthLocked(scope);
-  const headCells = columns.map(([key, label]) => sortable
-    ? sortableHeaderCell(type, scope, key, label, locked)
-    : `<th data-column-key="${escapeHtml(key)}">${escapeHtml(label)}</th>`).join("");
+  const headCells = columns.map(([key, label]) => sortable ? sortableHeaderCell(type, scope, key, label, locked) : `<th>${escapeHtml(label)}</th>`).join("");
   const widths = (state.ui.columnWidths || {})[scope];
   const tableStyle = widths && Object.keys(widths).length ? ` style="table-layout:fixed"` : "";
   const lockToggle = sortable ? columnLockToggleMarkup(scope, locked) : "";
-  const pagination = usePagination ? tablePaginationMarkup(scope, currentPage, totalPages, sortedRows.length, pageOffset, pageRows.length) : "";
-  return `${scope === "shipment" ? "" : ""}${lockToggle}<div class="table-wrap" data-table-scope="${escapeHtml(scope)}"><table${tableStyle} data-table-scope="${escapeHtml(scope)}"><thead><tr>${headCells}${header}</tr></thead><tbody>${body}</tbody></table></div>${pagination}`;
-}
-
-function tablePaginationMarkup(scope, currentPage, totalPages, totalRows, pageOffset, pageRowCount) {
-  const first = totalRows ? pageOffset + 1 : 0;
-  const last = totalRows ? pageOffset + pageRowCount : 0;
-  return `<div class="register-pagination" data-pagination-scope="${escapeHtml(scope)}">
-    <div class="register-pagination-info">Showing <strong>${first}-${last}</strong> of <strong>${totalRows}</strong></div>
-    <div class="register-pagination-controls">
-      <button type="button" class="secondary-button pagination-button" data-action="table-page" data-scope="${escapeHtml(scope)}" data-page="${Math.max(1, currentPage - 1)}" ${currentPage <= 1 ? "disabled" : ""} aria-label="Previous page">‹ Previous</button>
-      <span class="register-pagination-page">Page <strong>${currentPage}</strong> of <strong>${totalPages}</strong></span>
-      <button type="button" class="secondary-button pagination-button" data-action="table-page" data-scope="${escapeHtml(scope)}" data-page="${Math.min(totalPages, currentPage + 1)}" ${currentPage >= totalPages ? "disabled" : ""} aria-label="Next page">Next ›</button>
-    </div>
-  </div>`;
+  return `${scope === "shipment" ? "" : ""}${lockToggle}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}${header}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function isColumnWidthLocked(scope) {
@@ -3814,7 +3788,7 @@ function sortableHeaderCell(type, scope, key, label, locked = false) {
   const width = (state.ui.columnWidths || {})[scope]?.[key];
   const widthStyle = width ? ` style="width:${width}px"` : "";
   const resizeHandle = locked ? "" : `<span class="col-resize-handle" data-resize-scope="${escapeHtml(scope)}" data-resize-key="${escapeHtml(key)}"></span>`;
-  return `<th data-column-key="${escapeHtml(key)}"${widthStyle}><button type="button" class="sort-header-button${isActive ? " is-active" : ""}" data-action="sort-column" data-type="${escapeHtml(type)}" data-scope="${escapeHtml(scope)}" data-key="${escapeHtml(key)}">${escapeHtml(label)}${arrow}</button>${resizeHandle}</th>`;
+  return `<th${widthStyle}><button type="button" class="sort-header-button${isActive ? " is-active" : ""}" data-action="sort-column" data-type="${escapeHtml(type)}" data-scope="${escapeHtml(scope)}" data-key="${escapeHtml(key)}">${escapeHtml(label)}${arrow}</button>${resizeHandle}</th>`;
 }
 
 function applySort(scope, rows) {
@@ -3858,7 +3832,7 @@ function tableRow(type, row, index, columns, showLoad = true) {
   const id = rowId(type, row);
   const actionCell = showLoad ? `<td>${tableActionButton(type, id)}</td>` : "";
   const rowClass = type === "shipment" ? `shipment-row-${shipmentVisualState(row).key}` : "";
-  return `<tr class="${rowClass}">${columns.map(([key]) => `<td data-column-key="${escapeHtml(key)}">${cellHtml(type, key, row, index)}</td>`).join("")}${actionCell}</tr>`;
+  return `<tr class="${rowClass}">${columns.map(([key]) => `<td>${cellHtml(type, key, row, index)}</td>`).join("")}${actionCell}</tr>`;
 }
 
 
@@ -4397,104 +4371,22 @@ function shipmentRegisterColumnSettings() {
   return { defaults, order, visible };
 }
 
-function dashboardShipmentColumnSettings() {
-  const defaults = defaultColumnLayouts().shipment.filter(([key]) => !isRegisterAddressColumn(key));
-  const storageKey = "apollo.dashboard.shipment.columns.v1";
-  let existing = {};
-  try {
-    const raw = localStorage.getItem(storageKey);
-    existing = raw ? JSON.parse(raw) : {};
-  } catch (_) {}
-  const order = Array.isArray(existing?.order)
-    ? existing.order.filter((key) => defaults.some(([k]) => k === key))
-    : [];
-  defaults.forEach(([key]) => { if (!order.includes(key)) order.push(key); });
-  const visible = { ...(existing?.visible || {}) };
-  defaults.forEach(([key]) => {
-    if (!Object.prototype.hasOwnProperty.call(visible, key)) visible[key] = true;
-  });
-  return { defaults, order, visible, storageKey };
-}
-
-function saveDashboardShipmentColumnSettings(settings) {
-  try {
-    localStorage.setItem(settings.storageKey, JSON.stringify({
-      order: settings.order,
-      visible: settings.visible
-    }));
-  } catch (_) {}
-}
-
-function dashboardShipmentColumns() {
-  const settings = dashboardShipmentColumnSettings();
-  const byKey = new Map(settings.defaults);
-  return settings.order
-    .filter((key) => settings.visible[key] !== false && byKey.has(key))
-    .map((key) => [key, byKey.get(key)]);
-}
-
-function dashboardShipmentColumnsMarkup() {
-  const settings = dashboardShipmentColumnSettings();
-  const rows = settings.order.map((key) => {
-    const label = settings.defaults.find(([k]) => k === key)?.[1] || key;
-    return `<div class="column-setting-row" draggable="true" data-dashboard-column-drag-key="${escapeHtml(key)}">
-      <span class="column-setting-grip" aria-hidden="true">⠿</span>
-      <label class="column-setting-label">
-        <input class="column-setting-checkbox" type="checkbox" data-action="toggle-dashboard-shipment-column" data-column-key="${escapeHtml(key)}" ${settings.visible[key] !== false ? "checked" : ""}>
-        <span>${escapeHtml(label)}</span>
-      </label>
-    </div>`;
-  }).join("");
-  return `<div class="column-tools dashboard-column-tools">
-    <button type="button" class="secondary-button column-menu-button" data-action="toggle-dashboard-shipment-columns" aria-expanded="false" title="Show or hide Dashboard shipment columns">⚙ Columns</button>
-    <div class="column-menu dashboard-column-menu" data-dashboard-shipment-column-menu hidden>
-      <div class="column-menu-title">Dashboard Columns</div>
-      <div class="column-menu-help">Select the columns shown in Operational Shipments.</div>
-      <div class="column-setting-list" data-dashboard-column-list>${rows}</div>
-      <div class="column-menu-actions">
-        <button type="button" class="secondary-button" data-action="select-all-dashboard-shipment-columns">Select All</button>
-        <button type="button" class="secondary-button" data-action="reset-dashboard-shipment-columns">Reset Default</button>
-      </div>
-    </div>
-  </div>`;
-}
-
-function setTableColumnVisibility(scope, key, visible) {
-  const table = moduleContent.querySelector(`table[data-table-scope="${CSS.escape(scope)}"]`);
-  if (!table) return;
-  table.querySelectorAll(`[data-column-key="${CSS.escape(key)}"]`).forEach((cell) => {
-    cell.hidden = !visible;
-  });
-}
-
-function closeColumnMenusExcept(menuToKeep = null) {
-  moduleContent.querySelectorAll(".column-menu").forEach((menu) => {
-    if (menu !== menuToKeep) {
-      menu.hidden = true;
-      menu.closest(".column-tools")?.querySelector(".column-menu-button")?.setAttribute("aria-expanded", "false");
-    }
-  });
-}
-
 function shipmentRegisterColumnsMarkup() {
   const settings = shipmentRegisterColumnSettings();
   const rows = settings.order.map((key) => {
     const label = settings.defaults.find(([k]) => k === key)?.[1] || key;
-    return `<div class="column-setting-row" draggable="true" data-column-drag-key="${escapeHtml(key)}">
-      <span class="column-setting-grip" aria-hidden="true">⠿</span>
-      <label class="column-setting-label">
-        <input class="column-setting-checkbox" type="checkbox" data-action="toggle-shipment-column" data-column-key="${escapeHtml(key)}" ${settings.visible[key] !== false ? "checked" : ""}>
-        <span>${escapeHtml(label)}</span>
-      </label>
+    return `<div class="shipment-column-setting" draggable="true" data-column-drag-key="${escapeHtml(key)}" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #d9dee7;border-radius:6px;background:#fff;cursor:grab;margin-bottom:4px">
+      <span aria-hidden="true" style="cursor:grab">☰</span>
+      <label style="display:flex;align-items:center;gap:7px;flex:1;cursor:pointer"><input type="checkbox" data-action="toggle-shipment-column" data-column-key="${escapeHtml(key)}" ${settings.visible[key] !== false ? "checked" : ""}> <span>${escapeHtml(label)}</span></label>
     </div>`;
   }).join("");
-  return `<div class="column-tools shipment-column-tools">
-    <button type="button" class="secondary-button column-menu-button" data-action="toggle-shipment-columns" aria-expanded="false" title="Show or hide Shipment Register columns">⚙ Columns</button>
-    <div class="column-menu shipment-column-menu" data-shipment-column-menu hidden>
-      <div class="column-menu-title">Shipment Register Columns</div>
-      <div class="column-menu-help">Select the columns shown in Shipment Register. Drag to reorder.</div>
-      <div class="column-setting-list" data-shipment-column-list>${rows}</div>
-      <div class="column-menu-actions">
+  return `<div class="shipment-column-tools" style="margin:8px 0 10px;position:relative">
+    <button type="button" class="secondary-button" data-action="toggle-shipment-columns">⚙ Columns</button>
+    <div class="shipment-column-menu" data-shipment-column-menu hidden style="position:absolute;z-index:50;top:42px;left:0;width:280px;max-height:420px;overflow:auto;padding:10px;background:#f7f9fc;border:1px solid #cfd6e1;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14)">
+      <div style="font-weight:700;margin-bottom:8px">Shipment Register Columns</div>
+      <div style="font-size:12px;color:#667085;margin-bottom:8px">Drag ☰ to arrange the column order. Uncheck a column to hide it.</div>
+      <div data-shipment-column-list>${rows}</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
         <button type="button" class="secondary-button" data-action="select-all-shipment-columns">Select All</button>
         <button type="button" class="secondary-button" data-action="reset-shipment-columns">Reset Default</button>
       </div>
@@ -4780,33 +4672,9 @@ async function handleModuleClick(event) {
   if (!button) return;
   const { action, type, id, mode } = button.dataset;
 
-  if (action === "table-page") {
-    const scope = String(button.dataset.scope || "");
-    const page = Math.max(1, Number(button.dataset.page || 1));
-    state.ui.tablePages = state.ui.tablePages || {};
-    state.ui.tablePages[scope] = Number.isFinite(page) ? page : 1;
-    saveState();
-    render();
-    return;
-  }
-
   if (action === "toggle-shipment-columns") {
     const menu = moduleContent.querySelector("[data-shipment-column-menu]");
-    if (menu) {
-      closeColumnMenusExcept(menu);
-      menu.hidden = !menu.hidden;
-      button.setAttribute("aria-expanded", String(!menu.hidden));
-    }
-    return;
-  }
-
-  if (action === "toggle-dashboard-shipment-columns") {
-    const menu = moduleContent.querySelector("[data-dashboard-shipment-column-menu]");
-    if (menu) {
-      closeColumnMenusExcept(menu);
-      menu.hidden = !menu.hidden;
-      button.setAttribute("aria-expanded", String(!menu.hidden));
-    }
+    if (menu) menu.hidden = !menu.hidden;
     return;
   }
 
@@ -4819,66 +4687,26 @@ async function handleModuleClick(event) {
       notifyDenied("Column selection", "At least one Shipment Register column must remain visible.");
       return;
     }
-    settings.visible[key] = button.checked;
-    state.ui.shipmentRegisterColumns = settings;
+    state.ui.shipmentRegisterColumns = { ...settings, visible: { ...settings.visible, [key]: button.checked } };
     saveState();
-    setTableColumnVisibility("shipment", key, button.checked);
-    return;
-  }
-
-  if (action === "toggle-dashboard-shipment-column") {
-    const key = button.dataset.columnKey;
-    const settings = dashboardShipmentColumnSettings();
-    const visibleCount = settings.order.filter((columnKey) => settings.visible[columnKey] !== false).length;
-    if (button.checked === false && visibleCount <= 1) {
-      button.checked = true;
-      notifyDenied("Column selection", "At least one Dashboard shipment column must remain visible.");
-      return;
-    }
-    settings.visible[key] = button.checked;
-    saveDashboardShipmentColumnSettings(settings);
-    setTableColumnVisibility("shipment:dashboard", key, button.checked);
+    render();
     return;
   }
 
   if (action === "select-all-shipment-columns") {
     const settings = shipmentRegisterColumnSettings();
-    settings.defaults.forEach(([key]) => { settings.visible[key] = true; });
-    state.ui.shipmentRegisterColumns = settings;
+    const visible = {};
+    settings.defaults.forEach(([key]) => { visible[key] = true; });
+    state.ui.shipmentRegisterColumns = { ...settings, visible };
     saveState();
-    moduleContent.querySelectorAll("[data-action='toggle-shipment-column']").forEach((input) => { input.checked = true; });
-    settings.defaults.forEach(([key]) => setTableColumnVisibility("shipment", key, true));
-    return;
-  }
-
-  if (action === "select-all-dashboard-shipment-columns") {
-    const settings = dashboardShipmentColumnSettings();
-    settings.defaults.forEach(([key]) => { settings.visible[key] = true; });
-    saveDashboardShipmentColumnSettings(settings);
-    moduleContent.querySelectorAll("[data-action='toggle-dashboard-shipment-column']").forEach((input) => { input.checked = true; });
-    settings.defaults.forEach(([key]) => setTableColumnVisibility("shipment:dashboard", key, true));
+    render();
     return;
   }
 
   if (action === "reset-shipment-columns") {
     state.ui.shipmentRegisterColumns = null;
     saveState();
-    // Reset only the current table/menu without re-rendering, so the menu stays open and fixed.
-    const settings = shipmentRegisterColumnSettings();
-    moduleContent.querySelectorAll("[data-action='toggle-shipment-column']").forEach((input) => {
-      input.checked = settings.visible[input.dataset.columnKey] !== false;
-    });
-    settings.defaults.forEach(([key]) => setTableColumnVisibility("shipment", key, true));
-    return;
-  }
-
-  if (action === "reset-dashboard-shipment-columns") {
-    try { localStorage.removeItem("apollo.dashboard.shipment.columns.v1"); } catch (_) {}
-    const settings = dashboardShipmentColumnSettings();
-    moduleContent.querySelectorAll("[data-action='toggle-dashboard-shipment-column']").forEach((input) => {
-      input.checked = true;
-    });
-    settings.defaults.forEach(([key]) => setTableColumnVisibility("shipment:dashboard", key, true));
+    render();
     return;
   }
 
@@ -10969,61 +10797,18 @@ function sendShipmentStatusEmail(jobNo) {
 
 boot();
 
-
-document.addEventListener("dragover", (event) => {
-  const target = event.target.closest?.("[data-dashboard-column-drag-key]");
-  if (target) event.preventDefault();
-});
-document.addEventListener("dragstart", (event) => {
-  const row = event.target.closest?.("[data-dashboard-column-drag-key]");
-  if (row) event.dataTransfer.setData("text/plain", `dashboard:${row.dataset.dashboardColumnDragKey}`);
-});
-document.addEventListener("drop", (event) => {
-  const target = event.target.closest?.("[data-dashboard-column-drag-key]");
-  if (!target) return;
-  event.preventDefault();
-  const raw = event.dataTransfer.getData("text/plain");
-  const sourceKey = raw.startsWith("dashboard:") ? raw.slice(10) : "";
-  const targetKey = target.dataset.dashboardColumnDragKey;
-  if (!sourceKey || !targetKey || sourceKey === targetKey) return;
-  const settings = dashboardShipmentColumnSettings();
-  const order = settings.order.filter((key) => key !== sourceKey);
-  const targetIndex = order.indexOf(targetKey);
-  order.splice(targetIndex < 0 ? order.length : targetIndex, 0, sourceKey);
-  settings.order = order;
-  saveDashboardShipmentColumnSettings(settings);
-
-  const list = moduleContent.querySelector("[data-dashboard-column-list]");
-  const sourceRow = list?.querySelector(`[data-dashboard-column-drag-key="${CSS.escape(sourceKey)}"]`);
-  const targetRow = list?.querySelector(`[data-dashboard-column-drag-key="${CSS.escape(targetKey)}"]`);
-  if (sourceRow && targetRow) list.insertBefore(sourceRow, targetRow);
-
-  const table = moduleContent.querySelector('table[data-table-scope="shipment:dashboard"]');
-  const headerRow = table?.tHead?.rows?.[0];
-  const bodyRows = table?.tBodies?.[0]?.rows || [];
-  if (headerRow) {
-    const sourceIndex = Array.from(headerRow.cells).findIndex(c => c.dataset.columnKey === sourceKey);
-    const targetIndex2 = Array.from(headerRow.cells).findIndex(c => c.dataset.columnKey === targetKey);
-    if (sourceIndex >= 0 && targetIndex2 >= 0) {
-      const sourceCells = [headerRow.cells[sourceIndex], ...Array.from(bodyRows).map(r => r.cells[sourceIndex]).filter(Boolean)];
-      const targetCells = [headerRow.cells[targetIndex2], ...Array.from(bodyRows).map(r => r.cells[targetIndex2]).filter(Boolean)];
-      targetCells.forEach((cell, i) => {
-        const row = i === 0 ? headerRow : bodyRows[i - 1];
-        row.insertBefore(sourceCells[i], targetCells[i]);
-      });
-    }
-  }
-});
-
 /* APOLLO_DASHBOARD_LAYOUT_FEATURE */
 (function () {
   "use strict";
 
   // Dashboard has its own independent settings.
   const STORAGE = "apollo.dashboard.columns.v3";
-  // Legacy dashboard-wide layout overlay disabled. Dashboard shipment columns now use
-  // the dedicated menu above and are independent from Shipment Register settings.
-  const ROOTS = [];
+  const ROOTS = [
+    '[data-page="dashboard"]',
+    '#dashboard-page',
+    '#dashboard',
+    '.dashboard-page'
+  ];
 
   function root() {
     for (const s of ROOTS) {
