@@ -4485,7 +4485,7 @@ function userColumns() {
   return configurableColumns("user", defaultColumnLayouts().user);
 }
 
-function customerRequestColumns() { return [["request_no", "Request"], ["item_name", "Item"], ["origin", "Origin"], ["destination", "Destination"], ["status", "Status"], ["created_at", "Created"]]; }
+function customerRequestColumns() { return [["request_no", "Request"], ["item_name", "Item"], ["hs_code", "HS Code"], ["origin", "Origin"], ["destination", "Destination"], ["status", "Status"], ["created_at", "Created"]]; }
 function customerShipmentColumns() { return [["job_no", "Shipment"], ["origin", "Origin"], ["destination", "Destination"], ["status", "Status"], ["pod_status", "POD"], ["invoice_status", "Invoice"]]; }
 function customerNotificationColumns() { return [["title", "Title"], ["message", "Message"], ["read_status", "Status"], ["created_at", "Created"]]; }
 function customerActivityColumns() { return [["action", "Action"], ["description", "Description"], ["ip_address", "IP"], ["created_at", "Created"]]; }
@@ -10405,7 +10405,7 @@ async function submitCustomerShipmentRequest(data, form) {
   const files = Array.from(form.querySelector("input[type='file']")?.files || []);
   if (!files.length) { notifyDenied("Documents required", "Upload at least one shipment document before selecting the item and submitting the request."); return false; }
   if (files.length > 5) throw new Error("You can upload a maximum of 5 attachments per shipment request.");
-  if (!String(data.itemName || "").trim() || !String(data.hsCode || "").trim()) { notifyDenied("Item required", "Select an item after uploading the documents so its HS code can be applied."); return false; }
+  if (!String(data.itemName || "").trim()) { notifyDenied("Item required", "Enter the item name or description. If no HS code is found, the company team will review it."); return false; }
   const cargoItems = parsePalletDimensions(data.cargoItemsJson || "[]");
   if (!cargoItems.length) { notifyDenied("Cargo details required", "Add at least one pallet, carton, or package before submitting."); return false; }
   const requestDetails = {
