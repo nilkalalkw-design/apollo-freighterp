@@ -253,7 +253,9 @@ function seedState() {
       selectedLoadNo: "",
       shipmentRegisterColumns: null,
       dashboardShipmentColumns: null,
-      openColumnSettings: ""
+      openColumnSettings: "",
+      customerActivityFilter: "All",
+      customerRequestEditNo: ""
     },
     dropdownOptions: {}
   };
@@ -1384,6 +1386,13 @@ function boot() {
   moduleContent.addEventListener("keydown", handleModuleKeydown);
   moduleContent.addEventListener("submit", handleModuleSubmit);
   moduleContent.addEventListener("change", (event) => {
+    const activityFilter = event.target.closest("[data-customer-activity-filter]");
+    if (activityFilter) {
+      state.ui.customerActivityFilter = activityFilter.value || "All";
+      saveState();
+      render();
+      return;
+    }
     const statusSelect = event.target.closest("form[data-form='status'] [name='status']");
     if (!statusSelect) return;
     const field = statusSelect.closest("form").querySelector("[data-expected-arrival-field]");
@@ -2564,44 +2573,41 @@ function updateDateFilterStatus() {
 
 function portalRows(name) { return Array.isArray(customerPortalData?.[name]) ? customerPortalData[name] : []; }
 function portalStatus(value) { return String(value || "").toUpperCase().replace(/\s+/g, "_"); }
-function renderCustomerDashboard() { const requests = portalRows("shipmentRequests"); const shipments = portalRows("shipments"); const notifications = portalRows("notifications"); const activity = portalRows("activityLogs"); const pending = requests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))).length; const approved = requests.filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))).length; const sentBack = requests.filter((row) => portalStatus(row.status) === "SENT_BACK").length; return "<section class=\"kpi-grid\">" + kpi("Total Shipments", shipments.length + requests.length, "Your shipment records", "customer-total-shipments") + kpi("Pending Requests", pending, "Waiting company review", "customer-pending-requests") + kpi("Approved Requests", approved, "Approved or auto approved", "customer-approved-requests") + kpi("Sent Back Requests", sentBack, "Needs your attention", "customer-sent-back-requests") + kpi("Notifications", notifications.length, "Portal messages", "customer-notifications") + "</section><section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Recent Requests", "Customer Portal") + table("customerRequest", requests.slice(0, 8), customerRequestColumns(), false, "customerRequest:dashboard") + "</article><article class=\"panel\">" + panelHeader("Recent Activity", "Customer Portal") + table("customerActivity", activity.slice(0, 8), customerActivityColumns(), false, "customerActivity:dashboard") + "</article></section>"; }
+function renderCustomerDashboard() { const requests = portalRows("shipmentRequests"); const shipments = portalRows("shipments"); const notifications = portalRows("notifications"); const activity = portalRows("activityLogs"); const filter = state.ui.customerActivityFilter || "All"; const visibleActivity = filter === "All" ? activity : activity.filter((row) => String(row.action || "").toLowerCase().includes(filter.toLowerCase())); const pending = requests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(portalStatus(row.status))).length; const approved = requests.filter((row) => ["AUTO_APPROVED", "APPROVED", "COMPLETED"].includes(portalStatus(row.status))).length; const sentBack = requests.filter((row) => portalStatus(row.status) === "SENT_BACK").length; return "<section class=\"kpi-grid\">" + kpi("Total Shipments", shipments.length + requests.length, "Your shipment records", "customer-total-shipments") + kpi("Pending Requests", pending, "Waiting company review", "customer-pending-requests") + kpi("Approved Requests", approved, "Approved or auto approved", "customer-approved-requests") + kpi("Sent Back Requests", sentBack, "Needs your attention", "customer-sent-back-requests") + kpi("Notifications", notifications.length, "Portal messages", "customer-notifications") + "</section><section class=\"split-grid\"><article class=\"panel\">" + panelHeader("Recent Requests", "Customer Portal") + table("customerRequest", requests.slice(0, 8), customerRequestColumns(), false, "customerRequest:dashboard") + "</article><article class=\"panel\">" + panelHeader("Recent Activity", "Customer Portal") + `<label class="customer-activity-filter">Filter activity<select data-customer-activity-filter>${["All", "Login", "Shipment Submission", "Shipment Resubmission"].map((value) => `<option value="${escapeHtml(value)}" ${value === filter ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></label>` + table("customerActivity", visibleActivity.slice(0, 8), customerActivityColumns(), false, "customerActivity:dashboard") + "</article></section>"; }
 function renderCustomerNewShipment() {
   const hsOptions = portalRows("hsCodeMaster").map((row) => ({ value: row.item_name || row.itemName || "", label: [row.hs_code || row.hsCode, row.item_code || row.itemCode, row.alternate_name || row.alternateName].filter(Boolean).join(" | ") }));
-  const session = currentSession() || {};
+  const requestNo = state.ui.customerRequestEditNo || "";
+  const editRecord = requestNo ? portalRows("shipmentRequests").find((row) => String(row.request_no || row.requestNo || "") === requestNo) : null;
+  const details = parseJsonMeta(editRecord?.request_details_json || editRecord?.requestDetailsJson || "{}");
+  const value = (name, fallback = "") => details[name] ?? editRecord?.[name] ?? editRecord?.[name.replace(/[A-Z]/g, (letter) => "_" + letter.toLowerCase())] ?? fallback;
+  const resubmitting = portalStatus(editRecord?.status) === "SENT_BACK";
   return `<section class="panel customer-booking-panel">
-    ${panelHeader("New Shipment Request", "Customer Portal")}
+    ${panelHeader(resubmitting ? `Correct & Resubmit ${requestNo}` : "New Shipment Request", "Customer Portal")}
+    ${resubmitting ? `<div class="alert warning"><strong>Company feedback:</strong> ${escapeHtml(editRecord?.approval_notes || editRecord?.approvalNotes || "Please review the request and resubmit it.")}</div>` : ""}
     <p class="customer-booking-intro">Complete the booking details, attach the supporting documents, then select your item and HS code. The cargo calculator uses the same CBM and chargeable-weight rules as the company shipment portal.</p>
     <form class="stack-form customer-booking-form" data-form="customer-shipment-request" novalidate>
       <section class="customer-booking-step"><span class="customer-step-number">1</span><div><h3>Booking & Delivery Details</h3><p>Tell us where and when your cargo needs to move.</p></div>
         <div class="form-section-grid">
-          ${strictSelect("shipmentType", "Shipment Type", ["Export", "Import", "Cross Trade", "Local Delivery"], "Export")}
-          ${strictSelect("shipmentVia", "Shipment Via", ["Air", "Sea", "Land"], "")}
-          ${input("origin", "Origin", "")}
-          ${input("destination", "Destination", "")}
-          ${input("pickupDate", "Preferred Pickup Date", "", false, "date")}
-          ${input("deliveryDate", "Requested Delivery Date", "", false, "date")}
-          ${input("consignee", "Consignee / Delivery Company", "")}
-          ${input("consigneeContactPerson", "Delivery Contact Person", "")}
-          ${input("consigneeMobile", "Delivery Mobile", "")}
-          ${input("deliveryLocation", "Delivery Location", "")}
-          ${textarea("deliveryAddress", "Delivery Address", "", false, 2)}
-          ${input("customerReference", "Customer Reference", "")}
+          ${strictSelect("shipmentType", "Shipment Type", ["Export", "Import", "Cross Trade", "Local Delivery"], value("shipmentType", "Export"))}
+          ${strictSelect("shipmentVia", "Shipment Via", ["Air", "Sea", "Land"], value("shipmentVia"))}
+          ${input("origin", "Origin", value("origin"))}${input("destination", "Destination", value("destination"))}
+          ${input("pickupDate", "Preferred Pickup Date", value("pickupDate"), false, "date")}${input("deliveryDate", "Requested Delivery Date", value("deliveryDate"), false, "date")}
+          ${input("consignee", "Consignee / Delivery Company", value("consignee"))}${input("consigneeContactPerson", "Delivery Contact Person", value("consigneeContactPerson"))}
+          ${input("consigneeMobile", "Delivery Mobile", value("consigneeMobile"))}${input("deliveryLocation", "Delivery Location", value("deliveryLocation"))}
+          ${textarea("deliveryAddress", "Delivery Address", value("deliveryAddress"), false, 2)}${input("customerReference", "Customer Reference", value("customerReference"))}
         </div>
       </section>
       <section class="customer-booking-step customer-document-step"><span class="customer-step-number">2</span><div><h3>Upload Shipment Documents</h3><p>Upload invoice, packing list, or other supporting files first. This unlocks item and HS-code selection.</p></div>
-        <label class="customer-file-picker">Shipment Documents <input name="attachments" type="file" multiple required accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" /><small data-customer-document-status>Select at least one file. Maximum 5 files, 10 MB each.</small></label>
+        <label class="customer-file-picker">Shipment Documents <input name="attachments" type="file" multiple ${resubmitting ? "" : "required"} accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" /><small data-customer-document-status>${resubmitting ? "Existing documents are retained. Add replacement files only if needed." : "Select at least one file. Maximum 5 files, 10 MB each."}</small></label>
       </section>
       <section class="customer-booking-step" data-customer-hs-step hidden><span class="customer-step-number">3</span><div><h3>Item & Customs Information</h3><p>Select the item from the approved item list. Its HS code is filled automatically.</p></div>
         <div class="form-section-grid">
-          ${selectFrom("itemName", "Item Name", hsOptions, "")}
-          ${input("hsCode", "HS Code", "", true)}
-          ${input("itemCode", "Item Code", "", true)}
-          ${input("invoiceValue", "Declared Invoice Value", "", false, "number")}
-          ${textarea("remarks", "Special Instructions / Remarks", "", false, 3)}
+          ${selectFrom("itemName", "Item Name", hsOptions, value("itemName"))}${input("hsCode", "HS Code", value("hsCode"), true)}${input("itemCode", "Item Code", value("itemCode"), true)}
+          ${input("invoiceValue", "Declared Invoice Value", value("invoiceValue"), false, "number")}${textarea("remarks", "Special Instructions / Remarks", value("remarks"), false, 3)}
         </div>
       </section>
       <section class="customer-booking-step" data-customer-cargo><span class="customer-step-number">4</span><div><h3>Cargo Dimensions & Chargeable Weight</h3><p>Add every pallet, carton, or package. CBM and chargeable weight calculate automatically.</p></div>
-        <input type="hidden" name="cargoItemsJson" value="[]" />
+        <input type="hidden" name="requestNo" value="${escapeHtml(requestNo)}" /><input type="hidden" name="cargoItemsJson" value="${escapeHtml(value("cargoItemsJson", "[]"))}" />
         <div class="tariff-charge-entry cargo-entry">
           ${strictSelect("cargoPackageType", "Package Type", ["Pallet", "Carton", "Crate", "Box", "Package", "Drum"], "Pallet")}
           ${input("cargoQuantity", "Quantity", "1", false, "number")}
@@ -2614,7 +2620,7 @@ function renderCustomerNewShipment() {
         </div>
         <div class="tariff-charge-table" data-customer-cargo-lines></div>
         <div class="form-section-grid cargo-totals">
-          ${strictSelect("volumeCategory", "CBM Divisor", volumeCategoryOptions(), "1 CBM = 250 KG")}
+          <input type="hidden" name="volumeCategory" value="1 CBM = 250 KG" />
           ${input("cbm", "Grand Total CBM", "0", true, "number")}
           ${input("actualKg", "Total Gross Weight (KG)", "0", true, "number")}
           ${input("chargeableKg", "Chargeable Weight (KG)", "0", true, "number")}
@@ -2622,7 +2628,7 @@ function renderCustomerNewShipment() {
           <input type="hidden" name="chargeableDivisor" value="250" />
         </div>
       </section>
-      <div class="action-row"><button type="submit">Submit Shipment Request</button></div>
+      <div class="action-row"><button type="submit">${resubmitting ? "Resubmit Shipment Request" : "Submit Shipment Request"}</button></div>
     </form>
   </section>`;
 }
@@ -4116,6 +4122,11 @@ function badge(value) {
 
 function cellHtml(type, key, row, index = 0) {
   if (key === "slNo") return escapeHtml(index + 1);
+  if (type === "customerRequest" && key === "request_no") {
+    const requestNo = String(row.request_no || row.requestNo || "").trim();
+    const canEdit = portalStatus(row.status) === "SENT_BACK";
+    return requestNo ? `<button type="button" class="table-inline-link" data-action="${canEdit ? "edit-customer-request" : "view-customer-request"}" data-request-no="${escapeHtml(requestNo)}">${escapeHtml(requestNo)}</button>` : "";
+  }
   const clickableRegisterKey = { customers: "code", suppliers: "code", tariff: "tariffNo", invoice: "invoiceNo" }[type];
   if (clickableRegisterKey && key === clickableRegisterKey) {
     const id = String(row[key] || "").trim();
@@ -4704,6 +4715,20 @@ async function handleModuleClick(event) {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const { action, type, id, mode } = button.dataset;
+
+  if (action === "edit-customer-request") {
+    state.ui.customerRequestEditNo = button.dataset.requestNo || "";
+    activeModule = "New Shipment";
+    saveState();
+    render();
+    return;
+  }
+
+  if (action === "view-customer-request") {
+    const record = portalRows("shipmentRequests").find((row) => String(row.request_no || row.requestNo || "") === String(button.dataset.requestNo || ""));
+    notifySuccess("Shipment request", `${button.dataset.requestNo || ""} is ${String(record?.status || "pending review").replace(/_/g, " ")}. Approved requests are locked for customer changes.`);
+    return;
+  }
 
   if (action === "toggle-shipment-columns") {
     const scope = button.dataset.columnScope || "shipment:register";
@@ -10454,8 +10479,12 @@ async function submitCustomerShipmentRequest(data, form) {
       return false;
     }
   }
+  const requestNo = String(data.requestNo || "").trim();
+  const existingRequest = requestNo ? portalRows("shipmentRequests").find((row) => String(row.request_no || row.requestNo || "") === requestNo) : null;
+  const resubmitting = portalStatus(existingRequest?.status) === "SENT_BACK";
   const files = Array.from(form.querySelector("input[type='file']")?.files || []);
-  if (!files.length) { notifyDenied("Documents required", "Upload at least one shipment document before selecting the item and submitting the request."); return false; }
+  const existingFiles = parseJsonMeta(existingRequest?.attachments_json || existingRequest?.attachmentsJson || "[]");
+  if (!files.length && (!resubmitting || !Array.isArray(existingFiles) || !existingFiles.length)) { notifyDenied("Documents required", "Upload at least one shipment document before selecting the item and submitting the request."); return false; }
   if (files.length > 5) throw new Error("You can upload a maximum of 5 attachments per shipment request.");
   if (!String(data.itemName || "").trim()) { notifyDenied("Item required", "Enter the item name or description. If no HS code is found, the company team will review it."); return false; }
   const cargoItems = parsePalletDimensions(data.cargoItemsJson || "[]");
@@ -10468,19 +10497,20 @@ async function submitCustomerShipmentRequest(data, form) {
     actualKg: Number(data.actualKg || 0), chargeableKg: Number(data.chargeableKg || 0),
     volumeCategory: data.volumeCategory || "1 CBM = 250 KG", chargeableDivisor: Number(data.chargeableDivisor || 0)
   };
-  const result = await fetchJson("/api/customer/shipment-requests", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify({ ...data, quantity: Number(data.pieces || 0), weight: Number(data.actualKg || 0), attachments: [], requestDetails }) });
-  const requestNo = result?.row?.requestNo || result?.row?.request_no;
-  if (!requestNo) throw new Error("Shipment request was created but its reference number was not returned.");
+  const result = await fetchJson(resubmitting ? `/api/customer/shipment-requests/${encodeURIComponent(requestNo)}` : "/api/customer/shipment-requests", { method: resubmitting ? "PUT" : "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify({ ...data, quantity: Number(data.pieces || 0), weight: Number(data.actualKg || 0), attachments: [], requestDetails }) });
+  const savedRequestNo = resubmitting ? requestNo : (result?.row?.requestNo || result?.row?.request_no);
+  if (!savedRequestNo) throw new Error("Shipment request was saved but its reference number was not returned.");
   for (const file of files) {
     if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} is larger than 10 MB.`);
     const contentBase64 = await readFileAsBase64(file);
-    await fetchJson(`/api/customer/shipment-requests/${encodeURIComponent(requestNo)}/documents`, {
+    await fetchJson(`/api/customer/shipment-requests/${encodeURIComponent(savedRequestNo)}/documents`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token },
       body: JSON.stringify({ fileName: file.name, mimeType: file.type, contentBase64 })
     });
   }
-  notifySuccess("Request submitted", "Shipment request " + requestNo + " was saved with " + files.length + " attachment(s).");
+  state.ui.customerRequestEditNo = "";
+  notifySuccess(resubmitting ? "Request resubmitted" : "Request submitted", "Shipment request " + savedRequestNo + (resubmitting ? " was returned to company review." : " was saved with " + files.length + " attachment(s)."));
   await syncCustomerPortal();
   activeModule = "Customer Shipments";
   return true;
@@ -10498,9 +10528,10 @@ function bindCustomerShipmentRequestForm() {
   const masterItems = portalRows("hsCodeMaster");
   const syncDocuments = () => {
     const files = Array.from(documentField?.files || []);
-    const valid = files.length > 0 && files.length <= 5 && files.every((file) => file.size <= 10 * 1024 * 1024);
+    const retainedDocuments = Boolean(form.querySelector("[name='requestNo']")?.value);
+    const valid = retainedDocuments || (files.length > 0 && files.length <= 5 && files.every((file) => file.size <= 10 * 1024 * 1024));
     if (hsStep) hsStep.hidden = !valid;
-    if (documentStatus) documentStatus.textContent = !files.length ? "Select at least one file. Maximum 5 files, 10 MB each." : valid ? `${files.length} document(s) selected. You can now select the item and HS code.` : "Use up to 5 files, each 10 MB or smaller.";
+    if (documentStatus) documentStatus.textContent = retainedDocuments && !files.length ? "Existing documents are retained. You can edit the item and HS code." : !files.length ? "Select at least one file. Maximum 5 files, 10 MB each." : valid ? `${files.length} document(s) selected. You can now select the item and HS code.` : "Use up to 5 files, each 10 MB or smaller.";
   };
   const syncHsCode = () => {
     const selected = masterItems.find((row) => String(row.item_name || row.itemName || "").trim().toLowerCase() === String(itemField?.value || "").trim().toLowerCase());

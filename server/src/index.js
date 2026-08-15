@@ -900,6 +900,7 @@ const resources = {
       field("invoice_value", ["invoiceValue", "invoice_value"]),
       field("remarks", ["remarks"]),
       field("attachments_json", ["attachmentsJson", "attachments_json"]),
+      field("request_details_json", ["requestDetailsJson", "request_details_json"]),
       field("status", ["status"]),
       field("approval_notes", ["approvalNotes", "approval_notes"]),
       field("auto_approved", ["autoApproved", "auto_approved"]),
@@ -1901,6 +1902,7 @@ app.post("/api/customer/shipment-requests", requireCustomerPortalAuth, async (re
       invoice_value: Number(data.invoiceValue || data.invoice_value || 0),
       remarks: String(data.remarks || "").trim(),
       attachments_json: JSON.stringify(attachments),
+      request_details_json: JSON.stringify(data.requestDetails || data.request_details || {}),
       status,
       approval_notes: status === "AUTO_APPROVED" ? "Auto approved by portal rules." : "",
       auto_approved: status === "AUTO_APPROVED",
@@ -1952,6 +1954,39 @@ app.post("/api/customer/shipment-requests", requireCustomerPortalAuth, async (re
 
     return next(error);
   }
+});
+
+app.put("/api/customer/shipment-requests/:requestNo", requireCustomerPortalAuth, async (request, response, next) => {
+  const data = request.body || {};
+  const requestNo = String(request.params.requestNo || "").trim();
+  try {
+    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
+    const existing = await query(
+      `select * from shipment_requests where request_no = $1 and lower(customer_code) = lower($2) limit 1`,
+      [requestNo, String(account?.customer_code || "")]
+    );
+    const current = existing.rows[0];
+    if (!current) return response.status(404).json({ ok: false, error: "Shipment request was not found." });
+    if (String(current.status || "").toUpperCase() !== "SENT_BACK") {
+      return response.status(409).json({ ok: false, error: "Only a sent-back request can be edited and resubmitted." });
+    }
+    const details = JSON.stringify(data.requestDetails || data.request_details || {});
+    const result = await query(
+      `update shipment_requests set shipment_type=$1, origin=$2, destination=$3, consignee=$4, item_name=$5,
+        hs_code=$6, item_code=$7, quantity=$8, weight=$9, invoice_value=$10, remarks=$11,
+        request_details_json=$12, status='SUBMITTED', approval_notes='', auto_approved=false
+       where request_no=$13 returning *`,
+      [String(data.shipmentType || ""), String(data.origin || ""), String(data.destination || ""), String(data.consignee || ""),
+        String(data.itemName || ""), String(data.hsCode || ""), String(data.itemCode || ""), Number(data.quantity || 0),
+        Number(data.weight || 0), Number(data.invoiceValue || 0), String(data.remarks || ""), details, requestNo]
+    );
+    await Promise.all([
+      createCustomerNotification({ userId: request.customerSession.userName, customerCode: current.customer_code, userType: "customer", type: "REQUEST_RESUBMITTED", title: "Shipment request " + requestNo, message: "Your corrected shipment request was resubmitted for company review." }),
+      createCustomerNotification({ userId: "admin", customerCode: current.customer_code, userType: "company", type: "REQUEST_RESUBMITTED", title: "Customer request resubmitted " + requestNo, message: (current.customer_name || current.customer_code) + " corrected and resubmitted a shipment request." }),
+      createCustomerActivity({ customerUserId: request.customerSession.customerUserId, customerCode: current.customer_code, action: "Shipment Resubmission", description: "Resubmitted " + requestNo + " after company feedback", ipAddress: request.ip || "" })
+    ]);
+    response.json({ ok: true, row: result.rows[0] });
+  } catch (error) { next(error); }
 });
 
 app.get("/api/customer/profile", requireCustomerPortalAuth, async (request, response, next) => {
