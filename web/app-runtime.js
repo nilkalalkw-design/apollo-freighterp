@@ -2584,6 +2584,14 @@ function renderCustomerNewShipment() {
   const details = parseJsonMeta(editRecord?.request_details_json || editRecord?.requestDetailsJson || "{}");
   const value = (name, fallback = "") => details[name] ?? editRecord?.[name] ?? editRecord?.[name.replace(/[A-Z]/g, (letter) => "_" + letter.toLowerCase())] ?? fallback;
   const resubmitting = portalStatus(editRecord?.status) === "SENT_BACK";
+  const savedDocuments = parseJsonMeta(editRecord?.attachments_json || editRecord?.attachmentsJson || "[]");
+  const documentSlots = [["commercial-invoice", "Commercial Invoice"], ["packing-list", "Packing List"], ["supporting-document", "Supporting Document"]];
+  const documentMarkup = documentSlots.map(([slot, label], index) => {
+    const item = Array.isArray(savedDocuments) ? savedDocuments.find((file) => String(file.slot || "") === slot) || savedDocuments[index] : null;
+    const fileName = item?.name || item?.fileName || "";
+    const fileUrl = item?.url || item?.storageUrl || "";
+    return `<article class="customer-document-slot" data-customer-document-slot="${slot}"><strong>${label}</strong><span data-customer-slot-name>${escapeHtml(fileName || "No file selected")}</span>${fileUrl ? `<a class="secondary-button" href="${escapeHtml(fileUrl)}" target="_blank" rel="noopener">View</a><button type="button" class="secondary-button" data-action="remove-customer-document" data-request-no="${escapeHtml(requestNo)}" data-document-slot="${slot}">Remove</button>` : ""}<label class="secondary-button">${fileName ? "Replace" : "Choose file"}<input class="is-hidden" data-customer-document-input data-document-slot="${slot}" type="file" accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" /></label></article>`;
+  }).join("");
   return `<section class="panel customer-booking-panel">
     ${panelHeader(resubmitting ? `Correct & Resubmit ${requestNo}` : "New Shipment Request", "Customer Portal")}
     ${resubmitting ? `<div class="alert warning"><strong>Company feedback:</strong> ${escapeHtml(editRecord?.approval_notes || editRecord?.approvalNotes || "Please review the request and resubmit it.")}</div>` : ""}
@@ -2601,7 +2609,7 @@ function renderCustomerNewShipment() {
         </div>
       </section>
       <section class="customer-booking-step customer-document-step"><span class="customer-step-number">2</span><div><h3>Upload Shipment Documents</h3><p>Upload invoice, packing list, or other supporting files first. This unlocks item and HS-code selection.</p></div>
-        <label class="customer-file-picker">Shipment Documents <input name="attachments" type="file" multiple ${resubmitting ? "" : "required"} accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" /><small data-customer-document-status>${resubmitting ? "Existing documents are retained. Add replacement files only if needed." : "Select at least one file. Maximum 5 files, 10 MB each."}</small></label>
+        <div class="customer-document-slots">${documentMarkup}</div><small data-customer-document-status>${resubmitting ? "Existing documents are retained. You may replace or remove any file." : "Choose at least one file. Maximum 10 MB each."}</small>
       </section>
       <section class="customer-booking-step" data-customer-hs-step hidden><span class="customer-step-number">3</span><div><h3>Item & Customs Information</h3><p>Select the item from the approved item list. Its HS code is filled automatically.</p></div>
         <div class="form-section-grid">
@@ -4730,6 +4738,21 @@ async function handleModuleClick(event) {
   if (action === "view-customer-request") {
     const record = portalRows("shipmentRequests").find((row) => String(row.request_no || row.requestNo || "") === String(button.dataset.requestNo || ""));
     notifySuccess("Shipment request", `${button.dataset.requestNo || ""} is ${String(record?.status || "pending review").replace(/_/g, " ")}. Approved requests are locked for customer changes.`);
+    return;
+  }
+
+  if (action === "remove-customer-document") {
+    const session = currentSession();
+    const requestNo = button.dataset.requestNo || "";
+    const slot = button.dataset.documentSlot || "";
+    if (!session?.token || !requestNo || !slot) return;
+    try {
+      await fetchJson(`/api/customer/shipment-requests/${encodeURIComponent(requestNo)}/documents/${encodeURIComponent(slot)}`, { method: "DELETE", headers: { Authorization: "Bearer " + session.token } });
+      notifySuccess("Document removed", "The selected shipment document was removed.");
+      await syncCustomerPortal();
+    } catch (error) {
+      notifyDenied("Document not removed", error.message || "Please try again.");
+    }
     return;
   }
 
@@ -10485,10 +10508,10 @@ async function submitCustomerShipmentRequest(data, form) {
   const requestNo = String(data.requestNo || "").trim();
   const existingRequest = requestNo ? portalRows("shipmentRequests").find((row) => String(row.request_no || row.requestNo || "") === requestNo) : null;
   const resubmitting = portalStatus(existingRequest?.status) === "SENT_BACK";
-  const files = Array.from(form.querySelector("input[type='file']")?.files || []);
+  const files = Array.from(form.querySelectorAll("[data-customer-document-input]")).map((input) => ({ file: input.files?.[0], slot: input.dataset.documentSlot || "supporting-document" })).filter((item) => item.file);
   const existingFiles = parseJsonMeta(existingRequest?.attachments_json || existingRequest?.attachmentsJson || "[]");
   if (!files.length && (!resubmitting || !Array.isArray(existingFiles) || !existingFiles.length)) { notifyDenied("Documents required", "Upload at least one shipment document before selecting the item and submitting the request."); return false; }
-  if (files.length > 5) throw new Error("You can upload a maximum of 5 attachments per shipment request.");
+  if (files.length > 3) throw new Error("You can upload a maximum of three shipment documents.");
   if (!String(data.itemName || "").trim()) { notifyDenied("Item required", "Enter the item name or description. If no HS code is found, the company team will review it."); return false; }
   const cargoItems = parsePalletDimensions(data.cargoItemsJson || "[]");
   if (!cargoItems.length) { notifyDenied("Cargo details required", "Add at least one pallet, carton, or package before submitting."); return false; }
@@ -10503,13 +10526,13 @@ async function submitCustomerShipmentRequest(data, form) {
   const result = await fetchJson(resubmitting ? `/api/customer/shipment-requests/${encodeURIComponent(requestNo)}` : "/api/customer/shipment-requests", { method: resubmitting ? "PUT" : "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token }, body: JSON.stringify({ ...data, quantity: Number(data.pieces || 0), weight: Number(data.actualKg || 0), attachments: [], requestDetails }) });
   const savedRequestNo = resubmitting ? requestNo : (result?.row?.requestNo || result?.row?.request_no);
   if (!savedRequestNo) throw new Error("Shipment request was saved but its reference number was not returned.");
-  for (const file of files) {
+  for (const { file, slot } of files) {
     if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} is larger than 10 MB.`);
     const contentBase64 = await readFileAsBase64(file);
     await fetchJson(`/api/customer/shipment-requests/${encodeURIComponent(savedRequestNo)}/documents`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token },
-      body: JSON.stringify({ fileName: file.name, mimeType: file.type, contentBase64 })
+      body: JSON.stringify({ slot, fileName: file.name, mimeType: file.type, contentBase64 })
     });
   }
   state.ui.customerRequestEditNo = "";
@@ -10522,7 +10545,7 @@ async function submitCustomerShipmentRequest(data, form) {
 function bindCustomerShipmentRequestForm() {
   const form = moduleContent.querySelector("form[data-form='customer-shipment-request']");
   if (!form) return;
-  const documentField = form.querySelector("input[name='attachments']");
+  const documentFields = Array.from(form.querySelectorAll("[data-customer-document-input]"));
   const documentStatus = form.querySelector("[data-customer-document-status]");
   const hsStep = form.querySelector("[data-customer-hs-step]");
   const itemField = form.querySelector("input[name='itemName']");
@@ -10530,7 +10553,7 @@ function bindCustomerShipmentRequestForm() {
   const itemCodeField = form.querySelector("input[name='itemCode']");
   const masterItems = portalRows("hsCodeMaster");
   const syncDocuments = () => {
-    const files = Array.from(documentField?.files || []);
+    const files = documentFields.map((input) => input.files?.[0]).filter(Boolean);
     const retainedDocuments = Boolean(form.querySelector("[name='requestNo']")?.value);
     const valid = retainedDocuments || (files.length > 0 && files.length <= 5 && files.every((file) => file.size <= 10 * 1024 * 1024));
     if (hsStep) hsStep.hidden = !valid;
@@ -10542,7 +10565,12 @@ function bindCustomerShipmentRequestForm() {
     if (hsCodeField) hsCodeField.value = selected.hs_code || selected.hsCode || "";
     if (itemCodeField) itemCodeField.value = selected.item_code || selected.itemCode || "";
   };
-  documentField?.addEventListener("change", syncDocuments);
+  documentFields.forEach((field) => field.addEventListener("change", () => {
+    const slot = field.closest("[data-customer-document-slot]");
+    const name = slot?.querySelector("[data-customer-slot-name]");
+    if (name) name.textContent = field.files?.[0]?.name || "No file selected";
+    syncDocuments();
+  }));
   itemField?.addEventListener("change", syncHsCode);
   itemField?.addEventListener("input", syncHsCode);
   syncDocuments();

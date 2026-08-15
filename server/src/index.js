@@ -1989,6 +1989,50 @@ app.put("/api/customer/shipment-requests/:requestNo", requireCustomerPortalAuth,
   } catch (error) { next(error); }
 });
 
+app.post("/api/customer/shipment-requests/:requestNo/documents", requireCustomerPortalAuth, async (request, response, next) => {
+  const requestNo = String(request.params.requestNo || "").trim();
+  const { slot, fileName, mimeType, contentBase64 } = request.body || {};
+  const allowedSlots = new Set(["commercial-invoice", "packing-list", "supporting-document"]);
+  const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]);
+  try {
+    if (!allowedSlots.has(String(slot || "")) || !fileName || !contentBase64 || !allowedTypes.has(String(mimeType || ""))) return response.status(400).json({ ok: false, error: "Use PDF, JPG, PNG, DOCX, or XLSX for one of the three document slots." });
+    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
+    const existing = await query(`select attachments_json from shipment_requests where request_no=$1 and lower(customer_code)=lower($2) limit 1`, [requestNo, String(account?.customer_code || "")]);
+    if (!existing.rows[0]) return response.status(404).json({ ok: false, error: "Shipment request was not found." });
+    const fileBuffer = Buffer.from(String(contentBase64), "base64");
+    if (fileBuffer.length > 10 * 1024 * 1024) return response.status(400).json({ ok: false, error: "Each document must be 10 MB or smaller." });
+    const cloudinary = cloudinaryConfig();
+    if (!cloudinary) return response.status(503).json({ ok: false, error: "Cloudinary is not configured on the server." });
+    const kind = String(mimeType).startsWith("image/") ? "image" : "raw";
+    const timestamp = Math.floor(Date.now() / 1000); const folder = "apollo-freight/customer-shipments";
+    const publicId = `${safeEmployeeDocumentPart(requestNo)}-${safeEmployeeDocumentPart(slot)}`;
+    const signature = crypto.createHash("sha1").update(`folder=${folder}&overwrite=true&public_id=${publicId}&timestamp=${timestamp}${cloudinary.apiSecret}`).digest("hex");
+    const form = new FormData(); form.append("file", new Blob([fileBuffer], { type: mimeType }), fileName); form.append("api_key", cloudinary.apiKey); form.append("timestamp", String(timestamp)); form.append("folder", folder); form.append("public_id", publicId); form.append("overwrite", "true"); form.append("signature", signature);
+    const uploadResponse = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinary.cloudName)}/${kind}/upload`, { method: "POST", body: form });
+    const uploaded = await uploadResponse.json().catch(() => ({}));
+    if (!uploadResponse.ok || !uploaded.secure_url) throw new Error(uploaded.error?.message || "Document upload failed.");
+    let attachments = []; try { attachments = JSON.parse(existing.rows[0].attachments_json || "[]"); } catch { attachments = []; }
+    if (!Array.isArray(attachments)) attachments = [];
+    const item = { slot, name: fileName, url: uploaded.secure_url, publicId: uploaded.public_id || publicId, resourceType: kind };
+    attachments = attachments.filter((file) => String(file?.slot || "") !== String(slot)).concat(item);
+    await query(`update shipment_requests set attachments_json=$1 where request_no=$2`, [JSON.stringify(attachments), requestNo]);
+    response.json({ ok: true, attachment: item });
+  } catch (error) { next(error); }
+});
+
+app.delete("/api/customer/shipment-requests/:requestNo/documents/:slot", requireCustomerPortalAuth, async (request, response, next) => {
+  try {
+    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
+    const requestNo = String(request.params.requestNo || "").trim(); const slot = String(request.params.slot || "").trim();
+    const existing = await query(`select attachments_json from shipment_requests where request_no=$1 and lower(customer_code)=lower($2) limit 1`, [requestNo, String(account?.customer_code || "")]);
+    if (!existing.rows[0]) return response.status(404).json({ ok: false, error: "Shipment request was not found." });
+    let attachments = []; try { attachments = JSON.parse(existing.rows[0].attachments_json || "[]"); } catch { attachments = []; }
+    attachments = Array.isArray(attachments) ? attachments.filter((file) => String(file?.slot || "") !== slot) : [];
+    await query(`update shipment_requests set attachments_json=$1 where request_no=$2`, [JSON.stringify(attachments), requestNo]);
+    response.json({ ok: true });
+  } catch (error) { next(error); }
+});
+
 app.get("/api/customer/profile", requireCustomerPortalAuth, async (request, response, next) => {
   try {
     const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);

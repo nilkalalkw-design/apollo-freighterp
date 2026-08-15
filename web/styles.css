@@ -1458,11 +1458,17 @@ th {
 .customer-file-picker { display: block; padding: 15px; border: 1px dashed #82b4df; border-radius: 10px; background: #fff; color: #17365d; font-weight: 700; }
 .customer-file-picker input { display: block; width: 100%; margin: 10px 0 7px; font-weight: 400; }
 .customer-file-picker small { display: block; color: var(--muted); font-weight: 500; }
+.customer-document-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.customer-document-slot { display: grid; gap: 8px; align-content: start; padding: 12px; border: 1px dashed #82b4df; border-radius: 9px; background: #fff; color: #17365d; }
+.customer-document-slot > span { min-height: 30px; overflow-wrap: anywhere; color: var(--muted); font-size: 11px; }
+.customer-document-slot .secondary-button { width: 100%; min-height: 30px; padding: 5px 8px; text-align: center; font-size: 11px; }
+.customer-document-slot label.secondary-button { box-sizing: border-box; cursor: pointer; }
 .customer-booking-step[hidden] { display: none; }
 
 @media (max-width: 680px) {
   .customer-booking-step { grid-template-columns: 32px minmax(0, 1fr); padding: 14px; gap: 10px; }
   .customer-step-number { width: 28px; height: 28px; }
+  .customer-document-slots { grid-template-columns: 1fr; }
 }
 
 .alert {
