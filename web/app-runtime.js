@@ -251,7 +251,9 @@ function seedState() {
       reportType: "Daily shipments",
       reportPreview: null,
       selectedLoadNo: "",
-      shipmentRegisterColumns: null
+      shipmentRegisterColumns: null,
+      dashboardShipmentColumns: null,
+      openColumnSettings: ""
     },
     dropdownOptions: {}
   };
@@ -2853,7 +2855,7 @@ function renderDashboard() {
         ${kpi("Pending Requests", pendingRequests, "Your pending approvals", "pending-requests")}
         ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
       </section>
-      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${dashboardTableNote} ${table("shipment", recentRows, shipmentColumns(), undefined, "shipment:myShipments")}</section>`;
+      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${dashboardColumnSettingsMarkup()} ${dashboardTableNote} ${table("shipment", recentRows, dashboardShipmentColumns(), undefined, "shipment:myShipments")}</section>`;
   }
   return `
     <section class="kpi-grid">
@@ -2868,7 +2870,7 @@ function renderDashboard() {
       ${canViewProfitMargin() ? kpi("Gross Profit", money(invoiceRows.reduce((sum, row) => sum + Number(row.revenue || 0) - Number(row.supplierCost || 0), 0)), "Invoiced revenue minus cost", "gross-profit") : ""}
     </section>
     <section class="split-grid single-panel dashboard-shipment-register">
-      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${dashboardTableNote} ${table("shipment", recentRows, shipmentColumns(), undefined, "shipment:dashboard")}</article>
+      <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${dashboardColumnSettingsMarkup()} ${dashboardTableNote} ${table("shipment", recentRows, dashboardShipmentColumns(), undefined, "shipment:dashboard")}</article>
     </section>
     <section class="split-grid single-panel dashboard-alert-row">
       <details class="panel collapsible-section dashboard-alert-panel">
@@ -3107,7 +3109,7 @@ function renderShipments() {
   const rows = filteredRows(visibleRows(state.shipments));
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Shipment Register", "Editable records")} ${shipmentRegisterColumnsMarkup()} ${table("shipment", rows, shipmentColumns())}</article>
+      <article class="panel">${panelHeader("Shipment Register", "Editable records")} ${shipmentRegisterColumnsMarkup()} ${table("shipment", rows, shipmentColumns("shipment:register"))}</article>
       ${moduleActionPanel("Shipment Actions", "shipment", "Use separate desktop-style windows for new shipment entry and load/edit shipment details.", quickOpenShipmentMarkup() + actionChecklist([
         "New button opens the shipment popup window.",
         "Click a shipment number or AWB number to open the record.",
@@ -4166,6 +4168,11 @@ function cargoPalletCount(row) {
 }
 
 function dashboardShipmentColumns() {
+  return shipmentColumnsForScope("shipment:dashboard", shipmentColumnDefaults("shipment:dashboard"));
+}
+
+function shipmentColumnDefaults(scope) {
+  if (scope !== "shipment:dashboard") return defaultColumnLayouts().shipment;
   return [
     ["slNo", "SL."],
     ["bookingDate", "DATE"],
@@ -4345,10 +4352,19 @@ function isSameAsGrossWeightCategory(category) {
   return String(category || "").trim().toLowerCase() === "same as gross weight";
 }
 
-function configurableColumns(type, defaults) {
+function configurableColumns(type, defaults, scope = "shipment:register") {
   const cleanDefaults = defaults.filter(([key]) => !isRegisterAddressColumn(key));
   if (type !== "shipment") return cleanDefaults;
-  const saved = state.ui.shipmentRegisterColumns;
+  return shipmentColumnsForScope(scope, cleanDefaults);
+}
+
+function shipmentColumnSettingsKey(scope) {
+  return scope === "shipment:dashboard" ? "dashboardShipmentColumns" : "shipmentRegisterColumns";
+}
+
+function shipmentColumnsForScope(scope, defaults) {
+  const cleanDefaults = defaults.filter(([key]) => !isRegisterAddressColumn(key));
+  const saved = state.ui[shipmentColumnSettingsKey(scope)];
   if (!saved || !Array.isArray(saved.order)) return cleanDefaults;
   const byKey = new Map(cleanDefaults);
   const ordered = [];
@@ -4361,37 +4377,54 @@ function configurableColumns(type, defaults) {
   return ordered.length ? ordered : cleanDefaults.slice(0, 1);
 }
 
-function shipmentRegisterColumnSettings() {
-  const defaults = defaultColumnLayouts().shipment.filter(([key]) => !isRegisterAddressColumn(key));
-  const existing = state.ui.shipmentRegisterColumns;
-  const order = Array.isArray(existing?.order) ? existing.order.filter((key) => defaults.some(([k]) => k === key)) : [];
-  defaults.forEach(([key]) => { if (!order.includes(key)) order.push(key); });
+function shipmentColumnSettings(scope, defaults) {
+  const cleanDefaults = defaults.filter(([key]) => !isRegisterAddressColumn(key));
+  const existing = state.ui[shipmentColumnSettingsKey(scope)];
+  const order = Array.isArray(existing?.order) ? existing.order.filter((key) => cleanDefaults.some(([k]) => k === key)) : [];
+  cleanDefaults.forEach(([key]) => { if (!order.includes(key)) order.push(key); });
   const visible = { ...(existing?.visible || {}) };
-  defaults.forEach(([key]) => { if (!Object.prototype.hasOwnProperty.call(visible, key)) visible[key] = true; });
-  return { defaults, order, visible };
+  cleanDefaults.forEach(([key]) => { if (!Object.prototype.hasOwnProperty.call(visible, key)) visible[key] = true; });
+  return { defaults: cleanDefaults, order, visible };
 }
 
-function shipmentRegisterColumnsMarkup() {
-  const settings = shipmentRegisterColumnSettings();
+function shipmentRegisterColumnSettings() {
+  return shipmentColumnSettings("shipment:register", shipmentColumnDefaults("shipment:register"));
+}
+
+function dashboardColumnSettings() {
+  return shipmentColumnSettings("shipment:dashboard", shipmentColumnDefaults("shipment:dashboard"));
+}
+
+function shipmentColumnSettingsMarkup(scope, title, settings) {
+  const isOpen = state.ui.openColumnSettings === scope;
   const rows = settings.order.map((key) => {
     const label = settings.defaults.find(([k]) => k === key)?.[1] || key;
-    return `<div class="shipment-column-setting" draggable="true" data-column-drag-key="${escapeHtml(key)}" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #d9dee7;border-radius:6px;background:#fff;cursor:grab;margin-bottom:4px">
-      <span aria-hidden="true" style="cursor:grab">☰</span>
-      <label style="display:flex;align-items:center;gap:7px;flex:1;cursor:pointer"><input type="checkbox" data-action="toggle-shipment-column" data-column-key="${escapeHtml(key)}" ${settings.visible[key] !== false ? "checked" : ""}> <span>${escapeHtml(label)}</span></label>
-    </div>`;
+    return `<label class="shipment-column-setting" draggable="true" data-column-drag-key="${escapeHtml(key)}" data-column-scope="${escapeHtml(scope)}">
+      <span class="shipment-column-drag" aria-hidden="true">☰</span>
+      <input type="checkbox" data-action="toggle-shipment-column" data-column-scope="${escapeHtml(scope)}" data-column-key="${escapeHtml(key)}" ${settings.visible[key] !== false ? "checked" : ""}>
+      <span>${escapeHtml(label)}</span>
+    </label>`;
   }).join("");
-  return `<div class="shipment-column-tools" style="margin:8px 0 10px;position:relative">
-    <button type="button" class="secondary-button" data-action="toggle-shipment-columns">⚙ Columns</button>
-    <div class="shipment-column-menu" data-shipment-column-menu hidden style="position:absolute;z-index:50;top:42px;left:0;width:280px;max-height:420px;overflow:auto;padding:10px;background:#f7f9fc;border:1px solid #cfd6e1;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14)">
-      <div style="font-weight:700;margin-bottom:8px">Shipment Register Columns</div>
-      <div style="font-size:12px;color:#667085;margin-bottom:8px">Drag ☰ to arrange the column order. Uncheck a column to hide it.</div>
+  return `<div class="shipment-column-tools">
+    <button type="button" class="secondary-button shipment-column-toggle" data-action="toggle-shipment-columns" data-column-scope="${escapeHtml(scope)}">⚙ Columns</button>
+    <div class="shipment-column-menu" data-shipment-column-menu data-column-menu-scope="${escapeHtml(scope)}" ${isOpen ? "" : "hidden"}>
+      <div class="shipment-column-menu-title">${escapeHtml(title)}</div>
+      <div class="shipment-column-menu-help">Drag ☰ to arrange the order. Untick a column to hide it.</div>
       <div data-shipment-column-list>${rows}</div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button type="button" class="secondary-button" data-action="select-all-shipment-columns">Select All</button>
-        <button type="button" class="secondary-button" data-action="reset-shipment-columns">Reset Default</button>
+      <div class="shipment-column-menu-actions">
+        <button type="button" class="secondary-button" data-action="select-all-shipment-columns" data-column-scope="${escapeHtml(scope)}">Select all</button>
+        <button type="button" class="secondary-button" data-action="reset-shipment-columns" data-column-scope="${escapeHtml(scope)}">Reset</button>
       </div>
     </div>
   </div>`;
+}
+
+function shipmentRegisterColumnsMarkup() {
+  return shipmentColumnSettingsMarkup("shipment:register", "Shipment Register columns", shipmentRegisterColumnSettings());
+}
+
+function dashboardColumnSettingsMarkup() {
+  return shipmentColumnSettingsMarkup("shipment:dashboard", "Dashboard shipment columns", dashboardColumnSettings());
 }
 
 function isRegisterAddressColumn(key) {
@@ -4436,8 +4469,8 @@ function defaultColumnLayouts() {
   };
 }
 
-function shipmentColumns() {
-  return configurableColumns("shipment", defaultColumnLayouts().shipment);
+function shipmentColumns(scope = "shipment:register") {
+  return configurableColumns("shipment", defaultColumnLayouts().shipment, scope);
 }
 
 function loadColumns() {
@@ -4673,40 +4706,43 @@ async function handleModuleClick(event) {
   const { action, type, id, mode } = button.dataset;
 
   if (action === "toggle-shipment-columns") {
-    const menu = moduleContent.querySelector("[data-shipment-column-menu]");
-    if (menu) menu.hidden = !menu.hidden;
+    const scope = button.dataset.columnScope || "shipment:register";
+    rerenderColumnSettings(scope, state.ui.openColumnSettings !== scope);
     return;
   }
 
   if (action === "toggle-shipment-column") {
     const key = button.dataset.columnKey;
-    const settings = shipmentRegisterColumnSettings();
+    const scope = button.dataset.columnScope || "shipment:register";
+    const settings = shipmentColumnSettings(scope, shipmentColumnDefaults(scope));
     const visibleCount = settings.order.filter((columnKey) => settings.visible[columnKey] !== false).length;
     if (button.checked === false && visibleCount <= 1) {
       button.checked = true;
-      notifyDenied("Column selection", "At least one Shipment Register column must remain visible.");
+      notifyDenied("Column selection", "At least one column must remain visible.");
       return;
     }
-    state.ui.shipmentRegisterColumns = { ...settings, visible: { ...settings.visible, [key]: button.checked } };
+    state.ui[shipmentColumnSettingsKey(scope)] = { ...settings, visible: { ...settings.visible, [key]: button.checked } };
     saveState();
-    render();
+    rerenderColumnSettings(scope);
     return;
   }
 
   if (action === "select-all-shipment-columns") {
-    const settings = shipmentRegisterColumnSettings();
+    const scope = button.dataset.columnScope || "shipment:register";
+    const settings = shipmentColumnSettings(scope, shipmentColumnDefaults(scope));
     const visible = {};
     settings.defaults.forEach(([key]) => { visible[key] = true; });
-    state.ui.shipmentRegisterColumns = { ...settings, visible };
+    state.ui[shipmentColumnSettingsKey(scope)] = { ...settings, visible };
     saveState();
-    render();
+    rerenderColumnSettings(scope);
     return;
   }
 
   if (action === "reset-shipment-columns") {
-    state.ui.shipmentRegisterColumns = null;
+    const scope = button.dataset.columnScope || "shipment:register";
+    state.ui[shipmentColumnSettingsKey(scope)] = null;
     saveState();
-    render();
+    rerenderColumnSettings(scope);
     return;
   }
 
@@ -4943,11 +4979,25 @@ async function handleModuleClick(event) {
   }
 }
 
+function rerenderColumnSettings(scope, keepOpen = true) {
+  const pageTop = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+  const currentMenu = moduleContent.querySelector(`[data-column-menu-scope="${scope}"]`);
+  const menuTop = currentMenu?.scrollTop || 0;
+  state.ui.openColumnSettings = keepOpen ? scope : "";
+  render();
+  requestAnimationFrame(() => {
+    window.scrollTo(0, pageTop);
+    const nextMenu = moduleContent.querySelector(`[data-column-menu-scope="${scope}"]`);
+    if (nextMenu) nextMenu.scrollTop = menuTop;
+  });
+}
+
 function handleShipmentColumnDragStart(event) {
   const row = event.target.closest("[data-column-drag-key]");
   if (!row) return;
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", row.dataset.columnDragKey);
+  event.dataTransfer.setData("application/x-apollo-column-scope", row.dataset.columnScope || "shipment:register");
   row.style.opacity = "0.55";
 }
 
@@ -4963,15 +5013,17 @@ function handleShipmentColumnDrop(event) {
   if (!target) return;
   event.preventDefault();
   const sourceKey = event.dataTransfer.getData("text/plain");
+  const sourceScope = event.dataTransfer.getData("application/x-apollo-column-scope") || "shipment:register";
+  const targetScope = target.dataset.columnScope || "shipment:register";
   const targetKey = target.dataset.columnDragKey;
-  if (!sourceKey || !targetKey || sourceKey === targetKey) return;
-  const settings = shipmentRegisterColumnSettings();
+  if (!sourceKey || !targetKey || sourceKey === targetKey || sourceScope !== targetScope) return;
+  const settings = shipmentColumnSettings(targetScope, shipmentColumnDefaults(targetScope));
   const order = settings.order.filter((key) => key !== sourceKey);
   const targetIndex = order.indexOf(targetKey);
   order.splice(targetIndex < 0 ? order.length : targetIndex, 0, sourceKey);
-  state.ui.shipmentRegisterColumns = { ...settings, order };
+  state.ui[shipmentColumnSettingsKey(targetScope)] = { ...settings, order };
   saveState();
-  render();
+  rerenderColumnSettings(targetScope);
 }
 
 function handleColumnResizeStart(event) {

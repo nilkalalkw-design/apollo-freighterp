@@ -835,6 +835,22 @@ label {
   background: #f1f4f8;
 }
 
+.shipment-column-tools { position: relative; display: flex; align-items: center; min-height: 34px; margin: 2px 0 10px; }
+.shipment-column-toggle { min-height: 31px; padding: 5px 10px; border-radius: 7px; font-size: 12px; font-weight: 600; }
+.shipment-column-menu { position: absolute; z-index: 30; top: 36px; left: 0; width: min(310px, calc(100vw - 48px)); max-height: min(460px, calc(100vh - 120px)); overflow: auto; padding: 12px; border: 1px solid #d7e0ea; border-radius: 10px; background: #fff; box-shadow: 0 12px 28px rgba(30, 47, 69, .16); }
+.shipment-column-menu[hidden] { display: none; }
+.shipment-column-menu-title { margin-bottom: 3px; color: #1b2a3a; font-size: 13px; font-weight: 700; }
+.shipment-column-menu-help { margin-bottom: 9px; color: #637489; font-size: 11px; line-height: 1.35; }
+.shipment-column-setting { display: flex; align-items: center; gap: 8px; min-height: 32px; margin: 2px 0; padding: 5px 7px; border: 1px solid transparent; border-radius: 7px; color: #28394a; font-size: 12px; cursor: grab; user-select: none; }
+.shipment-column-setting:hover { border-color: #dce6f0; background: #f5f8fb; }
+.shipment-column-drag { color: #8b9aab; font-size: 14px; line-height: 1; }
+.shipment-column-setting input[type="checkbox"] { position: relative; width: 15px; height: 15px; margin: 0; appearance: none; border: 1px solid #aab8c7; border-radius: 4px; background: #fff; cursor: pointer; }
+.shipment-column-setting input[type="checkbox"]:checked { border-color: #f58220; background: #f58220; }
+.shipment-column-setting input[type="checkbox"]:checked::after { content: "✓"; position: absolute; top: -3px; left: 2px; color: #fff; font-size: 13px; font-weight: 800; }
+.shipment-column-setting input[type="checkbox"]:focus-visible { outline: 2px solid #8ab9e8; outline-offset: 1px; }
+.shipment-column-menu-actions { display: flex; gap: 7px; margin-top: 10px; padding-top: 9px; border-top: 1px solid #e4ebf2; }
+.shipment-column-menu-actions .secondary-button { min-height: 29px; padding: 4px 9px; font-size: 11px; }
+
 .col-resize-handle {
   position: absolute;
   top: 0;
