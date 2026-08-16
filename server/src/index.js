@@ -1989,50 +1989,6 @@ app.put("/api/customer/shipment-requests/:requestNo", requireCustomerPortalAuth,
   } catch (error) { next(error); }
 });
 
-app.post("/api/customer/shipment-requests/:requestNo/documents", requireCustomerPortalAuth, async (request, response, next) => {
-  const requestNo = String(request.params.requestNo || "").trim();
-  const { slot, fileName, mimeType, contentBase64 } = request.body || {};
-  const allowedSlots = new Set(["commercial-invoice", "packing-list", "supporting-document"]);
-  const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]);
-  try {
-    if (!allowedSlots.has(String(slot || "")) || !fileName || !contentBase64 || !allowedTypes.has(String(mimeType || ""))) return response.status(400).json({ ok: false, error: "Use PDF, JPG, PNG, DOCX, or XLSX for one of the three document slots." });
-    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
-    const existing = await query(`select attachments_json from shipment_requests where request_no=$1 and lower(customer_code)=lower($2) limit 1`, [requestNo, String(account?.customer_code || "")]);
-    if (!existing.rows[0]) return response.status(404).json({ ok: false, error: "Shipment request was not found." });
-    const fileBuffer = Buffer.from(String(contentBase64), "base64");
-    if (fileBuffer.length > 10 * 1024 * 1024) return response.status(400).json({ ok: false, error: "Each document must be 10 MB or smaller." });
-    const cloudinary = cloudinaryConfig();
-    if (!cloudinary) return response.status(503).json({ ok: false, error: "Cloudinary is not configured on the server." });
-    const kind = String(mimeType).startsWith("image/") ? "image" : "raw";
-    const timestamp = Math.floor(Date.now() / 1000); const folder = "apollo-freight/customer-shipments";
-    const publicId = `${safeEmployeeDocumentPart(requestNo)}-${safeEmployeeDocumentPart(slot)}`;
-    const signature = crypto.createHash("sha1").update(`folder=${folder}&overwrite=true&public_id=${publicId}&timestamp=${timestamp}${cloudinary.apiSecret}`).digest("hex");
-    const form = new FormData(); form.append("file", new Blob([fileBuffer], { type: mimeType }), fileName); form.append("api_key", cloudinary.apiKey); form.append("timestamp", String(timestamp)); form.append("folder", folder); form.append("public_id", publicId); form.append("overwrite", "true"); form.append("signature", signature);
-    const uploadResponse = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinary.cloudName)}/${kind}/upload`, { method: "POST", body: form });
-    const uploaded = await uploadResponse.json().catch(() => ({}));
-    if (!uploadResponse.ok || !uploaded.secure_url) throw new Error(uploaded.error?.message || "Document upload failed.");
-    let attachments = []; try { attachments = JSON.parse(existing.rows[0].attachments_json || "[]"); } catch { attachments = []; }
-    if (!Array.isArray(attachments)) attachments = [];
-    const item = { slot, name: fileName, url: uploaded.secure_url, publicId: uploaded.public_id || publicId, resourceType: kind };
-    attachments = attachments.filter((file) => String(file?.slot || "") !== String(slot)).concat(item);
-    await query(`update shipment_requests set attachments_json=$1 where request_no=$2`, [JSON.stringify(attachments), requestNo]);
-    response.json({ ok: true, attachment: item });
-  } catch (error) { next(error); }
-});
-
-app.delete("/api/customer/shipment-requests/:requestNo/documents/:slot", requireCustomerPortalAuth, async (request, response, next) => {
-  try {
-    const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
-    const requestNo = String(request.params.requestNo || "").trim(); const slot = String(request.params.slot || "").trim();
-    const existing = await query(`select attachments_json from shipment_requests where request_no=$1 and lower(customer_code)=lower($2) limit 1`, [requestNo, String(account?.customer_code || "")]);
-    if (!existing.rows[0]) return response.status(404).json({ ok: false, error: "Shipment request was not found." });
-    let attachments = []; try { attachments = JSON.parse(existing.rows[0].attachments_json || "[]"); } catch { attachments = []; }
-    attachments = Array.isArray(attachments) ? attachments.filter((file) => String(file?.slot || "") !== slot) : [];
-    await query(`update shipment_requests set attachments_json=$1 where request_no=$2`, [JSON.stringify(attachments), requestNo]);
-    response.json({ ok: true });
-  } catch (error) { next(error); }
-});
-
 app.get("/api/customer/profile", requireCustomerPortalAuth, async (request, response, next) => {
   try {
     const account = await getCustomerAccount(request.customerSession.customerCode || request.customerSession.userName);
@@ -2299,6 +2255,300 @@ app.post("/api/pod-documents", requireAppAuth, async (request, response, next) =
   } catch (error) {
     return next(error);
   }
+});
+
+
+
+// --- HR Leave Management ----------------------------------------------------
+function requireHrAdmin(request, response, next) {
+  const session = request.appSession || appAuthFromRequest(request);
+  const role = String(session?.role || "").toLowerCase();
+  if (!session) return response.status(401).json({ ok: false, error: "Login required." });
+  if (!session.employeePortal || !["admin", "hr"].includes(role)) {
+    return response.status(403).json({ ok: false, error: "HR Admin access is required." });
+  }
+  request.appSession = session;
+  return next();
+}
+
+function isoDate(value) {
+  const text = String(value || "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+}
+
+function dateParts(startDate, endDate) {
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null;
+  const rows = [];
+  for (let cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    rows.push(new Date(cursor));
+  }
+  return rows;
+}
+
+async function hrCalendarRules() {
+  const [weekends, holidays, types] = await Promise.all([
+    query("select weekday from hr_weekend_rules where branch = 'All' and active = true order by weekday"),
+    query("select holiday_date, day_type, title, notes, branch from hr_calendar_days where active = true order by holiday_date"),
+    query("select * from hr_leave_types where active = true order by id")
+  ]);
+  return { weekends: weekends.rows.map((row) => Number(row.weekday)), holidays: holidays.rows, leaveTypes: types.rows };
+}
+
+async function calculateHrLeave(startDate, endDate) {
+  const dates = dateParts(startDate, endDate);
+  if (!dates) throw new Error("A valid leave date range is required.");
+  const rules = await hrCalendarRules();
+  const holidayMap = new Map(rules.holidays.map((row) => [String(row.holiday_date).slice(0, 10), row]));
+  let weekendDays = 0;
+  let publicHolidayDays = 0;
+  let workingDays = 0;
+  for (const date of dates) {
+    const key = date.toISOString().slice(0, 10);
+    const day = date.getUTCDay();
+    if (rules.weekends.includes(day)) {
+      weekendDays += 1;
+    } else if (holidayMap.has(key) && ["PUBLIC_HOLIDAY", "BLACKOUT"].includes(String(holidayMap.get(key).day_type))) {
+      publicHolidayDays += 1;
+    } else {
+      workingDays += 1;
+    }
+  }
+  return {
+    calendarDays: dates.length,
+    weekendDays,
+    publicHolidayDays,
+    actualLeaveDays: workingDays
+  };
+}
+
+async function hrBalanceForUser(userName, year, leaveTypeCode) {
+  const type = (await query("select * from hr_leave_types where code = $1 limit 1", [leaveTypeCode])).rows[0];
+  if (!type) throw new Error("Leave type not found.");
+  const policy = (await query(
+    "select * from hr_employee_leave_policies where lower(user_name)=lower($1) and year=$2 and leave_type_code=$3 limit 1",
+    [userName, year, leaveTypeCode]
+  )).rows[0];
+  const entitlement = Number(policy?.entitlement ?? type.annual_entitlement ?? 0);
+  let carryForward = Number(policy?.carry_forward ?? 0);
+  if (!policy && type.allow_carry_forward && year > 1) {
+    const previous = (await query(`select greatest(0, least($1, coalesce(b.available_days,0))) as days from hr_leave_balances b where lower(b.user_name)=lower($2) and b.year=$3 and b.leave_type_code=$4 limit 1`, [Number(type.max_carry_forward || 0), userName, year - 1, leaveTypeCode])).rows[0];
+    carryForward = Number(previous?.days || 0);
+  }
+  const adjustment = Number(policy?.adjustment ?? 0);
+  const used = Number((await query(
+    "select coalesce(sum(coalesce(actual_leave_days,total_days)),0) as days from leave_requests where lower(user_name)=lower($1) and status='Approved' and lower(leave_type)=lower((select name from hr_leave_types where code=$2)) and extract(year from start_date)=$3",
+    [userName, leaveTypeCode, year]
+  )).rows[0]?.days || 0);
+  const pending = Number((await query(
+    "select coalesce(sum(coalesce(actual_leave_days,total_days)),0) as days from leave_requests where lower(user_name)=lower($1) and status='Pending' and lower(leave_type)=lower((select name from hr_leave_types where code=$2)) and extract(year from start_date)=$3",
+    [userName, leaveTypeCode, year]
+  )).rows[0]?.days || 0);
+  const available = entitlement + carryForward + adjustment - used;
+  const projected = available - pending;
+  await query(
+    `insert into hr_leave_balances (user_name, year, leave_type_code, entitlement, carry_forward, adjustment, used_days, pending_days, available_days, projected_days, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
+     on conflict (user_name,year,leave_type_code) do update set entitlement=excluded.entitlement,carry_forward=excluded.carry_forward,adjustment=excluded.adjustment,used_days=excluded.used_days,pending_days=excluded.pending_days,available_days=excluded.available_days,projected_days=excluded.projected_days,updated_at=now()`,
+    [userName, year, leaveTypeCode, entitlement, carryForward, adjustment, used, pending, available, projected]
+  );
+  return { userName, year, leaveTypeCode, leaveTypeName: type.name, entitlement, carryForward, adjustment, used, pending, available, projected };
+}
+
+async function hrAllBalances(userName, year) {
+  const types = (await query("select code from hr_leave_types where active=true order by id")).rows;
+  return Promise.all(types.map((row) => hrBalanceForUser(userName, year, row.code)));
+}
+
+app.get("/api/hr/leave-config", requireEmployeePortalAuth, async (request, response, next) => {
+  try {
+    const year = Number(request.query.year || new Date().getFullYear());
+    const config = await hrCalendarRules();
+    const userName = String(request.appSession.userName || "").trim();
+    const balances = await hrAllBalances(userName, year);
+    const employee = (await query("select user_name, full_name, department, designation, join_date, employment_status, reporting_manager from employees where lower(user_name)=lower($1) limit 1", [userName])).rows[0] || null;
+    return response.json({ ok: true, year, ...config, balances, employee });
+  } catch (error) { return next(error); }
+});
+
+app.get("/api/hr/calendar", requireEmployeePortalAuth, async (request, response, next) => {
+  try {
+    const from = isoDate(request.query.from) || `${new Date().getFullYear()}-01-01`;
+    const to = isoDate(request.query.to) || `${new Date().getFullYear()}-12-31`;
+    const config = await hrCalendarRules();
+    const weekends = config.weekends;
+    const holidays = config.holidays.filter((row) => String(row.holiday_date).slice(0,10) >= from && String(row.holiday_date).slice(0,10) <= to);
+    return response.json({ ok: true, from, to, weekends, holidays });
+  } catch (error) { return next(error); }
+});
+
+app.get("/api/hr/balances", requireEmployeePortalAuth, async (request, response, next) => {
+  try {
+    const year = Number(request.query.year || new Date().getFullYear());
+    const userName = String(request.query.userName || request.appSession.userName || "").trim();
+    const role = String(request.appSession.role || "").toLowerCase();
+    if (userName.toLowerCase() !== String(request.appSession.userName || "").toLowerCase() && !["admin","hr"].includes(role)) return response.status(403).json({ ok:false,error:"You can only view your own balance." });
+    return response.json({ ok:true, year, rows: await hrAllBalances(userName, year) });
+  } catch (error) { return next(error); }
+});
+
+app.get("/api/hr/leave-requests", requireEmployeePortalAuth, async (request, response, next) => {
+  try {
+    const role = String(request.appSession.role || "").toLowerCase();
+    const admin = ["admin","hr"].includes(role);
+    const values = [];
+    let where = "";
+    if (!admin) { values.push(request.appSession.userName); where = "where lower(user_name)=lower($1)"; }
+    const result = await query(`select request_no,user_name,employee_name,leave_type,start_date,end_date,total_days,calendar_days,weekend_days,public_holiday_days,actual_leave_days,half_day_type,reason,rejoining_date,contact_during_leave,leave_address,emergency_contact,declaration_accepted,status,approved_by,approved_at,rejection_reason,cancellation_reason,applied_at,created_at,updated_at from leave_requests ${where} order by applied_at desc`, values);
+    return response.json({ok:true,rows:result.rows});
+  } catch(error){ return next(error); }
+});
+
+app.post("/api/hr/leave-requests", requireEmployeePortalAuth, async (request, response, next) => {
+  try {
+    const data = request.body || {};
+    const userName = String(request.appSession.userName || "").trim();
+    const leaveType = String(data.leaveType || "ANNUAL").trim().toUpperCase();
+    const type = (await query("select * from hr_leave_types where code=$1 and active=true limit 1", [leaveType])).rows[0];
+    if (!type) return response.status(400).json({ok:false,error:"Choose a valid leave type."});
+    const startDate = isoDate(data.startDate); const endDate = isoDate(data.endDate);
+    const calculation = await calculateHrLeave(startDate,endDate);
+    if (["FIRST_HALF","SECOND_HALF"].includes(String(data.halfDayType || "").toUpperCase())) {
+      calculation.actualLeaveDays = Math.max(0, calculation.actualLeaveDays - 0.5);
+    }
+    const declaration = Boolean(data.declarationAccepted);
+    if (!declaration) return response.status(400).json({ok:false,error:"You must accept the self-declaration before submitting."});
+    if (calculation.actualLeaveDays <= 0) return response.status(400).json({ok:false,error:"The selected period contains no working leave days."});
+    const employee = (await query("select * from employees where lower(user_name)=lower($1) limit 1",[userName])).rows[0];
+    if (!employee) return response.status(400).json({ok:false,error:"Employee profile not found."});
+    const joinDate = employee.join_date ? new Date(`${String(employee.join_date).slice(0,10)}T00:00:00Z`) : null;
+    const probationEnd = joinDate ? new Date(joinDate.getTime()) : null;
+    if (probationEnd) probationEnd.setUTCMonth(probationEnd.getUTCMonth()+3);
+    if (probationEnd && new Date(`${startDate}T00:00:00Z`) < probationEnd && !type.allow_during_probation) return response.status(400).json({ok:false,error:`${type.name} is not available during probation.`});
+    const year = Number(startDate.slice(0,4));
+    const balance = await hrBalanceForUser(userName, year, leaveType);
+    if (calculation.actualLeaveDays > balance.available && !type.allow_negative_balance) return response.status(400).json({ok:false,error:`Insufficient ${type.name} balance. Available: ${balance.available} day(s), requested: ${calculation.actualLeaveDays}.`});
+    const blackout = (await query("select holiday_date,title from hr_calendar_days where active=true and day_type='BLACKOUT' and holiday_date between $1 and $2 limit 1",[startDate,endDate])).rows[0];
+    if (blackout) return response.status(400).json({ok:false,error:`Leave is restricted during ${blackout.title || 'a blackout date'}. HR must change the calendar rule first.`});
+    const requestNo = `LV-${year}-${Date.now().toString().slice(-7)}`;
+    const rejoiningDate = isoDate(data.rejoiningDate) || null;
+    const saved = await query(`insert into leave_requests (request_no,user_name,employee_name,leave_type,start_date,end_date,total_days,calendar_days,weekend_days,public_holiday_days,actual_leave_days,half_day_type,reason,rejoining_date,contact_during_leave,leave_address,emergency_contact,declaration_accepted,declaration_accepted_at,status,applied_at,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,true,now(),'Pending',now(),now(),now()) returning *`,
+      [requestNo,userName,employee.full_name || userName,leaveType, startDate,endDate,calculation.actualLeaveDays,calculation.calendarDays,calculation.weekendDays,calculation.publicHolidayDays,calculation.actualLeaveDays,String(data.halfDayType||""),String(data.reason||"").trim(),rejoiningDate,String(data.contactDuringLeave||"").trim(),String(data.leaveAddress||"").trim(),String(data.emergencyContact||"").trim()]);
+    return response.status(201).json({ok:true,row:saved.rows[0],calculation,balance});
+  } catch(error){ return next(error); }
+});
+
+app.put("/api/hr/leave-requests/:requestNo/decision", requireHrAdmin, async (request, response, next) => {
+  try {
+    const requestNo = String(request.params.requestNo || "").trim();
+    const decision = String(request.body?.decision || "").toLowerCase();
+    if (!["approve","reject"].includes(decision)) return response.status(400).json({ok:false,error:"Decision must be approve or reject."});
+    const existing = (await query("select * from leave_requests where request_no=$1 limit 1",[requestNo])).rows[0];
+    if (!existing) return response.status(404).json({ok:false,error:"Leave request not found."});
+    if (existing.status !== "Pending") return response.status(400).json({ok:false,error:`This request is already ${existing.status}.`});
+    const status = decision === "approve" ? "Approved" : "Rejected";
+    const rejectionReason = decision === "reject" ? String(request.body?.reason || "").trim() : "";
+    if (decision === "reject" && !rejectionReason) return response.status(400).json({ok:false,error:"A rejection reason is required."});
+    const saved = await query("update leave_requests set status=$1,approved_by=$2,approved_at=now(),rejection_reason=$3,updated_at=now() where request_no=$4 returning *",[status,request.appSession.userName,rejectionReason,requestNo]);
+    await hrBalanceForUser(existing.user_name, Number(String(existing.start_date).slice(0,4)), existing.leave_type);
+    return response.json({ok:true,row:saved.rows[0]});
+  } catch(error){ return next(error); }
+});
+
+app.post("/api/hr/leave-requests/:requestNo/cancel", requireEmployeePortalAuth, async (request, response, next) => {
+  try {
+    const requestNo=String(request.params.requestNo||"").trim();
+    const existing=(await query("select * from leave_requests where request_no=$1 limit 1",[requestNo])).rows[0];
+    if(!existing) return response.status(404).json({ok:false,error:"Leave request not found."});
+    const admin=["admin","hr"].includes(String(request.appSession.role||"").toLowerCase());
+    if(!admin && String(existing.user_name).toLowerCase()!==String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"You can only cancel your own leave."});
+    if(["Rejected","Cancelled"].includes(existing.status)) return response.status(400).json({ok:false,error:`This request is already ${existing.status}.`});
+    const saved=await query("update leave_requests set status='Cancelled',cancellation_reason=$1,updated_at=now() where request_no=$2 returning *",[String(request.body?.reason||"Cancelled by employee").trim(),requestNo]);
+    return response.json({ok:true,row:saved.rows[0]});
+  }catch(error){return next(error);}
+});
+
+app.post("/api/hr/leave-requests/:requestNo/rejoin", requireEmployeePortalAuth, async (request,response,next)=>{
+  try{
+    const requestNo=String(request.params.requestNo||"").trim();
+    const existing=(await query("select * from leave_requests where request_no=$1 limit 1",[requestNo])).rows[0];
+    if(!existing) return response.status(404).json({ok:false,error:"Leave request not found."});
+    const admin=["admin","hr"].includes(String(request.appSession.role||"").toLowerCase());
+    if(!admin && String(existing.user_name).toLowerCase()!==String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"Not allowed."});
+    const saved=await query("update leave_requests set rejoined_at=now(),rejoined_by=$1,updated_at=now() where request_no=$2 returning *",[request.appSession.userName,requestNo]);
+    return response.json({ok:true,row:saved.rows[0]});
+  }catch(error){return next(error);}
+});
+
+app.post("/api/hr/calendar/holiday", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const date=isoDate(request.body?.holidayDate); const title=String(request.body?.title||"").trim();
+    if(!date||!title) return response.status(400).json({ok:false,error:"Holiday date and title are required."});
+    const dayType=String(request.body?.dayType||"PUBLIC_HOLIDAY").toUpperCase();
+    if(!["PUBLIC_HOLIDAY","BLACKOUT","WORKING_DAY"].includes(dayType)) return response.status(400).json({ok:false,error:"Invalid calendar day type."});
+    const saved=await query(`insert into hr_calendar_days(branch,holiday_date,day_type,title,notes,active,created_by,created_at,updated_at) values('All',$1,$2,$3,$4,true,$5,now(),now()) on conflict(branch,holiday_date,day_type) do update set title=excluded.title,notes=excluded.notes,active=true,updated_at=now() returning *`,[date,dayType,title,String(request.body?.notes||"").trim(),request.appSession.userName]);
+    return response.status(201).json({ok:true,row:saved.rows[0]});
+  }catch(error){return next(error);}
+});
+
+app.delete("/api/hr/calendar/holiday/:id", requireHrAdmin, async (request,response,next)=>{
+  try{const id=Number(request.params.id); const saved=await query("update hr_calendar_days set active=false,updated_at=now() where id=$1 returning *",[id]); if(!saved.rows[0]) return response.status(404).json({ok:false,error:"Calendar item not found."}); return response.json({ok:true,row:saved.rows[0]});}catch(error){return next(error);}
+});
+
+app.post("/api/hr/calendar/weekends", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const weekdays=Array.isArray(request.body?.weekdays)?request.body.weekdays.map(Number).filter((n)=>n>=0&&n<=6):[];
+    await query("update hr_weekend_rules set active=false,updated_at=now() where branch='All'");
+    for(const weekday of weekdays){ await query("insert into hr_weekend_rules(branch,weekday,active,created_by,created_at,updated_at) values('All',$1,true,$2,now(),now()) on conflict(branch,weekday) do update set active=true,updated_at=now()",[weekday,request.appSession.userName]); }
+    return response.json({ok:true,weekdays});
+  }catch(error){return next(error);}
+});
+
+app.get("/api/hr/admin/balances", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const year=Number(request.query.year||new Date().getFullYear());
+    const employees=(await query("select user_name,employee_code,full_name,department,designation from employees order by full_name")).rows;
+    const rows=[];
+    for(const employee of employees){
+      const balances=await hrAllBalances(employee.user_name,year);
+      rows.push({...employee,balances});
+    }
+    return response.json({ok:true,year,rows});
+  }catch(error){return next(error);}
+});
+
+app.get("/api/hr/admin/policies", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const year=Number(request.query.year||new Date().getFullYear());
+    const types=(await query("select code,name,annual_entitlement,paid,allow_half_day,allow_during_probation,allow_carry_forward,max_carry_forward,allow_negative_balance,active from hr_leave_types order by id")).rows;
+    const policies=(await query("select * from hr_employee_leave_policies where year=$1 order by user_name,leave_type_code",[year])).rows;
+    return response.json({ok:true,year,types,policies});
+  }catch(error){return next(error);}
+});
+
+app.put("/api/hr/admin/policies", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const data=request.body||{}; const year=Number(data.year||new Date().getFullYear());
+    const userName=String(data.userName||"").trim(); const code=String(data.leaveTypeCode||"").trim().toUpperCase();
+    if(!userName||!code) return response.status(400).json({ok:false,error:"Employee and leave type are required."});
+    const saved=await query(`insert into hr_employee_leave_policies(user_name,leave_type_code,year,entitlement,carry_forward,adjustment,notes,created_by,created_at,updated_at)
+      values($1,$2,$3,$4,$5,$6,$7,$8,now(),now()) on conflict(user_name,leave_type_code,year) do update set entitlement=excluded.entitlement,carry_forward=excluded.carry_forward,adjustment=excluded.adjustment,notes=excluded.notes,updated_at=now() returning *`,
+      [userName,code,year,Number(data.entitlement||0),Number(data.carryForward||0),Number(data.adjustment||0),String(data.notes||"").trim(),request.appSession.userName]);
+    await hrBalanceForUser(userName,year,code);
+    return response.json({ok:true,row:saved.rows[0]});
+  }catch(error){return next(error);}
+});
+
+app.get("/api/hr/admin/summary", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const year=Number(request.query.year||new Date().getFullYear());
+    const employees=(await query("select user_name,employee_code,full_name,department,designation,join_date,employment_status,reporting_manager from employees order by full_name")).rows;
+    const pending=(await query("select count(*)::int as count from leave_requests where status='Pending'")).rows[0]?.count||0;
+    const approved=(await query("select count(*)::int as count from leave_requests where status='Approved' and extract(year from start_date)=$1",[year])).rows[0]?.count||0;
+    return response.json({ok:true,year,employees,pending,approved});
+  }catch(error){return next(error);}
 });
 
 app.get("/api/:resource", requireAppAuth, async (request, response, next) => {

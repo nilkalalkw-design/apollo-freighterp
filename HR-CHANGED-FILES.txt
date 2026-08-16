@@ -1,0 +1,19 @@
+Apollo Freight ERP - HR Portal Update
+
+NEW FILES
+web/hr-portal.js
+server/sql/021_hr_leave_management.sql
+HR-PORTAL-UPDATE.md
+HR-CHANGED-FILES.txt
+
+MODIFIED FILES
+web/app.js
+web/app-runtime.js
+web/styles.css
+server/src/index.js
+
+NOT MODIFIED
+Existing employee records and existing ERP database records are preserved.
+
+DATABASE
+Run server/sql/021_hr_leave_management.sql through the existing migration system.
