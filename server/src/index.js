@@ -12,11 +12,11 @@ const { runMigrations } = require("./migrate");
 const app = express();
 app.set("trust proxy", 1);
 const EMPLOYEE_DOCUMENT_TYPES = {
-  "Employee Photo": { kind: "image", mimeTypes: new Set(["image/jpeg", "image/png"]), maxBytes: 5 * 1024 * 1024, code: "PHOTO", privateAsset: false },
-  "Civil ID Front": { kind: "raw", mimeTypes: new Set(["application/pdf"]), maxBytes: 10 * 1024 * 1024, code: "CIVIL-FRONT", privateAsset: true },
-  "Civil ID Back": { kind: "raw", mimeTypes: new Set(["application/pdf"]), maxBytes: 10 * 1024 * 1024, code: "CIVIL-BACK", privateAsset: true },
-  "Passport Front": { kind: "raw", mimeTypes: new Set(["application/pdf"]), maxBytes: 10 * 1024 * 1024, code: "PASS-FRONT", privateAsset: true },
-  "Passport Back": { kind: "raw", mimeTypes: new Set(["application/pdf"]), maxBytes: 10 * 1024 * 1024, code: "PASS-BACK", privateAsset: true }
+  "Employee Photo": { kind: "image", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "PHOTO", privateAsset: false },
+  "Civil ID Front": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "CIVIL-FRONT", privateAsset: true },
+  "Civil ID Back": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "CIVIL-BACK", privateAsset: true },
+  "Passport Front": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "PASS-FRONT", privateAsset: true },
+  "Passport Back": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "PASS-BACK", privateAsset: true }
 };
 const EMPLOYEE_DOCUMENT_TYPE_NAMES = new Set(Object.keys(EMPLOYEE_DOCUMENT_TYPES));
 
@@ -2169,9 +2169,7 @@ app.post("/api/employee-profile-documents", requireEmployeePortalAuth, async (re
   if (!userName || !typeConfig || !fileName || !contentBase64) {
     return response.status(400).json({ ok: false, error: "Choose a valid employee document file." });
   }
-  if (!typeConfig.mimeTypes.has(mimeType)) {
-    return response.status(400).json({ ok: false, error: typeConfig.kind === "image" ? "Profile photo must be JPG, JPEG, or PNG." : "Identity documents must be PDF files." });
-  }
+  if (!typeConfig.mimeTypes.has(mimeType)) return response.status(400).json({ ok: false, error: "Employee documents must be PDF, JPG, JPEG, or PNG files." });
 
   const cloudinary = cloudinaryConfig();
   if (!cloudinary) {
@@ -2197,7 +2195,8 @@ app.post("/api/employee-profile-documents", requireEmployeePortalAuth, async (re
     form.append("overwrite", "true");
     if (typeConfig.privateAsset) form.append("type", "private");
     form.append("signature", signature);
-    const cloudinaryResponse = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinary.cloudName)}/${typeConfig.kind}/upload`, { method: "POST", body: form });
+    const uploadKind = mimeType === "application/pdf" ? "raw" : "image";
+    const cloudinaryResponse = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinary.cloudName)}/${uploadKind}/upload`, { method: "POST", body: form });
     const uploaded = await cloudinaryResponse.json().catch(() => ({}));
     if (!cloudinaryResponse.ok || !uploaded.secure_url) {
       throw new Error(uploaded.error?.message || "Cloudinary upload failed.");
@@ -2215,6 +2214,20 @@ app.post("/api/employee-profile-documents", requireEmployeePortalAuth, async (re
   } catch (error) {
     return next(error);
   }
+});
+
+app.delete("/api/employee-profile-documents/:documentNo", requireEmployeePortalAuth, async (request, response, next) => {
+  try {
+    const sessionUser = String(request.appSession?.userName || "").trim();
+    const role = String(request.appSession?.role || "").toLowerCase();
+    const isAdmin = ["admin", "hr"].includes(role) && Boolean(request.appSession?.employeePortal);
+    const documentNo = String(request.params.documentNo || "").trim();
+    const documentItem = (await query("select document_no,linked_no,type from documents where document_no=$1 and type=any($2::text[]) limit 1", [documentNo, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]])).rows[0];
+    if (!documentItem) return response.status(404).json({ok:false,error:"Employee document not found."});
+    if (!isAdmin && String(documentItem.linked_no || "").toLowerCase() !== sessionUser.toLowerCase()) return response.status(403).json({ok:false,error:"You can only delete your own employee documents."});
+    await query("delete from documents where document_no=$1", [documentNo]);
+    return response.json({ok:true,documentNo});
+  } catch (error) { return next(error); }
 });
 
 app.post("/api/pod-documents", requireAppAuth, async (request, response, next) => {

@@ -284,6 +284,7 @@ function shipmentMetaNotes(data) {
     transportMode: String(data.transportMode || "").trim(),
     shipmentVia: String(data.shipmentVia || data.transportMode || "").trim(),
     loadType: String(data.loadType || "").trim(),
+    receivingBranch: String(data.receivingBranch || data.destinationBranch || "").trim(),
     expectedArrivalDate: String(data.expectedArrivalDate || "").trim(),
     customerCode: String(data.customerCode || "").trim(),
     customerContactPerson: String(data.customerContactPerson || "").trim(),
@@ -447,6 +448,7 @@ function shipment(
     chargeableDivisor,
     shipmentDate: meta.shipmentDate || "",
     expectedArrivalDate: meta.expectedArrivalDate || "",
+    receivingBranch: meta.receivingBranch || "",
     transportMode: meta.transportMode || "",
     loadType: meta.loadType || "",
     shipmentVia: meta.shipmentVia || meta.transportMode || "",
@@ -1276,6 +1278,34 @@ function shipmentVisualState(row) {
   return { key: "on-time", label: "On Time", icon: "●" };
 }
 
+// A transfer stays as one shipment record. The receiving branch is derived from the destination
+// already entered during shipment creation, so existing live shipments need no data migration.
+function shipmentReceivingBranch(row) {
+  const explicit = normalizeBranchName(row.receivingBranch || row.destinationBranch || "");
+  if (CANONICAL_BRANCHES.includes(explicit)) return explicit;
+  const destination = String(row.destination || row.deliveryLocation || "").trim().toLowerCase();
+  if (/\b(dubai|dxb)\b/.test(destination)) return "Dubai";
+  if (/\b(kuwait|kwi|kwt)\b/.test(destination)) return "Kuwait HO";
+  return "";
+}
+
+function isBranchTransferStatus(status) {
+  return /dispatched|in[\s-]?transit|departed/.test(shipmentStatusKey(status));
+}
+
+function incomingShipmentsForCurrentBranch() {
+  if (canViewAllBranches()) return state.shipments.filter((row) => isBranchTransferStatus(row.status) && shipmentReceivingBranch(row));
+  const access = String(currentSession()?.branchAccess || defaultUserBranch());
+  const branches = access.split(",").map(normalizeBranchName).filter((value) => CANONICAL_BRANCHES.includes(value));
+  return state.shipments.filter((row) => isBranchTransferStatus(row.status) && branches.includes(shipmentReceivingBranch(row)));
+}
+
+function incomingShipmentPanel() {
+  const rows = incomingShipmentsForCurrentBranch();
+  const branchLabel = canViewAllBranches() ? "All receiving branches" : String(currentSession()?.branchAccess || defaultUserBranch());
+  return `<section class="split-grid single-panel incoming-shipment-panel"><article class="panel">${panelHeader("Upcoming / Incoming Shipments", branchLabel)}<p class="empty-state">Shipments appear here after they are marked Dispatched, In Transit, or Departed for Kuwait/KWI or Dubai/DXB. Status updates here change the same main shipment record.</p>${shipmentStatusTable(rows)}</article></section>`;
+}
+
 function maybePlayAdminNotification() {
   const pending = pendingRequestCount();
   if (isAdminSession() && lastPendingNotificationCount > 0 && pending > lastPendingNotificationCount) {
@@ -1405,7 +1435,7 @@ function boot() {
     if (!statusSelect) return;
     const field = statusSelect.closest("form").querySelector("[data-expected-arrival-field]");
     if (!field) return;
-    field.hidden = String(statusSelect.value || "").trim().toLowerCase() !== "dispatched";
+    field.hidden = !isBranchTransferStatus(statusSelect.value);
   });
   recordDialog.addEventListener("click", handleModuleClick);
   recordDialog.addEventListener("click", handleModuleLinkClick);
@@ -2757,11 +2787,11 @@ function renderHrProfile() {
 function employeeProfileDocumentsPanel() {
   const documents = Array.isArray(state.employeeProfileDocuments) ? state.employeeProfileDocuments : [];
   const documentTypes = [
-    ["Employee Photo", "Profile Photo", "JPG, JPEG or PNG • Maximum 5 MB"],
-    ["Civil ID Front", "Civil ID — Front", "PDF • Maximum 10 MB"],
-    ["Civil ID Back", "Civil ID — Back", "PDF • Maximum 10 MB"],
-    ["Passport Front", "Passport — Front", "PDF • Maximum 10 MB"],
-    ["Passport Back", "Passport — Back", "PDF • Maximum 10 MB"]
+    ["Employee Photo", "Profile Photo", "PDF, JPG or PNG • Maximum 10 MB"],
+    ["Civil ID Front", "Civil ID — Front", "PDF, JPG or PNG • Maximum 10 MB"],
+    ["Civil ID Back", "Civil ID — Back", "PDF, JPG or PNG • Maximum 10 MB"],
+    ["Passport Front", "Passport — Front", "PDF, JPG or PNG • Maximum 10 MB"],
+    ["Passport Back", "Passport — Back", "PDF, JPG or PNG • Maximum 10 MB"]
   ];
   return `<section class="form-section employee-document-panel"><h3>Personal Documents</h3>
     <p class="empty-state">Your documents are stored privately. Upload a replacement any time.</p>
@@ -2773,7 +2803,7 @@ function employeeProfileDocumentsPanel() {
           <small>${escapeHtml(help)}</small>
           ${type === "Employee Photo" && documentItem?.storageUrl ? `<img class="employee-profile-thumbnail" src="${escapeHtml(documentItem.storageUrl)}" alt="Employee profile" />` : ""}
           <span class="${documentItem?.storageUrl ? "document-uploaded" : "document-missing"}">${documentItem?.storageUrl ? "Uploaded" : "Not uploaded"}</span>
-          ${documentItem?.storageUrl ? `<button type="button" class="secondary-button" data-action="view-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">View file</button>` : ""}
+          ${documentItem?.storageUrl ? `<button type="button" class="secondary-button" data-action="view-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">View file</button><button type="button" class="secondary-button" data-action="delete-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">Delete file</button>` : ""}
           <button type="button" class="secondary-button" data-action="upload-employee-document" data-document-type="${escapeHtml(type)}">${documentItem?.storageUrl ? "Replace file" : "Upload file"}</button>
         </article>`;
       }).join("")}
@@ -2875,7 +2905,8 @@ function renderDashboard() {
         ${kpi("Pending Requests", pendingRequests, "Your pending approvals", "pending-requests")}
         ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
       </section>
-      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${dashboardColumnSettingsMarkup()} ${dashboardTableNote} ${table("shipment", recentRows, dashboardShipmentColumns(), undefined, "shipment:myShipments")}</section>`;
+      <section class="panel">${panelHeader("My Shipments", "Limited Dashboard")} ${dashboardColumnSettingsMarkup()} ${dashboardTableNote} ${table("shipment", recentRows, dashboardShipmentColumns(), undefined, "shipment:myShipments")}</section>
+      ${incomingShipmentPanel()}`;
   }
   return `
     <section class="kpi-grid">
@@ -2892,6 +2923,7 @@ function renderDashboard() {
     <section class="split-grid single-panel dashboard-shipment-register">
       <article class="panel">${panelHeader("Operational Shipments", "Dashboard")} ${dashboardColumnSettingsMarkup()} ${dashboardTableNote} ${table("shipment", recentRows, dashboardShipmentColumns(), undefined, "shipment:dashboard")}</article>
     </section>
+    ${incomingShipmentPanel()}
     <section class="split-grid single-panel dashboard-alert-row">
       <details class="panel collapsible-section dashboard-alert-panel">
         <summary>${panelHeader("Exception Alerts")}<span class="dashboard-alert-toggle" aria-hidden="true"></span></summary>
@@ -3369,7 +3401,7 @@ function shipmentStatusExpandRowMarkup(row, colSpan) {
         ${select("status", "Status", statusOptions(), row.status)}
         ${input("date", "Date", today(), false, "date")}
         ${input("notes", "Manual Remark", "")}
-        <div class="expected-arrival-field" data-expected-arrival-field ${String(row.status || "").trim().toLowerCase() === "dispatched" || row.expectedArrivalDate ? "" : "hidden"}>
+        <div class="expected-arrival-field" data-expected-arrival-field ${isBranchTransferStatus(row.status) || row.expectedArrivalDate ? "" : "hidden"}>
           ${input("expectedArrivalDate", "Expected Arrival Date", row.expectedArrivalDate || "", false, "date")}
         </div>
         <div class="action-row">
@@ -4339,7 +4371,7 @@ function dropdownKeyForField(name) {
 }
 
 function statusOptions() {
-  return dropdownOptions("status", ["Draft", "Booked", "In-Transit", "Delivered", "Invoiced", "Closed", "Blocked"]);
+  return dropdownOptions("status", ["Draft", "Booked", "Dispatched", "In-Transit", "Delivered", "Invoiced", "Closed", "Blocked"]);
 }
 
 function roleOptions() {
@@ -4875,6 +4907,11 @@ async function handleModuleClick(event) {
 
   if (action === "view-employee-document") {
     await viewEmployeeProfileDocument(button.dataset.documentNo || "");
+    return;
+  }
+
+  if (action === "delete-employee-document") {
+    await deleteEmployeeProfileDocument(button.dataset.documentNo || "");
     return;
   }
 
@@ -10608,11 +10645,11 @@ async function updateCustomerProfile(data) {
 
 function employeeDocumentUploadRule(documentType) {
   const rules = {
-    "Employee Photo": { accept: "image/jpeg,image/png", mimeTypes: ["image/jpeg", "image/png"], maxBytes: 5 * 1024 * 1024, label: "JPG, JPEG or PNG" },
-    "Civil ID Front": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" },
-    "Civil ID Back": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" },
-    "Passport Front": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" },
-    "Passport Back": { accept: "application/pdf,.pdf", mimeTypes: ["application/pdf"], maxBytes: 10 * 1024 * 1024, label: "PDF" }
+    "Employee Photo": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" },
+    "Civil ID Front": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" },
+    "Civil ID Back": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" },
+    "Passport Front": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" },
+    "Passport Back": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" }
   };
   return rules[documentType] || null;
 }
@@ -10680,6 +10717,15 @@ async function viewEmployeeProfileDocument(documentNo) {
     if (viewer) viewer.close();
     notifyDenied("File not opened", error.message || "The file could not be opened.");
   }
+}
+
+async function deleteEmployeeProfileDocument(documentNo) {
+  if (!documentNo || !isHrSession() || !window.confirm("Delete this document? You can upload a replacement afterward.")) return;
+  try {
+    await fetchJson(`/api/employee-profile-documents/${encodeURIComponent(documentNo)}`, { method: "DELETE" });
+    state.employeeProfileDocuments = (state.employeeProfileDocuments || []).filter((item) => item.documentNo !== documentNo);
+    saveState(); render(); notifySuccess("Document deleted", "The employee document was removed.");
+  } catch (error) { notifyDenied("Document not deleted", error.message || "The document could not be deleted."); }
 }
 
 const EMPLOYEE_DOCUMENT_TYPES_FOR_DIALOG = [
@@ -10835,8 +10881,13 @@ async function updateStatus(data) {
   const remark = data.notes || "";
   const entryDate = data.date || today();
   shipmentItem.status = newStatus;
-  if (newStatus.trim().toLowerCase() === "dispatched" && data.expectedArrivalDate) {
-    shipmentItem.expectedArrivalDate = data.expectedArrivalDate;
+  if (isBranchTransferStatus(newStatus) && !data.expectedArrivalDate && !shipmentItem.expectedArrivalDate) {
+    notifyDenied("Expected arrival required", "Enter the expected arrival date before dispatching this shipment to the receiving branch.");
+    return false;
+  }
+  if (isBranchTransferStatus(newStatus)) {
+    shipmentItem.receivingBranch = shipmentReceivingBranch(shipmentItem);
+    if (data.expectedArrivalDate) shipmentItem.expectedArrivalDate = data.expectedArrivalDate;
   }
   shipmentItem.notes = shipmentMetaNotes(shipmentItem);
   await persistRecord("shipment", shipmentItem);
