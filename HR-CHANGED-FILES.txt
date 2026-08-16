@@ -1,19 +1,18 @@
-Apollo Freight ERP - HR Portal Update
+HR PORTAL V2 - FIXES
 
-NEW FILES
-web/hr-portal.js
-server/sql/021_hr_leave_management.sql
-HR-PORTAL-UPDATE.md
-HR-CHANGED-FILES.txt
+FIXED
+- HR Admin Leave Approvals now always uses the dedicated HR module; no fallback to the old legacy panel after the module loads.
+- HR Calendar & Rules now always uses the dedicated HR calendar panel.
+- HR Leave Balances and HR Leave Policies use the dedicated HR module.
+- HR refresh now re-renders all HR admin panels, not only My Leave/Leave Approvals.
+- HR Admin employee documents are scoped to the selected employee on both list and upload APIs.
+- HR Admin document viewing is authorized independently of the admin's own employee documents.
+- Regular employees remain restricted to their own documents.
 
-MODIFIED FILES
-web/app.js
-web/app-runtime.js
-web/styles.css
-server/src/index.js
-
-NOT MODIFIED
-Existing employee records and existing ERP database records are preserved.
+FILES CHANGED
+- web/app-runtime.js
+- web/hr-portal.js
+- server/src/index.js
 
 DATABASE
-Run server/sql/021_hr_leave_management.sql through the existing migration system.
+- No new migration required for these fixes. Existing 021_hr_leave_management.sql remains.

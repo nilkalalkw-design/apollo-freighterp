@@ -2098,8 +2098,14 @@ app.put("/api/customer/profile", requireCustomerPortalAuth, async (request, resp
   }
 });
 app.get("/api/employee-profile-documents", requireEmployeePortalAuth, async (request, response, next) => {
-  const userName = String(request.appSession?.userName || "").trim();
+  const sessionUserName = String(request.appSession?.userName || "").trim();
+  const isHrAdmin = ["admin", "hr"].includes(String(request.appSession?.role || "").toLowerCase());
+  const requestedUserName = String(request.query?.employee || "").trim();
+  const userName = isHrAdmin && requestedUserName ? requestedUserName : sessionUserName;
   if (!userName) return response.status(401).json({ ok: false, error: "Login required." });
+  if (!isHrAdmin && requestedUserName && requestedUserName.toLowerCase() !== sessionUserName.toLowerCase()) {
+    return response.status(403).json({ ok: false, error: "You can only view your own employee documents." });
+  }
   try {
     const result = await query(
       `select document_no, linked_no, type, status, date, owner, file_name, storage_url, notes, created_at
@@ -2115,17 +2121,28 @@ app.get("/api/employee-profile-documents", requireEmployeePortalAuth, async (req
 });
 
 app.get("/api/employee-profile-documents/:documentNo/view", requireEmployeePortalAuth, async (request, response, next) => {
-  const userName = String(request.appSession?.userName || "").trim();
+  const sessionUserName = String(request.appSession?.userName || "").trim();
+  const isHrAdmin = ["admin", "hr"].includes(String(request.appSession?.role || "").toLowerCase());
   const documentNo = String(request.params.documentNo || "").trim();
-  if (!userName || !documentNo) return response.status(400).json({ ok: false, error: "Document not found." });
+  if (!sessionUserName || !documentNo) return response.status(400).json({ ok: false, error: "Document not found." });
   try {
     const result = await query(
       `select document_no, linked_no, type, file_name, storage_url, notes
        from documents
        where document_no = $1 and lower(linked_no) = lower($2) and type = any($3::text[])
        limit 1`,
-      [documentNo, userName, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
+      [documentNo, sessionUserName, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
     );
+    if (!result.rows[0] && isHrAdmin) {
+      const adminResult = await query(
+        `select document_no, linked_no, type, file_name, storage_url, notes
+         from documents
+         where document_no = $1 and type = any($2::text[])
+         limit 1`,
+        [documentNo, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
+      );
+      if (adminResult.rows[0]) result.rows.push(adminResult.rows[0]);
+    }
     const documentItem = result.rows[0];
     if (!documentItem?.storage_url) return response.status(404).json({ ok: false, error: "Uploaded file not found." });
     const typeConfig = employeeDocumentType(documentItem.type);
@@ -2148,7 +2165,14 @@ app.get("/api/employee-profile-documents/:documentNo/view", requireEmployeePorta
 });
 
 app.post("/api/employee-profile-documents", requireEmployeePortalAuth, async (request, response, next) => {
-  const userName = String(request.appSession?.userName || "").trim();
+  const sessionUserName = String(request.appSession?.userName || "").trim();
+  const isHrAdmin = ["admin", "hr"].includes(String(request.appSession?.role || "").toLowerCase());
+  const requestedUserName = String(request.body?.employeeUserName || "").trim();
+  const userName = isHrAdmin && requestedUserName ? requestedUserName : sessionUserName;
+  if (!userName) return response.status(401).json({ ok: false, error: "Login required." });
+  if (!isHrAdmin && requestedUserName && requestedUserName.toLowerCase() !== sessionUserName.toLowerCase()) {
+    return response.status(403).json({ ok: false, error: "You can only upload your own employee documents." });
+  }
   const documentTypeName = String(request.body?.documentType || "").trim();
   const typeConfig = employeeDocumentType(documentTypeName);
   const fileName = String(request.body?.fileName || "").trim();

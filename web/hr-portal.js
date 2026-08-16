@@ -93,6 +93,7 @@ function leaveForm() {
 }
 
 function renderAdminApprovals() {
+  ensureAdminData();
   queueMicrotask(bindHrEvents);
   const rows = cache.requests || [];
   return `<section class="hr-page"><div class="hr-hero"><div><p class="eyebrow">HR Admin</p><h2>Leave Management</h2><p>Review applications, check actual leave days and maintain the audit trail.</p></div></div>
@@ -183,7 +184,7 @@ function bindHrEvents() {
   });
 }
 
-async function ensureAdminData() { if(!hrAdmin()) return; const first=!cache.adminBalances; try { if(!cache.adminBalances) await loadAdminBalances(); } catch(error){ console.warn("HR admin balance unavailable",error); } if(first) window.dispatchEvent(new CustomEvent("apollo-hr-refresh")); }
+async function ensureAdminData() { if(!hrAdmin()) return; const first=!cache.adminBalances; try { if(!cache.adminBalances) await loadAdminBalances(); if(!cache.summary) cache.summary=await hrFetch(`/api/hr/admin/summary?year=${year()}`); } catch(error){ console.warn("HR admin data unavailable",error); } if(first) window.dispatchEvent(new CustomEvent("apollo-hr-refresh")); }
 
 async function ensureLoaded() { const firstLoad=!cache.config; try { if(!cache.config) await loadConfig(); if(!cache.requests.length) await loadRequests(); } catch(error) { console.warn("HR portal data unavailable",error); } bindHrEvents(); if(firstLoad) window.dispatchEvent(new CustomEvent("apollo-hr-refresh")); }
 window.ApolloHR = {
@@ -195,5 +196,10 @@ window.ApolloHR = {
   renderAdminPolicies: () => { ensurePolicyData(); return renderAdminPolicies(); },
   renderAdminBalance: () => { ensureLoaded(); return renderAdminBalance(); }
 };
-window.addEventListener("apollo-hr-refresh", () => { const navButton=document.querySelector('#moduleNav button[data-module="My Leave"],#moduleNav button[data-module="Leave Approvals"]'); if(navButton && window.__APOLLO_HR_RENDER) window.__APOLLO_HR_RENDER(); });
+window.addEventListener("apollo-hr-refresh", () => {
+  if (window.__APOLLO_HR_RENDER) {
+    const active = document.querySelector('#moduleNav button.active')?.dataset?.module || "";
+    if (["My Leave","Leave Balance","Leave Calendar","Leave Approvals","HR Calendar & Rules","HR Leave Balances","HR Leave Policies"].includes(active)) window.__APOLLO_HR_RENDER();
+  }
+});
 ensureLoaded();

@@ -2496,6 +2496,10 @@ function apiSettings(row) {
   };
 }
 
+function renderHrLoadingPanel(title) {
+  return `<section class="panel"><div class="panel-header"><div><h3>${escapeHtml(title)}</h3><p>HR module is loading. Please wait a moment.</p></div></div></section>`;
+}
+
 function render() {
   if (!visibleModules().some(([name]) => name === activeModule)) {
     activeModule = isCustomerSession() ? "Customer Dashboard" : isHrSession() ? "HR Dashboard" : "Dashboard";
@@ -2548,10 +2552,10 @@ function render() {
     "My Payslips": renderHrPayslips,
     Announcements: renderHrAnnouncements,
     "Manage Employees": renderHrAdminEmployees,
-    "Leave Approvals": () => window.ApolloHR?.renderAdminApprovals?.() || renderHrAdminLeaveApprovals,
-    "HR Calendar & Rules": () => window.ApolloHR?.renderAdminCalendar?.() || renderHrAdminLeaveApprovals,
-    "HR Leave Balances": () => window.ApolloHR?.renderAdminBalance?.() || renderHrAdminLeaveApprovals,
-    "HR Leave Policies": () => window.ApolloHR?.renderAdminPolicies?.() || renderHrAdminLeaveApprovals,
+    "Leave Approvals": () => window.ApolloHR?.renderAdminApprovals?.() || renderHrLoadingPanel("Leave Approvals"),
+    "HR Calendar & Rules": () => window.ApolloHR?.renderAdminCalendar?.() || renderHrLoadingPanel("HR Calendar & Rules"),
+    "HR Leave Balances": () => window.ApolloHR?.renderAdminBalance?.() || renderHrLoadingPanel("HR Leave Balances"),
+    "HR Leave Policies": () => window.ApolloHR?.renderAdminPolicies?.() || renderHrLoadingPanel("HR Leave Policies"),
     "Manage Payslips": renderHrAdminPayslips,
     "Post Announcement": renderHrAdminAnnouncements
   };
