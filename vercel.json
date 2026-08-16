@@ -11,6 +11,10 @@
       "destination": "/web/app-runtime.js"
     },
     {
+      "source": "/hr-portal.js",
+      "destination": "/web/hr-portal.js"
+    },
+    {
       "source": "/hs-code-customer-portal.js",
       "destination": "/web/hs-code-customer-portal.js"
     },
@@ -42,6 +46,10 @@
     },
     {
       "source": "/app-runtime.js",
+      "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
+    },
+    {
+      "source": "/hr-portal.js",
       "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
     },
     {

@@ -2283,6 +2283,18 @@ function requireHrAdmin(request, response, next) {
   return next();
 }
 
+async function canApproveLeave(session) {
+  const role = String(session?.role || "").toLowerCase();
+  if (session?.employeePortal && ["admin", "hr"].includes(role)) return { allowed: true, delegated: false };
+  if (!session?.employeePortal || !session?.userName) return { allowed: false, delegated: false };
+  const delegated = await query(
+    `select id from hr_leave_delegations
+     where lower(delegate_user_name)=lower($1) and active=true and current_date between start_date and end_date limit 1`,
+    [session.userName]
+  );
+  return { allowed: Boolean(delegated.rows[0]), delegated: Boolean(delegated.rows[0]) };
+}
+
 function isoDate(value) {
   const text = String(value || "").slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
@@ -2347,14 +2359,18 @@ async function hrBalanceForUser(userName, year, leaveTypeCode) {
   if (!policy && type.allow_carry_forward && year > 1) {
     const previous = (await query(`select greatest(0, least($1, coalesce(b.available_days,0))) as days from hr_leave_balances b where lower(b.user_name)=lower($2) and b.year=$3 and b.leave_type_code=$4 limit 1`, [Number(type.max_carry_forward || 0), userName, year - 1, leaveTypeCode])).rows[0];
     carryForward = Number(previous?.days || 0);
+    if (type.carry_forward_expiry_month && type.carry_forward_expiry_day) {
+      const expiry = new Date(Date.UTC(year, Number(type.carry_forward_expiry_month) - 1, Number(type.carry_forward_expiry_day)));
+      if (new Date() > expiry) carryForward = 0;
+    }
   }
   const adjustment = Number(policy?.adjustment ?? 0);
   const used = Number((await query(
-    "select coalesce(sum(coalesce(actual_leave_days,total_days)),0) as days from leave_requests where lower(user_name)=lower($1) and status='Approved' and lower(leave_type)=lower((select name from hr_leave_types where code=$2)) and extract(year from start_date)=$3",
+    "select coalesce(sum(coalesce(actual_leave_days,total_days)),0) as days from leave_requests where lower(user_name)=lower($1) and status='Approved' and (upper(leave_type)=upper($2) or lower(leave_type)=lower((select name from hr_leave_types where code=$2))) and extract(year from start_date)=$3",
     [userName, leaveTypeCode, year]
   )).rows[0]?.days || 0);
   const pending = Number((await query(
-    "select coalesce(sum(coalesce(actual_leave_days,total_days)),0) as days from leave_requests where lower(user_name)=lower($1) and status='Pending' and lower(leave_type)=lower((select name from hr_leave_types where code=$2)) and extract(year from start_date)=$3",
+    "select coalesce(sum(coalesce(actual_leave_days,total_days)),0) as days from leave_requests where lower(user_name)=lower($1) and status='Pending' and (upper(leave_type)=upper($2) or lower(leave_type)=lower((select name from hr_leave_types where code=$2))) and extract(year from start_date)=$3",
     [userName, leaveTypeCode, year]
   )).rows[0]?.days || 0);
   const available = entitlement + carryForward + adjustment - used;
@@ -2405,6 +2421,16 @@ app.get("/api/hr/balances", requireEmployeePortalAuth, async (request, response,
   } catch (error) { return next(error); }
 });
 
+app.get("/api/hr/leave-ledger", requireEmployeePortalAuth, async (request, response, next) => {
+  try {
+    const requestedUser = String(request.query.userName || request.appSession.userName || "").trim();
+    const role = String(request.appSession.role || "").toLowerCase();
+    if (requestedUser.toLowerCase() !== String(request.appSession.userName || "").toLowerCase() && !["admin", "hr"].includes(role)) return response.status(403).json({ok:false,error:"You can only view your own leave ledger."});
+    const rows = (await query("select user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by,created_at from hr_leave_ledger where lower(user_name)=lower($1) order by created_at desc limit 100", [requestedUser])).rows;
+    return response.json({ok:true,rows});
+  } catch (error) { return next(error); }
+});
+
 app.get("/api/hr/leave-requests", requireEmployeePortalAuth, async (request, response, next) => {
   try {
     const role = String(request.appSession.role || "").toLowerCase();
@@ -2425,6 +2451,10 @@ app.post("/api/hr/leave-requests", requireEmployeePortalAuth, async (request, re
     const type = (await query("select * from hr_leave_types where code=$1 and active=true limit 1", [leaveType])).rows[0];
     if (!type) return response.status(400).json({ok:false,error:"Choose a valid leave type."});
     const startDate = isoDate(data.startDate); const endDate = isoDate(data.endDate);
+    const globalSettings = (await query("select settings_json from hr_leave_settings where settings_key='global' limit 1")).rows[0]?.settings_json || {};
+    const backdatedDays = Math.max(0, Number(globalSettings.backdated_days ?? 3));
+    const earliestStart = new Date(); earliestStart.setHours(0,0,0,0); earliestStart.setDate(earliestStart.getDate() - backdatedDays);
+    if (startDate && new Date(`${startDate}T00:00:00`) < earliestStart) return response.status(400).json({ok:false,error:`Leave cannot be backdated by more than ${backdatedDays} day(s). Please contact HR.`});
     const calculation = await calculateHrLeave(startDate,endDate);
     const halfDayType = String(data.halfDayType || "").toUpperCase();
     if (["FIRST_HALF","SECOND_HALF"].includes(halfDayType) && startDate !== endDate) return response.status(400).json({ok:false,error:"Half-day leave must use the same start and end date."});
@@ -2452,10 +2482,17 @@ app.post("/api/hr/leave-requests", requireEmployeePortalAuth, async (request, re
     const contactDuringLeave = String(data.contactDuringLeave || "").trim();
     const leaveAddress = String(data.leaveAddress || "").trim();
     if (!reason || !contactDuringLeave || !leaveAddress) return response.status(400).json({ok:false,error:"Reason, contact number and leave address are required."});
+    const staffing = employee.department ? await query(
+      `select count(*)::int as count from leave_requests r join employees e on lower(e.user_name)=lower(r.user_name)
+       where lower(e.department)=lower($1) and r.status in ('Pending','Approved') and r.start_date <= $3 and r.end_date >= $2`,
+      [employee.department, startDate, endDate]
+    ) : { rows: [{ count: 0 }] };
+    const staffingWarning = Number(staffing.rows[0]?.count || 0) > 0
+      ? `${staffing.rows[0].count} colleague(s) in ${employee.department} already have overlapping pending or approved leave.` : "";
     const saved = await query(`insert into leave_requests (request_no,user_name,employee_name,leave_type,start_date,end_date,total_days,calendar_days,weekend_days,public_holiday_days,actual_leave_days,half_day_type,reason,rejoining_date,contact_during_leave,leave_address,emergency_contact,declaration_accepted,declaration_accepted_at,status,applied_at,created_at,updated_at)
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,true,now(),'Pending',now(),now(),now()) returning *`,
       [requestNo,userName,employee.full_name || userName,leaveType, startDate,endDate,calculation.actualLeaveDays,calculation.calendarDays,calculation.weekendDays,calculation.publicHolidayDays,calculation.actualLeaveDays,halfDayType,reason,rejoiningDate,contactDuringLeave,leaveAddress,String(data.emergencyContact||"").trim()]);
-    return response.status(201).json({ok:true,row:saved.rows[0],calculation,balance});
+    return response.status(201).json({ok:true,row:saved.rows[0],calculation,balance,staffingWarning});
   } catch(error){ return next(error); }
 });
 
@@ -2507,8 +2544,10 @@ app.get("/api/hr/leave-requests/:requestNo/attachment", requireEmployeePortalAut
   }catch(error){return next(error);}
 });
 
-app.put("/api/hr/leave-requests/:requestNo/decision", requireHrAdmin, async (request, response, next) => {
+app.put("/api/hr/leave-requests/:requestNo/decision", requireEmployeePortalAuth, async (request, response, next) => {
   try {
+    const authority = await canApproveLeave(request.appSession);
+    if (!authority.allowed) return response.status(403).json({ok:false,error:"HR approval authority or an active delegation is required."});
     const requestNo = String(request.params.requestNo || "").trim();
     const decision = String(request.body?.decision || "").toLowerCase();
     if (!["approve","reject"].includes(decision)) return response.status(400).json({ok:false,error:"Decision must be approve or reject."});
@@ -2518,8 +2557,9 @@ app.put("/api/hr/leave-requests/:requestNo/decision", requireHrAdmin, async (req
     const status = decision === "approve" ? "Approved" : "Rejected";
     const rejectionReason = decision === "reject" ? String(request.body?.reason || "").trim() : "";
     if (decision === "reject" && !rejectionReason) return response.status(400).json({ok:false,error:"A rejection reason is required."});
-    const saved = await query("update leave_requests set status=$1,approved_by=$2,approved_at=now(),rejection_reason=$3,updated_at=now() where request_no=$4 returning *",[status,request.appSession.userName,rejectionReason,requestNo]);
-    await hrBalanceForUser(existing.user_name, Number(String(existing.start_date).slice(0,4)), existing.leave_type);
+    const saved = await query("update leave_requests set status=$1,approved_by=$2,approved_at=now(),rejection_reason=$3,approved_by_delegate=$4,updated_at=now() where request_no=$5 returning *",[status,request.appSession.userName,rejectionReason,authority.delegated,requestNo]);
+    const balance = await hrBalanceForUser(existing.user_name, Number(String(existing.start_date).slice(0,4)), existing.leave_type);
+    if (status === "Approved") await query("insert into hr_leave_ledger(user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by) values($1,$2,$3,'APPROVED_LEAVE',$4,$5,$6,$7,$8)",[existing.user_name,balance.year,existing.leave_type,requestNo,-Number(existing.actual_leave_days||existing.total_days||0),balance.available,"Leave approved",request.appSession.userName]);
     return response.json({ok:true,row:saved.rows[0]});
   } catch(error){ return next(error); }
 });
@@ -2532,9 +2572,32 @@ app.post("/api/hr/leave-requests/:requestNo/cancel", requireEmployeePortalAuth, 
     const admin=["admin","hr"].includes(String(request.appSession.role||"").toLowerCase());
     if(!admin && String(existing.user_name).toLowerCase()!==String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"You can only cancel your own leave."});
     if(["Rejected","Cancelled"].includes(existing.status)) return response.status(400).json({ok:false,error:`This request is already ${existing.status}.`});
-    const saved=await query("update leave_requests set status='Cancelled',cancellation_reason=$1,updated_at=now() where request_no=$2 returning *",[String(request.body?.reason||"Cancelled by employee").trim(),requestNo]);
+    const reason=String(request.body?.reason||"Cancelled by employee").trim();
+    const saved=await query("update leave_requests set status='Cancelled',cancellation_reason=$1,updated_at=now() where request_no=$2 returning *",[reason,requestNo]);
+    if(existing.status==="Approved"){ const balance=await hrBalanceForUser(existing.user_name,Number(String(existing.start_date).slice(0,4)),existing.leave_type); await query("insert into hr_leave_ledger(user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by) values($1,$2,$3,'CANCELLATION',$4,$5,$6,$7,$8)",[existing.user_name,balance.year,existing.leave_type,requestNo,Number(existing.actual_leave_days||existing.total_days||0),balance.available,reason,request.appSession.userName]); }
     return response.json({ok:true,row:saved.rows[0]});
   }catch(error){return next(error);}
+});
+
+app.post("/api/hr/leave-requests/:requestNo/extension", requireEmployeePortalAuth, async (request,response,next)=>{
+  try {
+    const original=(await query("select * from leave_requests where request_no=$1 limit 1",[String(request.params.requestNo||"").trim()])).rows[0];
+    if(!original) return response.status(404).json({ok:false,error:"Leave request not found."});
+    const admin=["admin","hr"].includes(String(request.appSession.role||"").toLowerCase());
+    if(!admin && String(original.user_name).toLowerCase()!==String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"You can only extend your own leave."});
+    if(original.status!=="Approved") return response.status(400).json({ok:false,error:"Only an approved leave request can be extended."});
+    const newEnd=isoDate(request.body?.endDate); const start=new Date(`${String(original.end_date).slice(0,10)}T00:00:00Z`); start.setUTCDate(start.getUTCDate()+1); const extensionStart=start.toISOString().slice(0,10);
+    if(!newEnd||newEnd<extensionStart) return response.status(400).json({ok:false,error:"Extension end date must be after the current leave end date."});
+    const calculation=await calculateHrLeave(extensionStart,newEnd); if(calculation.actualLeaveDays<=0) return response.status(400).json({ok:false,error:"The extension contains no working leave days."});
+    const type=(await query("select * from hr_leave_types where code=$1 limit 1",[String(original.leave_type||"").toUpperCase()])).rows[0];
+    const balance=await hrBalanceForUser(original.user_name,Number(extensionStart.slice(0,4)),String(original.leave_type||"").toUpperCase());
+    if(calculation.actualLeaveDays>balance.available&&!type?.allow_negative_balance) return response.status(400).json({ok:false,error:"Insufficient leave balance for this extension."});
+    const requestNo=`LV-${extensionStart.slice(0,4)}-${Date.now().toString().slice(-7)}`;
+    const saved=await query(`insert into leave_requests(request_no,user_name,employee_name,leave_type,start_date,end_date,total_days,calendar_days,weekend_days,public_holiday_days,actual_leave_days,reason,rejoining_date,contact_during_leave,leave_address,emergency_contact,declaration_accepted,declaration_accepted_at,status,applied_at,created_at,updated_at,extension_of,extension_reason)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true,now(),'Pending',now(),now(),now(),$17,$18) returning *`,
+      [requestNo,original.user_name,original.employee_name,original.leave_type,extensionStart,newEnd,calculation.actualLeaveDays,calculation.calendarDays,calculation.weekendDays,calculation.publicHolidayDays,calculation.actualLeaveDays,String(request.body?.reason||"Leave extension").trim(),request.body?.rejoiningDate||null,original.contact_during_leave,original.leave_address,original.emergency_contact,original.request_no,String(request.body?.reason||"Leave extension").trim()]);
+    return response.status(201).json({ok:true,row:saved.rows[0],calculation});
+  } catch(error){ return next(error); }
 });
 
 app.post("/api/hr/leave-requests/:requestNo/rejoin", requireEmployeePortalAuth, async (request,response,next)=>{
@@ -2573,6 +2636,28 @@ app.post("/api/hr/calendar/weekends", requireHrAdmin, async (request,response,ne
   }catch(error){return next(error);}
 });
 
+app.get("/api/hr/admin/delegations", requireHrAdmin, async (request,response,next)=>{
+  try { const rows=(await query("select * from hr_leave_delegations order by active desc, start_date desc, id desc")).rows; return response.json({ok:true,rows}); }
+  catch(error){ return next(error); }
+});
+
+app.put("/api/hr/admin/delegations", requireHrAdmin, async (request,response,next)=>{
+  try {
+    const d=request.body||{}; const delegator=String(d.delegatorUserName||"").trim(), delegate=String(d.delegateUserName||"").trim();
+    const start=isoDate(d.startDate), end=isoDate(d.endDate);
+    if(!delegator||!delegate||!start||!end||end<start) return response.status(400).json({ok:false,error:"Delegator, delegate and a valid date range are required."});
+    if(delegator.toLowerCase()===delegate.toLowerCase()) return response.status(400).json({ok:false,error:"Delegator and delegate must be different employees."});
+    const saved=await query(`insert into hr_leave_delegations(delegator_user_name,delegate_user_name,start_date,end_date,active,notes,created_by,created_at,updated_at)
+      values($1,$2,$3,$4,true,$5,$6,now(),now()) returning *`,[delegator,delegate,start,end,String(d.notes||"").trim(),request.appSession.userName]);
+    return response.status(201).json({ok:true,row:saved.rows[0]});
+  } catch(error){ return next(error); }
+});
+
+app.delete("/api/hr/admin/delegations/:id", requireHrAdmin, async (request,response,next)=>{
+  try { const result=await query("update hr_leave_delegations set active=false,updated_at=now() where id=$1 returning *",[Number(request.params.id)]); if(!result.rows[0]) return response.status(404).json({ok:false,error:"Delegation not found."}); return response.json({ok:true,row:result.rows[0]}); }
+  catch(error){ return next(error); }
+});
+
 app.get("/api/hr/admin/balances", requireHrAdmin, async (request,response,next)=>{
   try{
     const year=Number(request.query.year||new Date().getFullYear());
@@ -2592,7 +2677,8 @@ app.get("/api/hr/admin/leave-types", requireHrAdmin, async (request,response,nex
 
 app.put("/api/hr/admin/leave-types", requireHrAdmin, async (request,response,next)=>{
   try{ const d=request.body||{}; const code=String(d.code||"").trim().toUpperCase().replace(/[^A-Z0-9_-]/g,"_"); const name=String(d.name||"").trim(); if(!code||!name)return response.status(400).json({ok:false,error:"Leave type code and name are required."});
-    const saved=await query(`insert into hr_leave_types(code,name,annual_entitlement,paid,allow_half_day,allow_hourly,require_attachment,attachment_after_days,allow_during_probation,allow_carry_forward,max_carry_forward,carry_forward_expiry_month,carry_forward_expiry_day,allow_encashment,allow_negative_balance,active,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now(),now()) on conflict(code) do update set name=excluded.name,annual_entitlement=excluded.annual_entitlement,paid=excluded.paid,allow_half_day=excluded.allow_half_day,allow_hourly=excluded.allow_hourly,require_attachment=excluded.require_attachment,attachment_after_days=excluded.attachment_after_days,allow_during_probation=excluded.allow_during_probation,allow_carry_forward=excluded.allow_carry_forward,max_carry_forward=excluded.max_carry_forward,carry_forward_expiry_month=excluded.carry_forward_expiry_month,carry_forward_expiry_day=excluded.carry_forward_expiry_day,allow_encashment=excluded.allow_encashment,allow_negative_balance=excluded.allow_negative_balance,active=excluded.active,updated_at=now() returning *`,[code,name,Number(d.annualEntitlement||0),Boolean(d.paid),Boolean(d.allowHalfDay),Boolean(d.allowHourly),Boolean(d.requireAttachment),Number(d.attachmentAfterDays||0),Boolean(d.allowDuringProbation),Boolean(d.allowCarryForward),Number(d.maxCarryForward||0),d.carryForwardExpiryMonth?Number(d.carryForwardExpiryMonth):null,d.carryForwardExpiryDay?Number(d.carryForwardExpiryDay):null,Boolean(d.allowEncashment),Boolean(d.allowNegativeBalance),d.active===false?false:true]);
+    const enabled=value=>value===true||String(value).toLowerCase()==="true"||String(value)==="1";
+    const saved=await query(`insert into hr_leave_types(code,name,annual_entitlement,paid,allow_half_day,allow_hourly,require_attachment,attachment_after_days,allow_during_probation,allow_carry_forward,max_carry_forward,carry_forward_expiry_month,carry_forward_expiry_day,allow_encashment,allow_negative_balance,active,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now(),now()) on conflict(code) do update set name=excluded.name,annual_entitlement=excluded.annual_entitlement,paid=excluded.paid,allow_half_day=excluded.allow_half_day,allow_hourly=excluded.allow_hourly,require_attachment=excluded.require_attachment,attachment_after_days=excluded.attachment_after_days,allow_during_probation=excluded.allow_during_probation,allow_carry_forward=excluded.allow_carry_forward,max_carry_forward=excluded.max_carry_forward,carry_forward_expiry_month=excluded.carry_forward_expiry_month,carry_forward_expiry_day=excluded.carry_forward_expiry_day,allow_encashment=excluded.allow_encashment,allow_negative_balance=excluded.allow_negative_balance,active=excluded.active,updated_at=now() returning *`,[code,name,Number(d.annualEntitlement||0),enabled(d.paid),enabled(d.allowHalfDay),enabled(d.allowHourly),enabled(d.requireAttachment),Number(d.attachmentAfterDays||0),enabled(d.allowDuringProbation),enabled(d.allowCarryForward),Number(d.maxCarryForward||0),d.carryForwardExpiryMonth?Number(d.carryForwardExpiryMonth):null,d.carryForwardExpiryDay?Number(d.carryForwardExpiryDay):null,enabled(d.allowEncashment),enabled(d.allowNegativeBalance),d.active===undefined||d.active===""?true:enabled(d.active)]);
     return response.json({ok:true,row:saved.rows[0]});
   }catch(error){return next(error);}
 });
@@ -2611,10 +2697,15 @@ app.put("/api/hr/admin/policies", requireHrAdmin, async (request,response,next)=
     const data=request.body||{}; const year=Number(data.year||new Date().getFullYear());
     const userName=String(data.userName||"").trim(); const code=String(data.leaveTypeCode||"").trim().toUpperCase();
     if(!userName||!code) return response.status(400).json({ok:false,error:"Employee and leave type are required."});
+    const existing=(await query("select adjustment from hr_employee_leave_policies where lower(user_name)=lower($1) and leave_type_code=$2 and year=$3 limit 1",[userName,code,year])).rows[0];
+    const previousAdjustment=Number(existing?.adjustment||0), nextAdjustment=Number(data.adjustment||0);
     const saved=await query(`insert into hr_employee_leave_policies(user_name,leave_type_code,year,entitlement,carry_forward,adjustment,notes,created_by,created_at,updated_at)
       values($1,$2,$3,$4,$5,$6,$7,$8,now(),now()) on conflict(user_name,leave_type_code,year) do update set entitlement=excluded.entitlement,carry_forward=excluded.carry_forward,adjustment=excluded.adjustment,notes=excluded.notes,updated_at=now() returning *`,
       [userName,code,year,Number(data.entitlement||0),Number(data.carryForward||0),Number(data.adjustment||0),String(data.notes||"").trim(),request.appSession.userName]);
-    await hrBalanceForUser(userName,year,code);
+    if(previousAdjustment!==nextAdjustment) await query(`insert into hr_leave_adjustment_audit(user_name,leave_type_code,year,previous_adjustment,new_adjustment,reason,adjusted_by)
+      values($1,$2,$3,$4,$5,$6,$7)`,[userName,code,year,previousAdjustment,nextAdjustment,String(data.notes||"Manual HR adjustment").trim(),request.appSession.userName]);
+    const balance=await hrBalanceForUser(userName,year,code);
+    if(previousAdjustment!==nextAdjustment) await query("insert into hr_leave_ledger(user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by) values($1,$2,$3,'MANUAL_ADJUSTMENT','',$4,$5,$6,$7)",[userName,year,code,nextAdjustment-previousAdjustment,balance.available,String(data.notes||"Manual HR adjustment").trim(),request.appSession.userName]);
     return response.json({ok:true,row:saved.rows[0]});
   }catch(error){return next(error);}
 });
