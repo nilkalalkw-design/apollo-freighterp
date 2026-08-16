@@ -2098,12 +2098,13 @@ app.put("/api/customer/profile", requireCustomerPortalAuth, async (request, resp
   }
 });
 app.get("/api/employee-profile-documents", requireEmployeePortalAuth, async (request, response, next) => {
-  const sessionUserName = String(request.appSession?.userName || "").trim();
-  const isHrAdmin = ["admin", "hr"].includes(String(request.appSession?.role || "").toLowerCase());
-  const requestedUserName = String(request.query?.employee || "").trim();
-  const userName = isHrAdmin && requestedUserName ? requestedUserName : sessionUserName;
-  if (!userName) return response.status(401).json({ ok: false, error: "Login required." });
-  if (!isHrAdmin && requestedUserName && requestedUserName.toLowerCase() !== sessionUserName.toLowerCase()) {
+  const sessionUser = String(request.appSession?.userName || "").trim();
+  const role = String(request.appSession?.role || "").toLowerCase();
+  const requestedUser = String(request.query?.employee || "").trim();
+  const isAdmin = ["admin", "hr"].includes(role) && Boolean(request.appSession?.employeePortal);
+  if (!sessionUser) return response.status(401).json({ ok: false, error: "Login required." });
+  const userName = isAdmin && requestedUser ? requestedUser : sessionUser;
+  if (!isAdmin && requestedUser && requestedUser.toLowerCase() !== sessionUser.toLowerCase()) {
     return response.status(403).json({ ok: false, error: "You can only view your own employee documents." });
   }
   try {
@@ -2114,35 +2115,22 @@ app.get("/api/employee-profile-documents", requireEmployeePortalAuth, async (req
        order by type`,
       [userName, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
     );
-    return response.json({ ok: true, rows: result.rows });
+    return response.json({ ok: true, employeeUserName: userName, rows: result.rows });
   } catch (error) {
     return next(error);
   }
 });
 
 app.get("/api/employee-profile-documents/:documentNo/view", requireEmployeePortalAuth, async (request, response, next) => {
-  const sessionUserName = String(request.appSession?.userName || "").trim();
-  const isHrAdmin = ["admin", "hr"].includes(String(request.appSession?.role || "").toLowerCase());
+  const userName = String(request.appSession?.userName || "").trim();
+  const role = String(request.appSession?.role || "").toLowerCase();
+  const isAdmin = ["admin", "hr"].includes(role) && Boolean(request.appSession?.employeePortal);
   const documentNo = String(request.params.documentNo || "").trim();
-  if (!sessionUserName || !documentNo) return response.status(400).json({ ok: false, error: "Document not found." });
+  if (!userName || !documentNo) return response.status(400).json({ ok: false, error: "Document not found." });
   try {
-    const result = await query(
-      `select document_no, linked_no, type, file_name, storage_url, notes
-       from documents
-       where document_no = $1 and lower(linked_no) = lower($2) and type = any($3::text[])
-       limit 1`,
-      [documentNo, sessionUserName, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
-    );
-    if (!result.rows[0] && isHrAdmin) {
-      const adminResult = await query(
-        `select document_no, linked_no, type, file_name, storage_url, notes
-         from documents
-         where document_no = $1 and type = any($2::text[])
-         limit 1`,
-        [documentNo, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]
-      );
-      if (adminResult.rows[0]) result.rows.push(adminResult.rows[0]);
-    }
+    const result = isAdmin
+      ? await query(`select document_no, linked_no, type, file_name, storage_url, notes from documents where document_no = $1 and type = any($2::text[]) limit 1`, [documentNo, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]])
+      : await query(`select document_no, linked_no, type, file_name, storage_url, notes from documents where document_no = $1 and lower(linked_no) = lower($2) and type = any($3::text[]) limit 1`, [documentNo, userName, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]]);
     const documentItem = result.rows[0];
     if (!documentItem?.storage_url) return response.status(404).json({ ok: false, error: "Uploaded file not found." });
     const typeConfig = employeeDocumentType(documentItem.type);
@@ -2165,12 +2153,12 @@ app.get("/api/employee-profile-documents/:documentNo/view", requireEmployeePorta
 });
 
 app.post("/api/employee-profile-documents", requireEmployeePortalAuth, async (request, response, next) => {
-  const sessionUserName = String(request.appSession?.userName || "").trim();
-  const isHrAdmin = ["admin", "hr"].includes(String(request.appSession?.role || "").toLowerCase());
-  const requestedUserName = String(request.body?.employeeUserName || "").trim();
-  const userName = isHrAdmin && requestedUserName ? requestedUserName : sessionUserName;
-  if (!userName) return response.status(401).json({ ok: false, error: "Login required." });
-  if (!isHrAdmin && requestedUserName && requestedUserName.toLowerCase() !== sessionUserName.toLowerCase()) {
+  const sessionUser = String(request.appSession?.userName || "").trim();
+  const role = String(request.appSession?.role || "").toLowerCase();
+  const requestedUser = String(request.body?.employeeUserName || "").trim();
+  const isAdmin = ["admin", "hr"].includes(role) && Boolean(request.appSession?.employeePortal);
+  const userName = isAdmin && requestedUser ? requestedUser : sessionUser;
+  if (!sessionUser || (!isAdmin && requestedUser && requestedUser.toLowerCase() !== sessionUser.toLowerCase())) {
     return response.status(403).json({ ok: false, error: "You can only upload your own employee documents." });
   }
   const documentTypeName = String(request.body?.documentType || "").trim();
@@ -2424,7 +2412,7 @@ app.get("/api/hr/leave-requests", requireEmployeePortalAuth, async (request, res
     const values = [];
     let where = "";
     if (!admin) { values.push(request.appSession.userName); where = "where lower(user_name)=lower($1)"; }
-    const result = await query(`select request_no,user_name,employee_name,leave_type,start_date,end_date,total_days,calendar_days,weekend_days,public_holiday_days,actual_leave_days,half_day_type,reason,rejoining_date,contact_during_leave,leave_address,emergency_contact,declaration_accepted,status,approved_by,approved_at,rejection_reason,cancellation_reason,applied_at,created_at,updated_at from leave_requests ${where} order by applied_at desc`, values);
+    const result = await query(`select request_no,user_name,employee_name,leave_type,start_date,end_date,total_days,calendar_days,weekend_days,public_holiday_days,actual_leave_days,half_day_type,reason,rejoining_date,contact_during_leave,leave_address,emergency_contact,declaration_accepted,attachment_url,status,approved_by,approved_at,rejection_reason,cancellation_reason,applied_at,created_at,updated_at from leave_requests ${where} order by applied_at desc`, values);
     return response.json({ok:true,rows:result.rows});
   } catch(error){ return next(error); }
 });
@@ -2438,7 +2426,9 @@ app.post("/api/hr/leave-requests", requireEmployeePortalAuth, async (request, re
     if (!type) return response.status(400).json({ok:false,error:"Choose a valid leave type."});
     const startDate = isoDate(data.startDate); const endDate = isoDate(data.endDate);
     const calculation = await calculateHrLeave(startDate,endDate);
-    if (["FIRST_HALF","SECOND_HALF"].includes(String(data.halfDayType || "").toUpperCase())) {
+    const halfDayType = String(data.halfDayType || "").toUpperCase();
+    if (["FIRST_HALF","SECOND_HALF"].includes(halfDayType) && startDate !== endDate) return response.status(400).json({ok:false,error:"Half-day leave must use the same start and end date."});
+    if (["FIRST_HALF","SECOND_HALF"].includes(halfDayType)) {
       calculation.actualLeaveDays = Math.max(0, calculation.actualLeaveDays - 0.5);
     }
     const declaration = Boolean(data.declarationAccepted);
@@ -2457,11 +2447,64 @@ app.post("/api/hr/leave-requests", requireEmployeePortalAuth, async (request, re
     if (blackout) return response.status(400).json({ok:false,error:`Leave is restricted during ${blackout.title || 'a blackout date'}. HR must change the calendar rule first.`});
     const requestNo = `LV-${year}-${Date.now().toString().slice(-7)}`;
     const rejoiningDate = isoDate(data.rejoiningDate) || null;
+    if (!rejoiningDate || rejoiningDate < endDate) return response.status(400).json({ok:false,error:"A valid rejoining date on or after the leave end date is required."});
+    const reason = String(data.reason || "").trim();
+    const contactDuringLeave = String(data.contactDuringLeave || "").trim();
+    const leaveAddress = String(data.leaveAddress || "").trim();
+    if (!reason || !contactDuringLeave || !leaveAddress) return response.status(400).json({ok:false,error:"Reason, contact number and leave address are required."});
     const saved = await query(`insert into leave_requests (request_no,user_name,employee_name,leave_type,start_date,end_date,total_days,calendar_days,weekend_days,public_holiday_days,actual_leave_days,half_day_type,reason,rejoining_date,contact_during_leave,leave_address,emergency_contact,declaration_accepted,declaration_accepted_at,status,applied_at,created_at,updated_at)
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,true,now(),'Pending',now(),now(),now()) returning *`,
-      [requestNo,userName,employee.full_name || userName,leaveType, startDate,endDate,calculation.actualLeaveDays,calculation.calendarDays,calculation.weekendDays,calculation.publicHolidayDays,calculation.actualLeaveDays,String(data.halfDayType||""),String(data.reason||"").trim(),rejoiningDate,String(data.contactDuringLeave||"").trim(),String(data.leaveAddress||"").trim(),String(data.emergencyContact||"").trim()]);
+      [requestNo,userName,employee.full_name || userName,leaveType, startDate,endDate,calculation.actualLeaveDays,calculation.calendarDays,calculation.weekendDays,calculation.publicHolidayDays,calculation.actualLeaveDays,halfDayType,reason,rejoiningDate,contactDuringLeave,leaveAddress,String(data.emergencyContact||"").trim()]);
     return response.status(201).json({ok:true,row:saved.rows[0],calculation,balance});
   } catch(error){ return next(error); }
+});
+
+app.post("/api/hr/leave-requests/:requestNo/attachment", requireEmployeePortalAuth, async (request, response, next) => {
+  try {
+    const requestNo = String(request.params.requestNo || "").trim();
+    const existing = (await query("select * from leave_requests where request_no=$1 limit 1", [requestNo])).rows[0];
+    if (!existing) return response.status(404).json({ok:false,error:"Leave request not found."});
+    const admin = ["admin","hr"].includes(String(request.appSession.role||"").toLowerCase()) && Boolean(request.appSession.employeePortal);
+    if (!admin && String(existing.user_name).toLowerCase() !== String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"You can only attach a document to your own leave request."});
+    const fileName = String(request.body?.fileName || "").trim();
+    const mimeType = String(request.body?.mimeType || "").toLowerCase().trim();
+    const contentBase64 = String(request.body?.contentBase64 || "").replace(/^data:[^,]+,/, "").trim();
+    const allowed = new Set(["application/pdf","image/jpeg","image/png"]);
+    if (!fileName || !contentBase64 || !allowed.has(mimeType)) return response.status(400).json({ok:false,error:"Supporting document must be a PDF, JPG or PNG."});
+    const buffer = Buffer.from(contentBase64, "base64");
+    if (!buffer.length || buffer.length > 10 * 1024 * 1024) return response.status(400).json({ok:false,error:"Supporting document must be 10 MB or smaller."});
+    const cloudinary = cloudinaryConfig();
+    if (!cloudinary) return response.status(503).json({ok:false,error:"Cloudinary is not configured on the server."});
+    const timestamp = Math.floor(Date.now()/1000);
+    const folder = "apollo-freight/employee-leave";
+    const publicId = safeEmployeeDocumentPart(requestNo);
+    const signatureParams = `folder=${folder}&overwrite=true&public_id=${publicId}&timestamp=${timestamp}&type=private`;
+    const signature = crypto.createHash("sha1").update(signatureParams + cloudinary.apiSecret).digest("hex");
+    const form = new FormData();
+    form.append("file", new Blob([buffer], {type:mimeType}), fileName);
+    form.append("api_key", cloudinary.apiKey); form.append("timestamp", String(timestamp)); form.append("folder", folder); form.append("public_id", publicId); form.append("overwrite", "true"); form.append("type", "private"); form.append("signature", signature);
+    const uploadResponse = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinary.cloudName)}/raw/upload`, {method:"POST", body:form});
+    const uploaded = await uploadResponse.json().catch(()=>({}));
+    if (!uploadResponse.ok || !uploaded.secure_url) throw new Error(uploaded.error?.message || "Supporting document upload failed.");
+    const metadata = JSON.stringify({cloudinaryPublicId:uploaded.public_id || publicId,resourceType:uploaded.resource_type || "raw",bytes:uploaded.bytes || buffer.length,fileName});
+    const saved = await query("update leave_requests set attachment_url=$1,updated_at=now() where request_no=$2 returning request_no,attachment_url",[metadata,requestNo]);
+    return response.status(201).json({ok:true,row:saved.rows[0]});
+  } catch(error){ return next(error); }
+});
+
+app.get("/api/hr/leave-requests/:requestNo/attachment", requireEmployeePortalAuth, async (request,response,next)=>{
+  try{
+    const requestNo=String(request.params.requestNo||"").trim();
+    const existing=(await query("select request_no,user_name,attachment_url from leave_requests where request_no=$1 limit 1",[requestNo])).rows[0];
+    if(!existing?.attachment_url) return response.status(404).json({ok:false,error:"No supporting document is attached."});
+    const admin=["admin","hr"].includes(String(request.appSession.role||"").toLowerCase()) && Boolean(request.appSession.employeePortal);
+    if(!admin && String(existing.user_name).toLowerCase()!==String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"You can only view your own leave document."});
+    let metadata={}; try{metadata=JSON.parse(existing.attachment_url||"{}");}catch{}
+    const cloudinary=cloudinaryConfig(); if(!cloudinary||!metadata.cloudinaryPublicId) return response.status(404).json({ok:false,error:"Supporting document details are incomplete."});
+    const url=cloudinaryPrivateDownloadUrl(cloudinary,{publicId:metadata.cloudinaryPublicId,fileName:metadata.fileName||"supporting-document.pdf",resourceType:metadata.resourceType||"raw"});
+    if(!url) return response.status(404).json({ok:false,error:"Supporting document could not be opened."});
+    return response.json({ok:true,url});
+  }catch(error){return next(error);}
 });
 
 app.put("/api/hr/leave-requests/:requestNo/decision", requireHrAdmin, async (request, response, next) => {
@@ -2540,6 +2583,17 @@ app.get("/api/hr/admin/balances", requireHrAdmin, async (request,response,next)=
       rows.push({...employee,balances});
     }
     return response.json({ok:true,year,rows});
+  }catch(error){return next(error);}
+});
+
+app.get("/api/hr/admin/leave-types", requireHrAdmin, async (request,response,next)=>{
+  try{ const rows=(await query("select code,name,annual_entitlement,paid,allow_half_day,allow_hourly,require_attachment,attachment_after_days,allow_during_probation,allow_carry_forward,max_carry_forward,carry_forward_expiry_month,carry_forward_expiry_day,allow_encashment,allow_negative_balance,active from hr_leave_types order by id")).rows; return response.json({ok:true,rows}); }catch(error){return next(error);}
+});
+
+app.put("/api/hr/admin/leave-types", requireHrAdmin, async (request,response,next)=>{
+  try{ const d=request.body||{}; const code=String(d.code||"").trim().toUpperCase().replace(/[^A-Z0-9_-]/g,"_"); const name=String(d.name||"").trim(); if(!code||!name)return response.status(400).json({ok:false,error:"Leave type code and name are required."});
+    const saved=await query(`insert into hr_leave_types(code,name,annual_entitlement,paid,allow_half_day,allow_hourly,require_attachment,attachment_after_days,allow_during_probation,allow_carry_forward,max_carry_forward,carry_forward_expiry_month,carry_forward_expiry_day,allow_encashment,allow_negative_balance,active,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now(),now()) on conflict(code) do update set name=excluded.name,annual_entitlement=excluded.annual_entitlement,paid=excluded.paid,allow_half_day=excluded.allow_half_day,allow_hourly=excluded.allow_hourly,require_attachment=excluded.require_attachment,attachment_after_days=excluded.attachment_after_days,allow_during_probation=excluded.allow_during_probation,allow_carry_forward=excluded.allow_carry_forward,max_carry_forward=excluded.max_carry_forward,carry_forward_expiry_month=excluded.carry_forward_expiry_month,carry_forward_expiry_day=excluded.carry_forward_expiry_day,allow_encashment=excluded.allow_encashment,allow_negative_balance=excluded.allow_negative_balance,active=excluded.active,updated_at=now() returning *`,[code,name,Number(d.annualEntitlement||0),Boolean(d.paid),Boolean(d.allowHalfDay),Boolean(d.allowHourly),Boolean(d.requireAttachment),Number(d.attachmentAfterDays||0),Boolean(d.allowDuringProbation),Boolean(d.allowCarryForward),Number(d.maxCarryForward||0),d.carryForwardExpiryMonth?Number(d.carryForwardExpiryMonth):null,d.carryForwardExpiryDay?Number(d.carryForwardExpiryDay):null,Boolean(d.allowEncashment),Boolean(d.allowNegativeBalance),d.active===false?false:true]);
+    return response.json({ok:true,row:saved.rows[0]});
   }catch(error){return next(error);}
 });
 
