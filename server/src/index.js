@@ -2324,35 +2324,83 @@ function dateParts(startDate, endDate) {
   return rows;
 }
 
-async function hrCalendarRules() {
-  const [weekends, holidays, types] = await Promise.all([
-    query("select weekday from hr_weekend_rules where branch = 'All' and active = true order by weekday"),
-    query("select id, holiday_date, day_type, title, notes, branch from hr_calendar_days where active = true order by holiday_date"),
-    query("select * from hr_leave_types where active = true order by id")
-  ]);
-  return { weekends: weekends.rows.map((row) => Number(row.weekday)), holidays: holidays.rows, leaveTypes: types.rows };
+async function hrEmployeeBranch(userName) {
+  const row = (await query(
+    "select branch from employees where lower(user_name)=lower($1) limit 1",
+    [String(userName || "").trim()]
+  )).rows[0];
+  return String(row?.branch || "Kuwait HO").trim() || "Kuwait HO";
 }
 
-async function calculateHrLeave(startDate, endDate) {
+async function hrCalendarRules(userName) {
+  const branch = String(userName || "").trim()
+    ? await hrEmployeeBranch(userName)
+    : "All";
+
+  const [weekends, holidays, types] = await Promise.all([
+    query(
+      "select weekday, branch from hr_weekend_rules where active=true and (branch='All' or lower(branch)=lower($1)) order by case when branch='All' then 0 else 1 end, weekday",
+      [branch]
+    ),
+    query(
+      "select id, holiday_date, day_type, title, notes, branch from hr_calendar_days where active=true and (branch='All' or lower(branch)=lower($1)) order by holiday_date, id",
+      [branch]
+    ),
+    query("select * from hr_leave_types where active = true order by id")
+  ]);
+
+  // Branch-specific rules override the generic "All" rule for the same
+  // weekday/date. This lets Kuwait and Dubai have different calendars.
+  const weekendMap = new Map();
+  for (const row of weekends.rows) {
+    const key = Number(row.weekday);
+    if (!weekendMap.has(key) || String(row.branch).toLowerCase() !== "all") {
+      weekendMap.set(key, row);
+    }
+  }
+
+  const holidayMap = new Map();
+  for (const row of holidays.rows) {
+    const key = String(row.holiday_date).slice(0, 10);
+    if (!holidayMap.has(key) || String(row.branch).toLowerCase() !== "all") {
+      holidayMap.set(key, row);
+    }
+  }
+
+  return {
+    branch,
+    weekends: [...weekendMap.values()].map((row) => Number(row.weekday)),
+    holidays: [...holidayMap.values()].sort((a,b) => String(a.holiday_date).localeCompare(String(b.holiday_date))),
+    leaveTypes: types.rows
+  };
+}
+
+async function calculateHrLeave(startDate, endDate, userName) {
   const dates = dateParts(startDate, endDate);
   if (!dates) throw new Error("A valid leave date range is required.");
-  const rules = await hrCalendarRules();
+  const rules = await hrCalendarRules(userName);
   const holidayMap = new Map(rules.holidays.map((row) => [String(row.holiday_date).slice(0, 10), row]));
   let weekendDays = 0;
   let publicHolidayDays = 0;
   let workingDays = 0;
+
   for (const date of dates) {
     const key = date.toISOString().slice(0, 10);
     const day = date.getUTCDay();
+    const holiday = holidayMap.get(key);
+    const holidayType = String(holiday?.day_type || "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+
     if (rules.weekends.includes(day)) {
       weekendDays += 1;
-    } else if (holidayMap.has(key) && ["PUBLIC_HOLIDAY", "BLACKOUT"].includes(String(holidayMap.get(key).day_type || "").trim().toUpperCase().replace(/\s+/g, "_"))) {
+    } else if (holiday && ["PUBLIC_HOLIDAY", "BLACKOUT"].includes(holidayType)) {
       publicHolidayDays += 1;
     } else {
       workingDays += 1;
     }
   }
+
   return {
+    branch: rules.branch,
     calendarDays: dates.length,
     weekendDays,
     publicHolidayDays,
@@ -2405,10 +2453,10 @@ async function hrAllBalances(userName, year) {
 app.get("/api/hr/leave-config", requireEmployeePortalAuth, async (request, response, next) => {
   try {
     const year = Number(request.query.year || new Date().getFullYear());
-    const config = await hrCalendarRules();
     const userName = String(request.appSession.userName || "").trim();
+    const config = await hrCalendarRules(userName);
     const balances = await hrAllBalances(userName, year);
-    const employee = (await query("select user_name, full_name, department, designation, join_date, employment_status, reporting_manager from employees where lower(user_name)=lower($1) limit 1", [userName])).rows[0] || null;
+    const employee = (await query("select user_name, full_name, employee_code, branch, department, designation, join_date, employment_status, reporting_manager from employees where lower(user_name)=lower($1) limit 1", [userName])).rows[0] || null;
     return response.json({ ok: true, year, ...config, balances, employee });
   } catch (error) { return next(error); }
 });
@@ -2417,7 +2465,10 @@ app.get("/api/hr/calendar", requireEmployeePortalAuth, async (request, response,
   try {
     const from = isoDate(request.query.from) || `${new Date().getFullYear()}-01-01`;
     const to = isoDate(request.query.to) || `${new Date().getFullYear()}-12-31`;
-    const config = await hrCalendarRules();
+    const requestedBranch = String(request.query.branch || "").trim();
+    const userName = String(request.appSession.userName || "").trim();
+    const role = String(request.appSession.role || "").toLowerCase();
+    const config = await hrCalendarRules(userName);
     const weekends = config.weekends;
     const holidays = config.holidays.filter((row) => String(row.holiday_date).slice(0,10) >= from && String(row.holiday_date).slice(0,10) <= to);
     return response.json({ ok: true, from, to, weekends, holidays });
@@ -2468,7 +2519,7 @@ app.post("/api/hr/leave-requests", requireEmployeePortalAuth, async (request, re
     const backdatedDays = Math.max(0, Number(globalSettings.backdated_days ?? 3));
     const earliestStart = new Date(); earliestStart.setHours(0,0,0,0); earliestStart.setDate(earliestStart.getDate() - backdatedDays);
     if (startDate && new Date(`${startDate}T00:00:00`) < earliestStart) return response.status(400).json({ok:false,error:`Leave cannot be backdated by more than ${backdatedDays} day(s). Please contact HR.`});
-    const calculation = await calculateHrLeave(startDate,endDate);
+    const calculation = await calculateHrLeave(startDate,endDate,userName);
     const halfDayType = String(data.halfDayType || "").toUpperCase();
     if (["FIRST_HALF","SECOND_HALF"].includes(halfDayType) && startDate !== endDate) return response.status(400).json({ok:false,error:"Half-day leave must use the same start and end date."});
     if (["FIRST_HALF","SECOND_HALF"].includes(halfDayType)) {
@@ -2601,7 +2652,7 @@ app.post("/api/hr/leave-requests/:requestNo/extension", requireEmployeePortalAut
     if(original.status!=="Approved") return response.status(400).json({ok:false,error:"Only an approved leave request can be extended."});
     const newEnd=isoDate(request.body?.endDate); const start=new Date(`${String(original.end_date).slice(0,10)}T00:00:00Z`); start.setUTCDate(start.getUTCDate()+1); const extensionStart=start.toISOString().slice(0,10);
     if(!newEnd||newEnd<extensionStart) return response.status(400).json({ok:false,error:"Extension end date must be after the current leave end date."});
-    const calculation=await calculateHrLeave(extensionStart,newEnd); if(calculation.actualLeaveDays<=0) return response.status(400).json({ok:false,error:"The extension contains no working leave days."});
+    const calculation=await calculateHrLeave(extensionStart,newEnd,original.user_name); if(calculation.actualLeaveDays<=0) return response.status(400).json({ok:false,error:"The extension contains no working leave days."});
     const type=(await query("select * from hr_leave_types where code=$1 limit 1",[String(original.leave_type||"").toUpperCase()])).rows[0];
     const balance=await hrBalanceForUser(original.user_name,Number(extensionStart.slice(0,4)),String(original.leave_type||"").toUpperCase());
     if(calculation.actualLeaveDays>balance.available&&!type?.allow_negative_balance) return response.status(400).json({ok:false,error:"Insufficient leave balance for this extension."});
@@ -2627,25 +2678,42 @@ app.post("/api/hr/leave-requests/:requestNo/rejoin", requireEmployeePortalAuth, 
 
 app.post("/api/hr/calendar/holiday", requireHrAdmin, async (request,response,next)=>{
   try{
-    const date=isoDate(request.body?.holidayDate); const title=String(request.body?.title||"").trim();
-    if(!date||!title) return response.status(400).json({ok:false,error:"Holiday date and title are required."});
-    const dayType=String(request.body?.dayType||"PUBLIC_HOLIDAY").toUpperCase();
+    const date=isoDate(request.body?.holidayDate);
+    const title=String(request.body?.title||"").trim();
+    const branch=String(request.body?.branch||"All").trim() || "All";
+    const notes=String(request.body?.notes||"").trim();
+    const dayType=String(request.body?.dayType||"PUBLIC_HOLIDAY").trim().toUpperCase().replace(/[\s-]+/g,"_");
+    if(!date||!title) return response.status(400).json({ok:false,error:"Date and title are required."});
     if(!["PUBLIC_HOLIDAY","BLACKOUT","WORKING_DAY"].includes(dayType)) return response.status(400).json({ok:false,error:"Invalid calendar day type."});
-    const saved=await query(`insert into hr_calendar_days(branch,holiday_date,day_type,title,notes,active,created_by,created_at,updated_at) values('All',$1,$2,$3,$4,true,$5,now(),now()) on conflict(branch,holiday_date,day_type) do update set title=excluded.title,notes=excluded.notes,active=true,updated_at=now() returning *`,[date,dayType,title,String(request.body?.notes||"").trim(),request.appSession.userName]);
-    return response.status(201).json({ok:true,row:saved.rows[0]});
+    const saved=await query(`insert into hr_calendar_days(branch,holiday_date,day_type,title,notes,active,created_by,created_at,updated_at)
+      values($1,$2,$3,$4,$5,true,$6,now(),now())
+      on conflict(branch,holiday_date,day_type) do update set title=excluded.title,notes=excluded.notes,active=true,updated_at=now()
+      returning *`,[branch,date,dayType,title,notes,request.appSession.userName]);
+    return response.json({ok:true,row:saved.rows[0]});
   }catch(error){return next(error);}
 });
 
 app.delete("/api/hr/calendar/holiday/:id", requireHrAdmin, async (request,response,next)=>{
-  try{const id=Number(request.params.id); const saved=await query("update hr_calendar_days set active=false,updated_at=now() where id=$1 returning *",[id]); if(!saved.rows[0]) return response.status(404).json({ok:false,error:"Calendar item not found."}); return response.json({ok:true,row:saved.rows[0]});}catch(error){return next(error);}
+  try{
+    const id=Number(request.params.id);
+    const saved=await query("update hr_calendar_days set active=false,updated_at=now() where id=$1 returning *",[id]);
+    if(!saved.rows[0]) return response.status(404).json({ok:false,error:"Calendar item not found."});
+    return response.json({ok:true,row:saved.rows[0]});
+  }catch(error){return next(error);}
 });
 
 app.post("/api/hr/calendar/weekends", requireHrAdmin, async (request,response,next)=>{
   try{
+    const branch=String(request.body?.branch||"All").trim() || "All";
     const weekdays=Array.isArray(request.body?.weekdays)?request.body.weekdays.map(Number).filter((n)=>n>=0&&n<=6):[];
-    await query("update hr_weekend_rules set active=false,updated_at=now() where branch='All'");
-    for(const weekday of weekdays){ await query("insert into hr_weekend_rules(branch,weekday,active,created_by,created_at,updated_at) values('All',$1,true,$2,now(),now()) on conflict(branch,weekday) do update set active=true,updated_at=now()",[weekday,request.appSession.userName]); }
-    return response.json({ok:true,weekdays});
+    await query("update hr_weekend_rules set active=false,updated_at=now() where lower(branch)=lower($1)",[branch]);
+    for(const weekday of weekdays){
+      await query(`insert into hr_weekend_rules(branch,weekday,active,created_by,created_at,updated_at)
+        values($1,$2,true,$3,now(),now())
+        on conflict(branch,weekday) do update set active=true,updated_at=now()`,
+        [branch,weekday,request.appSession.userName]);
+    }
+    return response.json({ok:true,branch,weekdays});
   }catch(error){return next(error);}
 });
 
@@ -2723,10 +2791,77 @@ app.put("/api/hr/admin/policies", requireHrAdmin, async (request,response,next)=
   }catch(error){return next(error);}
 });
 
+
+
+app.get("/api/hr/admin/calendar", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const branch=String(request.query.branch||"All").trim() || "All";
+    const weekends=(await query("select weekday,branch from hr_weekend_rules where active=true and (branch='All' or lower(branch)=lower($1)) order by case when branch='All' then 0 else 1 end,weekday",[branch])).rows;
+    const weekendMap=new Map();
+    for(const row of weekends){
+      const key=Number(row.weekday);
+      if(!weekendMap.has(key)||String(row.branch).toLowerCase()!=="all") weekendMap.set(key,row);
+    }
+    const holidays=(await query("select id,holiday_date,day_type,title,notes,branch from hr_calendar_days where active=true and (branch='All' or lower(branch)=lower($1)) order by holiday_date,id",[branch])).rows;
+    const holidayMap=new Map();
+    for(const row of holidays){
+      const key=String(row.holiday_date).slice(0,10);
+      if(!holidayMap.has(key)||String(row.branch).toLowerCase()!=="all") holidayMap.set(key,row);
+    }
+    return response.json({ok:true,branch,weekends:[...weekendMap.values()].map(r=>Number(r.weekday)),holidays:[...holidayMap.values()]});
+  }catch(error){return next(error);}
+});
+
+app.put("/api/hr/admin/employee-branch", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const userName=String(request.body?.userName||"").trim();
+    const branch=String(request.body?.branch||"").trim();
+    if(!userName||!branch) return response.status(400).json({ok:false,error:"Employee and branch are required."});
+    const saved=await query("update employees set branch=$1,updated_at=now() where lower(user_name)=lower($2) returning user_name,employee_code,full_name,branch",[branch,userName]);
+    if(!saved.rows[0]) return response.status(404).json({ok:false,error:"Employee not found."});
+    return response.json({ok:true,row:saved.rows[0]});
+  }catch(error){return next(error);}
+});
+
+app.post("/api/hr/admin/historical-leave", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const data=request.body||{};
+    const userName=String(data.userName||"").trim();
+    const leaveType=String(data.leaveType||"ANNUAL").trim().toUpperCase();
+    const startDate=isoDate(data.startDate);
+    const endDate=isoDate(data.endDate);
+    const reason=String(data.reason||"Historical leave entered by HR").trim();
+    const requestedDays=data.actualLeaveDays===""||data.actualLeaveDays==null ? null : Number(data.actualLeaveDays);
+    if(!userName||!startDate||!endDate||endDate<startDate) return response.status(400).json({ok:false,error:"Employee and valid leave dates are required."});
+    const type=(await query("select * from hr_leave_types where code=$1 or lower(name)=lower($1) limit 1",[leaveType])).rows[0];
+    if(!type) return response.status(400).json({ok:false,error:"Choose a valid leave type."});
+    const employee=(await query("select user_name,full_name from employees where lower(user_name)=lower($1) limit 1",[userName])).rows[0];
+    if(!employee) return response.status(404).json({ok:false,error:"Employee not found."});
+
+    const calculation=await calculateHrLeave(startDate,endDate,userName);
+    const actualLeaveDays=Number.isFinite(requestedDays) ? Math.max(0,requestedDays) : calculation.actualLeaveDays;
+    const halfDayType=String(data.halfDayType||"").trim();
+    const requestNo=`LV-HIST-${String(startDate).slice(0,4)}-${Date.now().toString().slice(-8)}`;
+
+    const saved=await query(`insert into leave_requests
+      (request_no,user_name,employee_name,leave_type,start_date,end_date,total_days,calendar_days,weekend_days,public_holiday_days,actual_leave_days,half_day_type,reason,rejoining_date,status,approved_by,approved_at,applied_at,created_at,updated_at,requested_by)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'Approved',$15,now(),now(),now(),now(),$15)
+      returning request_no,user_name,employee_name,leave_type,start_date,end_date,total_days,calendar_days,weekend_days,public_holiday_days,actual_leave_days,status,reason`,
+      [requestNo,userName,employee.full_name||userName,type.code,startDate,endDate,actualLeaveDays,calculation.calendarDays,calculation.weekendDays,calculation.publicHolidayDays,actualLeaveDays,halfDayType,reason,isoDate(data.rejoiningDate)||null,request.appSession.userName]);
+
+    const balance=await hrBalanceForUser(userName,Number(String(startDate).slice(0,4)),type.code);
+    await query(`insert into hr_leave_ledger(user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by)
+      values($1,$2,$3,'APPROVED_LEAVE',$4,$5,$6,$7,$8)`,
+      [userName,Number(String(startDate).slice(0,4)),type.code,requestNo,-actualLeaveDays,balance.available,reason,request.appSession.userName]);
+
+    return response.json({ok:true,row:saved.rows[0],calculation});
+  }catch(error){return next(error);}
+});
+
 app.get("/api/hr/admin/summary", requireHrAdmin, async (request,response,next)=>{
   try{
     const year=Number(request.query.year||new Date().getFullYear());
-    const employees=(await query("select user_name,employee_code,full_name,department,designation,join_date,employment_status,reporting_manager from employees order by full_name")).rows;
+    const employees=(await query("select user_name,employee_code,full_name,branch,department,designation,join_date,employment_status,reporting_manager from employees order by full_name")).rows;
     const pending=(await query("select count(*)::int as count from leave_requests where status='Pending'")).rows[0]?.count||0;
     const approved=(await query("select count(*)::int as count from leave_requests where status='Approved' and extract(year from start_date)=$1",[year])).rows[0]?.count||0;
     return response.json({ok:true,year,employees,pending,approved});
