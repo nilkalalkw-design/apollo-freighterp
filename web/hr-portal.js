@@ -182,7 +182,105 @@ function bindHrEvents(){if(bound)return;bound=true;
   document.addEventListener("submit",async e=>{const f=e.target.closest("form[data-hr-form]");if(!f)return;e.preventDefault();if(f.dataset.hrForm==="leave-application")await submitLeave(f);else if(f.dataset.hrForm==="holiday")await saveHoliday(f);else if(f.dataset.hrForm==="weekends")await saveWeekends(f);else if(f.dataset.hrForm==="policy")await savePolicy(f);else if(f.dataset.hrForm==="leave-type")await saveLeaveType(f);});
   document.addEventListener("change",async e=>{const f=e.target.closest("form[data-hr-form=leave-application]");if(!f)return;if(["startDate","endDate","halfDayType"].includes(e.target.name))await updateCalculation(f);});
 }
-async function updateCalculation(form){const start=form.querySelector("[name=startDate]")?.value,end=form.querySelector("[name=endDate]")?.value,half=form.querySelector("[name=halfDayType]")?.value,calc=form.querySelector("[data-hr-calculation]");if(!start||!end){calc.textContent="Choose dates to calculate actual leave days.";return;}try{const r=await hrFetch(`/api/hr/calendar?from=${encodeURIComponent(start)}&to=${encodeURIComponent(end)}`);const s=new Date(`${start}T00:00:00Z`),e=new Date(`${end}T00:00:00Z`);let weekend=0,holiday=0,working=0;const hs=new Map((r.holidays||[]).map(h=>[String(h.holiday_date).slice(0,10),h]));for(let d=new Date(s);d<=e;d.setUTCDate(d.getUTCDate()+1)){const k=d.toISOString().slice(0,10);if(r.weekends.includes(d.getUTCDay()))weekend++;else if(hs.has(k)&&["PUBLIC_HOLIDAY","BLACKOUT"].includes(String(hs.get(k).day_type||"").trim().toUpperCase().replace(/\s+/g,"_")))holiday++;else working++;}if(["FIRST_HALF","SECOND_HALF"].includes(half)){if(start!==end){calc.innerHTML=`<strong>Half-day leave must use the same start and end date.</strong>`;return;}working=Math.max(0,working-.5);}let rejoin=new Date(e);do{rejoin.setUTCDate(rejoin.getUTCDate()+1);}while(r.weekends.includes(rejoin.getUTCDay())||["PUBLIC_HOLIDAY","BLACKOUT"].includes(String(hs.get(rejoin.toISOString().slice(0,10))?.day_type||"").trim().toUpperCase().replace(/\s+/g,"_")));const rejoinField=form.querySelector("[name=rejoiningDate]");if(rejoinField&&!rejoinField.value)rejoinField.value=rejoin.toISOString().slice(0,10);calc.innerHTML=`<strong>Actual leave days: ${working}</strong> • Calendar: ${Math.round((e-s)/86400000)+1} • Weekend: ${weekend} • Public holiday/restricted: ${holiday} • Suggested rejoining: ${rejoin.toISOString().slice(0,10)}`;}catch(e){calc.textContent=e.message;}}
+async function updateCalculation(form){
+  const start=form.querySelector("[name=startDate]")?.value;
+  const end=form.querySelector("[name=endDate]")?.value;
+  const half=form.querySelector("[name=halfDayType]")?.value;
+  const calc=form.querySelector("[data-hr-calculation]");
+  if(!start||!end){
+    calc.textContent="Choose dates to calculate actual leave days.";
+    return;
+  }
+
+  const normalizeType = value => String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+
+  const holidayKey = row => {
+    const value = row?.holiday_date ?? row?.holidayDate ?? row?.date;
+    if (!value) return "";
+    return String(value).slice(0, 10);
+  };
+
+  try {
+    // Get the calendar rules used by the employee portal.
+    // Also fall back to leave-config because older deployments may expose
+    // holidays there while the calendar endpoint is being updated.
+    const [calendarResult, configResult] = await Promise.all([
+      hrFetch(`/api/hr/calendar?from=${encodeURIComponent(start)}&to=${encodeURIComponent(end)}`),
+      cache.config ? Promise.resolve(cache.config) : hrFetch(`/api/hr/leave-config?year=${encodeURIComponent(start.slice(0,4))}`)
+    ]);
+
+    const weekends = Array.isArray(calendarResult?.weekends)
+      ? calendarResult.weekends.map(Number)
+      : Array.isArray(configResult?.weekends)
+        ? configResult.weekends.map(Number)
+        : [];
+
+    const calendarHolidays = Array.isArray(calendarResult?.holidays)
+      ? calendarResult.holidays
+      : [];
+
+    const configHolidays = Array.isArray(configResult?.holidays)
+      ? configResult.holidays
+      : [];
+
+    // Merge both sources. This also makes the calculation work when the
+    // calendar API and leave-config API are on slightly different versions.
+    const merged = new Map();
+    for (const row of [...configHolidays, ...calendarHolidays]) {
+      const key = holidayKey(row);
+      if (key) merged.set(`${key}|${normalizeType(row.day_type ?? row.dayType)}`, row);
+    }
+
+    const s = new Date(`${start}T00:00:00Z`);
+    const e = new Date(`${end}T00:00:00Z`);
+    let weekend=0, holiday=0, working=0;
+
+    for(let d=new Date(s);d<=e;d.setUTCDate(d.getUTCDate()+1)){
+      const k=d.toISOString().slice(0,10);
+      const holidayRows = [...merged.values()].filter(row => holidayKey(row) === k);
+      const isPublicHoliday = holidayRows.some(row =>
+        ["PUBLIC_HOLIDAY","BLACKOUT"].includes(normalizeType(row.day_type ?? row.dayType))
+      );
+
+      if(weekends.includes(d.getUTCDay())) {
+        weekend++;
+      } else if(isPublicHoliday) {
+        holiday++;
+      } else {
+        working++;
+      }
+    }
+
+    if(["FIRST_HALF","SECOND_HALF"].includes(half)){
+      if(start!==end){
+        calc.innerHTML=`<strong>Half-day leave must use the same start and end date.</strong>`;
+        return;
+      }
+      working=Math.max(0,working-.5);
+    }
+
+    let rejoin=new Date(e);
+    do{
+      rejoin.setUTCDate(rejoin.getUTCDate()+1);
+    }while(
+      weekends.includes(rejoin.getUTCDay()) ||
+      [...merged.values()].some(row =>
+        holidayKey(row) === rejoin.toISOString().slice(0,10) &&
+        ["PUBLIC_HOLIDAY","BLACKOUT"].includes(normalizeType(row.day_type ?? row.dayType))
+      )
+    );
+
+    const rejoinField=form.querySelector("[name=rejoiningDate]");
+    if(rejoinField&&!rejoinField.value) rejoinField.value=rejoin.toISOString().slice(0,10);
+
+    calc.innerHTML=`<strong>Actual leave days: ${working}</strong> • Calendar: ${Math.round((e-s)/86400000)+1} • Weekend: ${weekend} • Public holiday/restricted: ${holiday} • Suggested rejoining: ${rejoin.toISOString().slice(0,10)}`;
+  }catch(e){
+    calc.textContent=e.message;
+  }
+}
 window.ApolloHR={renderMyLeave:()=>{ensureLoaded();return renderMyLeave();},renderBalance:()=>{ensureLoaded();return renderBalance();},renderCalendar:()=>{ensureLoaded();return renderCalendar();},renderAdminApprovals:()=>{ensureAdminData();return renderAdminApprovals();},renderAdminCalendar:()=>{ensureAdminData();return renderAdminCalendar();},renderAdminPolicies:()=>{ensureAdminData();return renderAdminPolicies()+renderDelegations();},renderAdminBalance:()=>{ensureAdminData();return renderAdminBalance();}};
 window.addEventListener("apollo-hr-refresh",requestCoreRender);
 document.addEventListener("click",async event=>{const button=event.target.closest("[data-hr-action='extend-leave'],[data-hr-action='remove-delegation']");if(!button)return;if(button.dataset.hrAction==="extend-leave")return extendLeave(button.dataset.id);if(!window.confirm("End this delegated approval?"))return;try{await hrFetch(`/api/hr/admin/delegations/${encodeURIComponent(button.dataset.id)}`,{method:"DELETE"});cache.delegations=null;await loadDelegations();requestCoreRender();}catch(e){window.alert(e.message);}});
