@@ -20,7 +20,7 @@ const hrFetch = async (path, options = {}) => {
 const today = () => new Date().toISOString().slice(0, 10);
 const year = () => new Date().getFullYear();
 const fmtDate = v => v ? new Date(`${String(v).slice(0,10)}T00:00:00Z`).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric",timeZone:"UTC"}) : "—";
-let cache = { config:null, requests:[], summary:null, adminBalances:null, policies:null, leaveTypes:null, delegations:null, ledger:null };
+let cache = { config:null, requests:null, summary:null, adminBalances:null, policies:null, leaveTypes:null, delegations:null, ledger:null };
 let bound = false;
 
 async function loadConfig(){ cache.config = await hrFetch(`/api/hr/leave-config?year=${year()}`); return cache.config; }
@@ -30,23 +30,76 @@ async function loadPolicies(){ cache.policies = await hrFetch(`/api/hr/admin/pol
 async function loadLeaveTypes(){ cache.leaveTypes = (await hrFetch("/api/hr/admin/leave-types")).rows || []; return cache.leaveTypes; }
 async function loadDelegations(){ cache.delegations = (await hrFetch("/api/hr/admin/delegations")).rows || []; return cache.delegations; }
 async function loadLedger(){ cache.ledger = (await hrFetch("/api/hr/leave-ledger")).rows || []; return cache.ledger; }
+let coreRenderScheduled = false;
+
 async function ensureLoaded(){
-  try { if(!cache.config) await loadConfig(); if(!cache.requests.length) await loadRequests(); }
-  catch(e){ console.warn("HR portal data unavailable", e); }
+  let loaded = false;
+  try {
+    if(cache.config === null){
+      await loadConfig();
+      loaded = true;
+    }
+    if(cache.requests === null){
+      await loadRequests();
+      loaded = true;
+    }
+  } catch(e){
+    console.warn("HR portal data unavailable", e);
+  }
   bindHrEvents();
-  requestCoreRender();
+
+  // IMPORTANT: render functions call ensureLoaded(). Never force a render
+  // unless this call actually loaded data. Otherwise:
+  // render -> ensureLoaded -> requestCoreRender -> render -> ...
+  if(loaded && cache.config !== null && cache.requests !== null){
+    requestCoreRender();
+  }
 }
+
 async function ensureAdminData(){
   if(!hrAdmin()) return;
+  let loaded = false;
   try {
-    if(!cache.adminBalances) await loadAdminBalances();
-    if(!cache.summary) cache.summary = await hrFetch(`/api/hr/admin/summary?year=${year()}`);
-    if(!cache.policies) await loadPolicies();
-    if(!cache.leaveTypes) await loadLeaveTypes();
-  } catch(e){ console.warn("HR admin data unavailable", e); }
-  bindHrEvents(); requestCoreRender();
+    if(cache.adminBalances === null){
+      await loadAdminBalances();
+      loaded = true;
+    }
+    if(cache.summary === null){
+      cache.summary = await hrFetch(`/api/hr/admin/summary?year=${year()}`);
+      loaded = true;
+    }
+    if(cache.policies === null){
+      await loadPolicies();
+      loaded = true;
+    }
+    if(cache.leaveTypes === null){
+      await loadLeaveTypes();
+      loaded = true;
+    }
+  } catch(e){
+    console.warn("HR admin data unavailable", e);
+  }
+  bindHrEvents();
+
+  if(loaded &&
+     cache.adminBalances !== null &&
+     cache.summary !== null &&
+     cache.policies !== null &&
+     cache.leaveTypes !== null){
+    requestCoreRender();
+  }
 }
-function requestCoreRender(){ if(typeof window.__APOLLO_HR_RENDER === "function") window.__APOLLO_HR_RENDER(); }
+
+function requestCoreRender(){
+  if(coreRenderScheduled) return;
+  coreRenderScheduled = true;
+  requestAnimationFrame(() => {
+    coreRenderScheduled = false;
+    if(typeof window.__APOLLO_HR_RENDER === "function"){
+      window.__APOLLO_HR_RENDER();
+    }
+  });
+}
 function kpi(title,value,note){ return `<article class="hr-kpi"><strong>${esc(value)}</strong><span>${esc(title)}</span><small>${esc(note)}</small></article>`; }
 function panel(title,body,note=""){ return `<article class="panel hr-panel"><div class="hr-panel-head"><div><h3>${esc(title)}</h3>${note?`<small>${esc(note)}</small>`:""}</div></div>${body}</article>`; }
 function badge(status){ return `<span class="hr-status hr-status-${esc(String(status||"").toLowerCase())}">${esc(status||"")}</span>`; }
