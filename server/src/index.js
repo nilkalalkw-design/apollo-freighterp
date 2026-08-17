@@ -2327,7 +2327,7 @@ function dateParts(startDate, endDate) {
 async function hrCalendarRules() {
   const [weekends, holidays, types] = await Promise.all([
     query("select weekday from hr_weekend_rules where branch = 'All' and active = true order by weekday"),
-    query("select holiday_date, day_type, title, notes, branch from hr_calendar_days where active = true order by holiday_date"),
+    query("select id, holiday_date, day_type, title, notes, branch from hr_calendar_days where active = true order by holiday_date"),
     query("select * from hr_leave_types where active = true order by id")
   ]);
   return { weekends: weekends.rows.map((row) => Number(row.weekday)), holidays: holidays.rows, leaveTypes: types.rows };
@@ -2346,7 +2346,7 @@ async function calculateHrLeave(startDate, endDate) {
     const day = date.getUTCDay();
     if (rules.weekends.includes(day)) {
       weekendDays += 1;
-    } else if (holidayMap.has(key) && ["PUBLIC_HOLIDAY", "BLACKOUT"].includes(String(holidayMap.get(key).day_type))) {
+    } else if (holidayMap.has(key) && ["PUBLIC_HOLIDAY", "BLACKOUT"].includes(String(holidayMap.get(key).day_type || "").trim().toUpperCase().replace(/\s+/g, "_"))) {
       publicHolidayDays += 1;
     } else {
       workingDays += 1;
