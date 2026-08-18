@@ -300,7 +300,7 @@ function shipmentMetaNotes(data) {
     shipperEmail: String(data.shipperEmail || "").trim(),
     shipperVatTrn: String(data.shipperVatTrn || "").trim(),
     shipperCountry: String(data.shipperCountry || "").trim(),
-    consigneeName: String(data.consigneeName || data.customer || "").trim(),
+    consigneeName: String(data.consigneeName || "").trim(),
     consigneeAddress: String(data.consigneeAddress || "").trim(),
     consigneeContactPerson: String(data.consigneeContactPerson || "").trim(),
     consigneeMobile: String(data.consigneeMobile || "").trim(),
@@ -467,7 +467,7 @@ function shipment(
     shipperEmail: meta.shipperEmail || "",
     shipperVatTrn: meta.shipperVatTrn || "",
     shipperCountry: meta.shipperCountry || "",
-    consigneeName: meta.consigneeName || customer,
+    consigneeName: meta.consigneeName || "",
     consigneeAddress: meta.consigneeAddress || "",
     consigneeContactPerson: meta.consigneeContactPerson || "",
     consigneeMobile: meta.consigneeMobile || "",
@@ -2210,6 +2210,7 @@ function apiShipment(row) {
   item.driverName = row.driver_name || "";
   item.driverNumber = row.driver_number || "";
   item.driverMobile = row.driver_mobile || "";
+  item.chargeableKg = effectiveChargeableWeightForShipment(item);
   return item;
 }
 
@@ -3113,6 +3114,7 @@ function openCustomerShipmentHistory(customerCode, range = {}) {
   if (!customer) return;
   const from = String(range.from || "").slice(0, 10);
   const to = String(range.to || "").slice(0, 10);
+  state.ui.customerShipmentHistory = { customerCode: customer.code, from, to };
   const rows = state.shipments.filter((shipmentItem) => {
     const belongsToCustomer = String(shipmentItem.customerCode || "").toLowerCase() === String(customer.code || "").toLowerCase()
       || String(shipmentItem.customer || "").toLowerCase() === String(customer.name || "").toLowerCase()
@@ -3126,7 +3128,7 @@ function openCustomerShipmentHistory(customerCode, range = {}) {
     singleColumn: true,
     saveLabel: "Apply Date Filter",
     secondaryLabel: "Close",
-    body: `<div class="form-grid"><label>From Date<input name="customerShipmentFrom" type="date" value="${escapeHtml(from)}"></label><label>To Date<input name="customerShipmentTo" type="date" value="${escapeHtml(to)}"></label></div><p class="empty-state">${escapeHtml(String(rows.length))} shipment(s) for ${escapeHtml(customer.name)}. The visible columns follow the Shipment Register column setting.</p>${table("shipment", rows, shipmentColumns("shipment:customer-history"), false, "shipment:customer-history")}`,
+    body: `<div class="form-grid"><label>From Date<input name="customerShipmentFrom" type="date" value="${escapeHtml(from)}"></label><label>To Date<input name="customerShipmentTo" type="date" value="${escapeHtml(to)}"></label></div><p class="empty-state">${escapeHtml(String(rows.length))} shipment(s) for ${escapeHtml(customer.name)}.</p>${registerColumnSettingsMarkup("shipment:customer-history", "Customer shipment columns", shipmentColumnDefaults("shipment:customer-history"))}${table("shipment", rows, shipmentColumns("shipment:customer-history"), false, "shipment:customer-history")}`,
     onSave() {
       const data = collectFormValues(dialogBody.closest("form"));
       openCustomerShipmentHistory(customer.code, { from: data.customerShipmentFrom, to: data.customerShipmentTo });
@@ -3386,15 +3388,21 @@ function shipmentStatusTable(rows) {
   const columns = shipmentStatusColumns();
   const scope = "shipmentStatus";
   const sortedRows = applySort(scope, rows);
+  const pageSize = 15;
+  state.ui.tablePages = state.ui.tablePages || {};
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
+  const currentPage = Math.min(Math.max(1, Number(state.ui.tablePages[scope] || 1)), totalPages);
+  const pageRows = sortedRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const expandedJob = state.ui.expandedStatusJob || "";
   const locked = isColumnWidthLocked(scope);
   const headCells = columns.map(([key, label]) => sortableHeaderCell("shipment", scope, key, label, locked)).join("");
   const widths = (state.ui.columnWidths || {})[scope];
   const tableStyle = widths && Object.keys(widths).length ? ` style="table-layout:fixed"` : "";
   const body = sortedRows.length
-    ? sortedRows.map((row, index) => shipmentStatusRowMarkup(row, index, columns, expandedJob)).join("")
+    ? pageRows.map((row, index) => shipmentStatusRowMarkup(row, index + ((currentPage - 1) * pageSize), columns, expandedJob)).join("")
     : `<tr><td colspan="${columns.length}">${empty("No records found.")}</td></tr>`;
-  return `${columnLockToggleMarkup(scope, locked)}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const pager = totalPages > 1 ? `<div class="table-pagination"><span>Showing ${((currentPage - 1) * pageSize) + 1}-${Math.min(currentPage * pageSize, sortedRows.length)} of ${sortedRows.length}</span><div><button type="button" class="secondary-button" data-action="table-page" data-page-scope="${scope}" data-page="${currentPage - 1}" ${currentPage === 1 ? "disabled" : ""}>Previous</button><span>Page ${currentPage} / ${totalPages}</span><button type="button" class="secondary-button" data-action="table-page" data-page-scope="${scope}" data-page="${currentPage + 1}" ${currentPage === totalPages ? "disabled" : ""}>Next</button></div></div>` : "";
+  return `${columnLockToggleMarkup(scope, locked)}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}</tr></thead><tbody>${body}</tbody></table></div>${pager}`;
 }
 
 function shipmentStatusRowMarkup(row, index, columns, expandedJob) {
@@ -3839,17 +3847,23 @@ function empty(text) {
 
 function table(type, rows, columns, showLoad = type !== "shipment", scope = type, sortable = true) {
   const sortedRows = sortable ? applySort(scope, rows) : rows;
+  const pageSize = 15;
+  state.ui.tablePages = state.ui.tablePages || {};
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
+  const currentPage = Math.min(Math.max(1, Number(state.ui.tablePages[scope] || 1)), totalPages);
+  const pageRows = sortedRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const header = showLoad ? `<th>Load</th>` : "";
   const colSpan = columns.length + (showLoad ? 1 : 0);
   const body = sortedRows.length
-    ? sortedRows.map((row, index) => tableRow(type, row, index, columns, showLoad)).join("")
+    ? pageRows.map((row, index) => tableRow(type, row, index + ((currentPage - 1) * pageSize), columns, showLoad)).join("")
     : `<tr><td colspan="${colSpan}">${empty("No records found.")}</td></tr>`;
   const locked = isColumnWidthLocked(scope);
   const headCells = columns.map(([key, label]) => sortable ? sortableHeaderCell(type, scope, key, label, locked) : `<th>${escapeHtml(label)}</th>`).join("");
   const widths = (state.ui.columnWidths || {})[scope];
   const tableStyle = widths && Object.keys(widths).length ? ` style="table-layout:fixed"` : "";
   const lockToggle = sortable ? columnLockToggleMarkup(scope, locked) : "";
-  return `${scope === "shipment" ? "" : ""}${lockToggle}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const pager = totalPages > 1 ? `<div class="table-pagination"><span>Showing ${((currentPage - 1) * pageSize) + 1}-${Math.min(currentPage * pageSize, sortedRows.length)} of ${sortedRows.length}</span><div><button type="button" class="secondary-button" data-action="table-page" data-page-scope="${escapeHtml(scope)}" data-page="${currentPage - 1}" ${currentPage === 1 ? "disabled" : ""}>Previous</button><span>Page ${currentPage} / ${totalPages}</span><button type="button" class="secondary-button" data-action="table-page" data-page-scope="${escapeHtml(scope)}" data-page="${currentPage + 1}" ${currentPage === totalPages ? "disabled" : ""}>Next</button></div></div>` : "";
+  return `${scope === "shipment" ? "" : ""}${lockToggle}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}${header}</tr></thead><tbody>${body}</tbody></table></div>${pager}`;
 }
 
 function isColumnWidthLocked(scope) {
@@ -4256,27 +4270,12 @@ function cargoPalletCount(row) {
 }
 
 function dashboardShipmentColumns() {
-  return shipmentColumnsForScope("shipment:dashboard", shipmentColumnDefaults("shipment:dashboard"));
+  return shipmentColumnsForScope("shipment:dashboard", defaultColumnLayouts().shipment);
 }
 
 function shipmentColumnDefaults(scope) {
-  if (scope !== "shipment:dashboard") {
-    const type = String(scope || "shipment").split(":")[0];
-    return defaultColumnLayouts()[type] || defaultColumnLayouts().shipment;
-  }
-  return [
-    ["slNo", "SL."],
-    ["bookingDate", "DATE"],
-    ["jobNo", "SHIPMENT NO."],
-    ["airwayBillNo", "AWB NO."],
-    ["customer", "CUSTOMER"],
-    ["origin", "ORIGIN"],
-    ["destination", "DESTINATION"],
-    ["status", "STATUS"],
-    ["podStatus", "POD"],
-    ["invoiceStatus", "INVOICE"],
-    ["createdBy", "USERNAME"]
-  ];
+  const type = String(scope || "shipment").split(":")[0];
+  return defaultColumnLayouts()[type] || defaultColumnLayouts().shipment;
 }
 
 function input(name, label, value = "", readonly = false, type = "text") {
@@ -4450,7 +4449,8 @@ function configurableColumns(type, defaults, scope = type) {
 
 function shipmentColumnSettingsKey(scope) {
   if (scope === "shipment:dashboard") return "dashboardShipmentColumns";
-  if (scope === "shipment:register" || scope === "shipment:customer-history") return "shipmentRegisterColumns";
+  if (scope === "shipment:register") return "shipmentRegisterColumns";
+  if (scope === "shipment:customer-history") return "customerShipmentHistoryColumns";
   return `columnSettings_${String(scope || "register").replace(/[^a-z0-9]+/gi, "_")}`;
 }
 
@@ -4934,6 +4934,19 @@ async function handleModuleClick(event) {
     return;
   }
 
+  if (action === "table-page") {
+    const scope = button.dataset.pageScope || type || "register";
+    state.ui.tablePages = state.ui.tablePages || {};
+    state.ui.tablePages[scope] = Math.max(1, Number(button.dataset.page || 1));
+    saveState();
+    if (scope === "shipment:customer-history" && state.ui.customerShipmentHistory?.customerCode) {
+      openCustomerShipmentHistory(state.ui.customerShipmentHistory.customerCode, state.ui.customerShipmentHistory);
+      return;
+    }
+    render();
+    return;
+  }
+
   if (action === "open") {
     openRecord(type, id);
     return;
@@ -5099,6 +5112,10 @@ function rerenderColumnSettings(scope, keepOpen = true) {
   const currentMenu = moduleContent.querySelector(`[data-column-menu-scope="${scope}"]`);
   const menuTop = currentMenu?.scrollTop || 0;
   state.ui.openColumnSettings = keepOpen ? scope : "";
+  if (scope === "shipment:customer-history" && state.ui.customerShipmentHistory?.customerCode) {
+    openCustomerShipmentHistory(state.ui.customerShipmentHistory.customerCode, state.ui.customerShipmentHistory);
+    return;
+  }
   render();
   requestAnimationFrame(() => {
     window.scrollTo(0, pageTop);
@@ -6423,7 +6440,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     `, true, sectionOpen)}
     ${formSection("Consignee Information", `
       ${checkbox("copyCustomerToConsignee", "Same as customer information")}
-      ${selectFrom("consigneeName", "Consignee Name", state.customers.map((row) => row.name), fieldValue("consigneeName", defaultCustomer))}
+       ${selectFrom("consigneeName", "Consignee Name", state.customers.map((row) => row.name), fieldValue("consigneeName", ""))}
       ${textarea("consigneeAddress", "Consignee Address", fieldValue("consigneeAddress"), false, 3)}
       ${input("consigneeContactPerson", "Contact Person", fieldValue("consigneeContactPerson"))}
       ${input("consigneeMobile", "Mobile Number", fieldValue("consigneeMobile"))}
@@ -7059,9 +7076,6 @@ function bindShipmentCustomerAutofill() {
     setDialogValue("customerMobile", customer.mobile);
     setDialogValue("customerContactPerson", customer.name);
     setDialogValue("customerAddress", customer.fullAddress || customer.locationOrLane);
-    setDialogValue("consigneeName", customer.name);
-    setDialogValue("consigneeAddress", customer.fullAddress || customer.locationOrLane);
-    setDialogValue("consigneeEmail", customer.email);
     setDialogValue("billTo1", customer.name);
     setDialogValue("billingParty1Address", customer.fullAddress || customer.locationOrLane);
     setDialogValue("billingParty1Email", customer.email);
@@ -10058,6 +10072,7 @@ async function changeCurrentPassword(data) {
 // allowed to be incomplete. If this is editing an existing shipment already (i.e. continuing a
 // draft that was opened again), this updates that same record instead of creating a duplicate.
 async function createShipmentDraft(data) {
+  data.chargeableKg = effectiveChargeableWeightForShipment(data);
   if (editing && editing.type === "shipment") {
     const updatedRecord = { ...editing.record };
     Object.keys(data).forEach((key) => {
@@ -10118,6 +10133,7 @@ async function createShipmentDraft(data) {
 }
 
 async function createShipment(data) {
+  data.chargeableKg = effectiveChargeableWeightForShipment(data);
   if (duplicateRecordExists("shipment", data.jobNo)) {
     notifyDuplicate(data.jobNo);
     return false;
