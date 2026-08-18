@@ -20,10 +20,15 @@ const hrFetch = async (path, options = {}) => {
 const today = () => new Date().toISOString().slice(0, 10);
 const year = () => new Date().getFullYear();
 const fmtDate = v => v ? new Date(`${String(v).slice(0,10)}T00:00:00Z`).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric",timeZone:"UTC"}) : "—";
-let cache = { config:null, requests:[], summary:null, adminBalances:null, policies:null, leaveTypes:null, delegations:null, ledger:null };
+let cache = { config:null, requests:null, summary:null, adminBalances:null, policies:null, leaveTypes:null, delegations:null, ledger:null, calendarBranch:"" };
 let bound = false;
+let baseLoadPromise = null;
+let adminLoadPromise = null;
 
-async function loadConfig(){ cache.config = await hrFetch(`/api/hr/leave-config?year=${year()}`); return cache.config; }
+const employeeSession = () => String(session()?.portal || "").toLowerCase() === "employee";
+const sessionBranch = () => { const raw=String(session()?.branchAccess||"").split(",")[0].trim().toLowerCase(); return /dubai|dxb/.test(raw)?"Dubai":"Kuwait HO"; };
+const activeCalendarBranch = () => cache.calendarBranch || sessionBranch();
+async function loadConfig(){ cache.config = await hrFetch(`/api/hr/leave-config?year=${year()}&branch=${encodeURIComponent(activeCalendarBranch())}`); return cache.config; }
 async function loadRequests(){ cache.requests = (await hrFetch("/api/hr/leave-requests")).rows || []; return cache.requests; }
 async function loadAdminBalances(){ cache.adminBalances = (await hrFetch(`/api/hr/admin/balances?year=${year()}`)).rows || []; return cache.adminBalances; }
 async function loadPolicies(){ cache.policies = await hrFetch(`/api/hr/admin/policies?year=${year()}`); return cache.policies; }
@@ -31,20 +36,21 @@ async function loadLeaveTypes(){ cache.leaveTypes = (await hrFetch("/api/hr/admi
 async function loadDelegations(){ cache.delegations = (await hrFetch("/api/hr/admin/delegations")).rows || []; return cache.delegations; }
 async function loadLedger(){ cache.ledger = (await hrFetch("/api/hr/leave-ledger")).rows || []; return cache.ledger; }
 async function ensureLoaded(){
-  try { if(!cache.config) await loadConfig(); if(!cache.requests.length) await loadRequests(); }
-  catch(e){ console.warn("HR portal data unavailable", e); }
+  if(!employeeSession()) return;
   bindHrEvents();
-  requestCoreRender();
+  if(baseLoadPromise) return baseLoadPromise;
+  const work=[]; if(!cache.config) work.push(loadConfig()); if(cache.requests===null) work.push(loadRequests());
+  if(!work.length) return Promise.resolve();
+  baseLoadPromise=Promise.all(work).catch(e=>console.warn("HR portal data unavailable",e)).finally(()=>{baseLoadPromise=null;requestCoreRender();});
+  return baseLoadPromise;
 }
 async function ensureAdminData(){
   if(!hrAdmin()) return;
-  try {
-    if(!cache.adminBalances) await loadAdminBalances();
-    if(!cache.summary) cache.summary = await hrFetch(`/api/hr/admin/summary?year=${year()}`);
-    if(!cache.policies) await loadPolicies();
-    if(!cache.leaveTypes) await loadLeaveTypes();
-  } catch(e){ console.warn("HR admin data unavailable", e); }
-  bindHrEvents(); requestCoreRender();
+  bindHrEvents(); if(adminLoadPromise) return adminLoadPromise;
+  const work=[]; if(!cache.adminBalances) work.push(loadAdminBalances()); if(!cache.summary) work.push(hrFetch(`/api/hr/admin/summary?year=${year()}`).then(data=>{cache.summary=data;})); if(!cache.policies) work.push(loadPolicies()); if(!cache.leaveTypes) work.push(loadLeaveTypes());
+  if(!work.length) return Promise.resolve();
+  adminLoadPromise=Promise.all(work).catch(e=>console.warn("HR admin data unavailable",e)).finally(()=>{adminLoadPromise=null;requestCoreRender();});
+  return adminLoadPromise;
 }
 function requestCoreRender(){ if(typeof window.__APOLLO_HR_RENDER === "function") window.__APOLLO_HR_RENDER(); }
 function kpi(title,value,note){ return `<article class="hr-kpi"><strong>${esc(value)}</strong><span>${esc(title)}</span><small>${esc(note)}</small></article>`; }
@@ -80,7 +86,7 @@ async function extendLeave(no){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return;
   const reason=window.prompt("Reason for the extension:","")||"";
   if(!reason.trim()) return;
-  try{ await hrFetch(`/api/hr/leave-requests/${encodeURIComponent(no)}/extension`,{method:"POST",body:JSON.stringify({endDate,reason})}); cache.requests=[]; await loadRequests(); await loadConfig(); requestCoreRender(); window.alert("Extension request submitted for HR approval."); }
+  try{ await hrFetch(`/api/hr/leave-requests/${encodeURIComponent(no)}/extension`,{method:"POST",body:JSON.stringify({endDate,reason})}); cache.requests=null; await loadRequests(); await loadConfig(); requestCoreRender(); window.alert("Extension request submitted for HR approval."); }
   catch(e){ window.alert(e.message); }
 }
 function renderCalendar(){ const cfg=cache.config||{weekends:[],holidays:[]}; return `<section class="hr-page"><div class="hr-hero"><div><p class="eyebrow">Employee Portal</p><h2>Leave Calendar</h2><p>See weekends, public holidays and your leave dates in one calendar.</p></div></div>${panel("Calendar",calendarGrid(cfg,cache.requests))}${panel("Calendar Legend",`<div class="hr-legend"><span>Weekend</span><span>Public Holiday</span><span>My Leave</span><span>Blackout / Restricted</span></div>`)}${panel("Configured Public Holidays & Rules",cfg.holidays?.length?`<div class="hr-table-wrap"><table class="hr-table"><thead><tr><th>Date</th><th>Type</th><th>Title</th><th>Notes</th></tr></thead><tbody>${cfg.holidays.map(h=>`<tr><td>${fmtDate(h.holiday_date)}</td><td>${esc(h.day_type)}</td><td>${esc(h.title)}</td><td>${esc(h.notes)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty-state">No special dates configured.</p>`)}</section>`; }
@@ -124,7 +130,7 @@ async function savePolicy(form){try{await hrFetch("/api/hr/admin/policies",{meth
 async function saveLeaveType(form){try{await hrFetch("/api/hr/admin/leave-types",{method:"PUT",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});cache.config=null;cache.policies=null;cache.leaveTypes=null;await loadConfig();await loadPolicies();await loadLeaveTypes();requestCoreRender();form.reset();}catch(e){window.alert(e.message);}}
 function openModal(html){document.querySelector("[data-hr-modal]")?.remove();document.body.insertAdjacentHTML("beforeend",html);bindHrEvents();}
 function bindHrEvents(){if(bound)return;bound=true;
-  document.addEventListener("click",async e=>{const b=e.target.closest("[data-hr-action]");if(!b)return;const a=b.dataset.hrAction,id=b.dataset.id;if(a==="open-leave-form")openModal(leaveForm());else if(a==="close-modal")b.closest("[data-hr-modal]")?.remove();else if(a==="approve")await decide(id,"approve");else if(a==="reject")await decide(id,"reject");else if(a==="cancel-leave")await cancel(id);else if(a==="rejoin")await rejoin(id);else if(a==="view-request"){const r=cache.requests.find(x=>x.request_no===id);if(r)openModal(renderRequestDetails(r));}else if(a==="view-attachment")await viewAttachment(id);else if(a==="delete-calendar")await deleteCalendar(id);else if(a==="refresh"){cache.config=null;cache.requests=[];cache.adminBalances=null;cache.policies=null;cache.leaveTypes=null;cache.ledger=null;await ensureLoaded();if(hrAdmin())await ensureAdminData();}});
+  document.addEventListener("click",async e=>{const b=e.target.closest("[data-hr-action]");if(!b)return;const a=b.dataset.hrAction,id=b.dataset.id;if(a==="open-leave-form")openModal(leaveForm());else if(a==="close-modal")b.closest("[data-hr-modal]")?.remove();else if(a==="approve")await decide(id,"approve");else if(a==="reject")await decide(id,"reject");else if(a==="cancel-leave")await cancel(id);else if(a==="rejoin")await rejoin(id);else if(a==="view-request"){const r=(cache.requests||[]).find(x=>x.request_no===id);if(r)openModal(renderRequestDetails(r));}else if(a==="view-attachment")await viewAttachment(id);else if(a==="delete-calendar")await deleteCalendar(id);else if(a==="refresh"){cache.config=null;cache.requests=null;cache.adminBalances=null;cache.policies=null;cache.leaveTypes=null;cache.ledger=null;await ensureLoaded();if(hrAdmin())await ensureAdminData();}});
   document.addEventListener("submit",async e=>{const f=e.target.closest("form[data-hr-form]");if(!f)return;e.preventDefault();if(f.dataset.hrForm==="leave-application")await submitLeave(f);else if(f.dataset.hrForm==="holiday")await saveHoliday(f);else if(f.dataset.hrForm==="weekends")await saveWeekends(f);else if(f.dataset.hrForm==="policy")await savePolicy(f);else if(f.dataset.hrForm==="leave-type")await saveLeaveType(f);});
   document.addEventListener("change",async e=>{const f=e.target.closest("form[data-hr-form=leave-application]");if(!f)return;if(["startDate","endDate","halfDayType"].includes(e.target.name))await updateCalculation(f);});
 }

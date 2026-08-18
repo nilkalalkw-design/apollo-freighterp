@@ -3108,6 +3108,33 @@ function openDashboardMetricDialog(metric) {
   });
 }
 
+function openCustomerShipmentHistory(customerCode, range = {}) {
+  const customer = state.customers.find((row) => String(row.code || "").toLowerCase() === String(customerCode || "").toLowerCase());
+  if (!customer) return;
+  const from = String(range.from || "").slice(0, 10);
+  const to = String(range.to || "").slice(0, 10);
+  const rows = state.shipments.filter((shipmentItem) => {
+    const belongsToCustomer = String(shipmentItem.customerCode || "").toLowerCase() === String(customer.code || "").toLowerCase()
+      || String(shipmentItem.customer || "").toLowerCase() === String(customer.name || "").toLowerCase()
+      || String(shipmentItem.consigneeName || "").toLowerCase() === String(customer.name || "").toLowerCase();
+    const shipmentDate = String(shipmentItem.bookingDate || shipmentItem.shipmentDate || "").slice(0, 10);
+    return belongsToCustomer && (!from || !shipmentDate || shipmentDate >= from) && (!to || !shipmentDate || shipmentDate <= to);
+  });
+  openDialog({
+    title: `Customer Shipments — ${customer.code}`,
+    typeLabel: customer.name || "Customer",
+    singleColumn: true,
+    saveLabel: "Apply Date Filter",
+    secondaryLabel: "Close",
+    body: `<div class="form-grid"><label>From Date<input name="customerShipmentFrom" type="date" value="${escapeHtml(from)}"></label><label>To Date<input name="customerShipmentTo" type="date" value="${escapeHtml(to)}"></label></div><p class="empty-state">${escapeHtml(String(rows.length))} shipment(s) for ${escapeHtml(customer.name)}. The visible columns follow the Shipment Register column setting.</p>${table("shipment", rows, shipmentColumns("shipment:customer-history"), false, "shipment:customer-history")}`,
+    onSave() {
+      const data = collectFormValues(dialogBody.closest("form"));
+      openCustomerShipmentHistory(customer.code, { from: data.customerShipmentFrom, to: data.customerShipmentTo });
+    },
+    onSecondary() { recordDialog.close(); }
+  });
+}
+
 function adminTopRequestsPanel() {
   if (!isAdminSession()) return "";
   return `<section class="split-grid single-panel admin-request-strip">
@@ -3191,7 +3218,7 @@ function renderConsolidation() {
   const selectedLoad = rows.find((row) => row.loadNo === state.ui.selectedLoadNo) || null;
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Manifest Register", "Loads / Trips")}
+      <article class="panel">${panelHeader("Manifest Register", "Loads / Trips")} ${registerColumnSettingsMarkup("load", "Manifest Register columns", defaultColumnLayouts().load)}
         ${table("load", rows, loadColumns())}
         ${selectedLoad ? consolidationJobsPanel(selectedLoad) : `<div class="report-preview-empty"><p class="empty-state">Select a manifest from the list to open the related job numbers below.</p></div>`}
       </article>
@@ -3209,7 +3236,7 @@ function renderParties(key, label) {
   const rows = filteredRows(state[key]);
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader(`${label} Register`, "Master data")} ${table(key, rows, partyColumns(key))}</article>
+      <article class="panel">${panelHeader(`${label} Register`, "Master data")} ${registerColumnSettingsMarkup(key, `${label} Register columns`, defaultColumnLayouts()[key])} ${table(key, rows, partyColumns(key))}</article>
       ${moduleActionPanel(`${label} Actions`, key, `Open separate New and Load windows for ${label.toLowerCase()} records.`, actionChecklist([
         "New creates a fresh master-data entry window.",
         "Load opens an existing record to review or update."
@@ -3222,7 +3249,7 @@ function renderTariffs() {
   const rows = filteredRows(visibleRows(state.tariffs));
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Rate Master", "Tariffs")} ${table("tariff", rows, tariffColumns())}</article>
+      <article class="panel">${panelHeader("Rate Master", "Tariffs")} ${registerColumnSettingsMarkup("tariff", "Tariff Register columns", defaultColumnLayouts().tariff)} ${table("tariff", rows, tariffColumns())}</article>
       ${moduleActionPanel("Tariff Actions", "tariff", "Maintain tariff cards from separate New and Load popups just like the desktop layout.", documentActionControls("tariff", "Tariff"))}
     </section>
     ${adminDeletePanel("tariff", "Tariff")}`;
@@ -3232,7 +3259,7 @@ function renderDocuments() {
   const rows = filteredRows(visibleRows(state.documents));
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Document Library", "Attachments")} ${table("document", rows, documentColumns())}</article>
+      <article class="panel">${panelHeader("Document Library", "Attachments")} ${registerColumnSettingsMarkup("document", "Document Register columns", defaultColumnLayouts().document)} ${table("document", rows, documentColumns())}</article>
       ${moduleActionPanel("Document Actions", "document", "Separate popup windows are available for new document tags and for loading stored shipment files.")}
     </section>
     ${adminDeletePanel("document", "Document")}`;
@@ -3242,7 +3269,7 @@ function renderShipmentRequests() {
   const rows = filteredRows(state.shipmentRequests);
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Customer Shipment Requests", "Review Queue")} ${table("shipmentRequest", rows, shipmentRequestColumns())}</article>
+      <article class="panel">${panelHeader("Customer Shipment Requests", "Review Queue")} ${registerColumnSettingsMarkup("shipmentRequest", "Request Register columns", defaultColumnLayouts().shipmentRequest)} ${table("shipmentRequest", rows, shipmentRequestColumns())}</article>
       ${moduleActionPanel("Customer Request Actions", "shipmentRequest", "Open a request to review full details, then Approve, Reject, or Convert it into a shipment.", quickOpenShipmentRequestMarkup())}
     </section>
     ${adminDeletePanel("shipmentRequest", "Shipment Request")}`;
@@ -3263,7 +3290,7 @@ function renderQuotations() {
   const rows = filteredRows(visibleRows(state.quotations));
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Quotation Register", "Sales")} ${table("quotation", rows, quotationColumns())}</article>
+      <article class="panel">${panelHeader("Quotation Register", "Sales")} ${registerColumnSettingsMarkup("quotation", "Quotation Register columns", defaultColumnLayouts().quotation)} ${table("quotation", rows, quotationColumns())}</article>
       ${moduleActionPanel("Quotation Actions", "quotation", "Create a quotation, then convert it to a shipment once confirmed.", quickOpenQuotationMarkup())}
     </section>
     ${adminDeletePanel("quotation", "Quotation")}`;
@@ -3285,7 +3312,7 @@ function renderInvoices() {
   const canEnterBilling = canBillingSalesEntry() || canBillingCostEntry();
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Invoice Register", "Billing")} ${table("invoice", rows, invoiceColumns())}</article>
+      <article class="panel">${panelHeader("Invoice Register", "Billing")} ${registerColumnSettingsMarkup("invoice", "Invoice Register columns", defaultColumnLayouts().invoice)} ${table("invoice", rows, invoiceColumns())}</article>
       ${canEnterBilling
         ? moduleActionPanel("Invoice Actions", "invoice", "Keep invoice creation and load/update in separate popup windows.", quickOpenInvoiceMarkup() + documentActionControls("invoice", "Bill"))
         : `<article class="panel">${panelHeader("Invoice Actions", "Restricted")}${empty("Your account has view-only access to billing.")}</article>`}
@@ -4173,7 +4200,11 @@ function cellHtml(type, key, row, index = 0) {
     const canEdit = portalStatus(row.status) === "SENT_BACK";
     return requestNo ? `<button type="button" class="table-inline-link" data-action="${canEdit ? "edit-customer-request" : "view-customer-request"}" data-request-no="${escapeHtml(requestNo)}">${escapeHtml(requestNo)}</button>` : "";
   }
-  const clickableRegisterKey = { customers: "code", suppliers: "code", tariff: "tariffNo", invoice: "invoiceNo" }[type];
+  if (type === "customers" && key === "code") {
+    const code = String(row.code || "").trim();
+    return code ? `<button type="button" class="table-inline-link" data-customer-shipment-history="${escapeHtml(code)}" aria-label="Open shipment history for ${escapeHtml(code)}">${escapeHtml(code)}</button>` : "";
+  }
+  const clickableRegisterKey = { suppliers: "code", tariff: "tariffNo", invoice: "invoiceNo" }[type];
   if (clickableRegisterKey && key === clickableRegisterKey) {
     const id = String(row[key] || "").trim();
     if (!id) return escapeHtml(row[key] || "");
@@ -4229,7 +4260,10 @@ function dashboardShipmentColumns() {
 }
 
 function shipmentColumnDefaults(scope) {
-  if (scope !== "shipment:dashboard") return defaultColumnLayouts().shipment;
+  if (scope !== "shipment:dashboard") {
+    const type = String(scope || "shipment").split(":")[0];
+    return defaultColumnLayouts()[type] || defaultColumnLayouts().shipment;
+  }
   return [
     ["slNo", "SL."],
     ["bookingDate", "DATE"],
@@ -4409,14 +4443,15 @@ function isSameAsGrossWeightCategory(category) {
   return String(category || "").trim().toLowerCase() === "same as gross weight";
 }
 
-function configurableColumns(type, defaults, scope = "shipment:register") {
+function configurableColumns(type, defaults, scope = type) {
   const cleanDefaults = defaults.filter(([key]) => !isRegisterAddressColumn(key));
-  if (type !== "shipment") return cleanDefaults;
   return shipmentColumnsForScope(scope, cleanDefaults);
 }
 
 function shipmentColumnSettingsKey(scope) {
-  return scope === "shipment:dashboard" ? "dashboardShipmentColumns" : "shipmentRegisterColumns";
+  if (scope === "shipment:dashboard") return "dashboardShipmentColumns";
+  if (scope === "shipment:register" || scope === "shipment:customer-history") return "shipmentRegisterColumns";
+  return `columnSettings_${String(scope || "register").replace(/[^a-z0-9]+/gi, "_")}`;
 }
 
 function shipmentColumnsForScope(scope, defaults) {
@@ -4482,6 +4517,10 @@ function shipmentRegisterColumnsMarkup() {
 
 function dashboardColumnSettingsMarkup() {
   return shipmentColumnSettingsMarkup("shipment:dashboard", "Dashboard shipment columns", dashboardColumnSettings());
+}
+
+function registerColumnSettingsMarkup(scope, title, defaults) {
+  return shipmentColumnSettingsMarkup(scope, title, shipmentColumnSettings(scope, defaults || shipmentColumnDefaults(scope)));
 }
 
 function isRegisterAddressColumn(key) {
@@ -5150,6 +5189,11 @@ function handleColumnResizeStart(event) {
 }
 
 function handleModuleLinkClick(event) {
+  const customerHistoryButton = event.target.closest("[data-customer-shipment-history]");
+  if (customerHistoryButton) {
+    openCustomerShipmentHistory(customerHistoryButton.dataset.customerShipmentHistory || "");
+    return;
+  }
   const recordButton = event.target.closest("[data-record-open]");
   if (recordButton) {
     const recordType = recordButton.dataset.recordType || "";
