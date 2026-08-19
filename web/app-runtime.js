@@ -2302,12 +2302,16 @@ function apiShipmentRequest(row) {
 }
 
 function apiShipmentStatusHistory(row) {
+  const rawNotes = String(row.notes || "");
+  const statusDateMatch = rawNotes.match(/(?:^|\s)\[STATUS_DATE:(\d{4}-\d{2}-\d{2})\]/);
+  const effectiveStatusDate = row.status_date || row.statusDate || statusDateMatch?.[1] || "";
   return {
     jobNo: row.job_no || "",
     status: row.status || "",
     podStatus: row.pod_status || "",
     invoiceStatus: row.invoice_status || "",
-    notes: row.notes || "",
+    notes: rawNotes.replace(/\s*\[STATUS_DATE:\d{4}-\d{2}-\d{2}\]/g, "").trim(),
+    statusDate: effectiveStatusDate,
     updatedBy: row.updated_by || "",
     updatedAt: row.updated_at || new Date().toISOString(),
     fromLocation: row.from_location || row.fromLocation || row.from || "",
@@ -3121,6 +3125,57 @@ function openDashboardMetricDialog(metric) {
   });
 }
 
+function ensureCustomerShipmentHistoryDialogStyle() {
+  if (document.getElementById("customerShipmentHistoryDialogStyle")) return;
+  const style = document.createElement("style");
+  style.id = "customerShipmentHistoryDialogStyle";
+  style.textContent = `
+    #recordDialog.customer-shipment-history-dialog {
+      width: min(96vw, 1600px);
+      max-width: 96vw;
+      height: min(92vh, 1000px);
+      max-height: 92vh;
+      margin: auto;
+      padding: 0;
+      overflow: hidden;
+    }
+    #recordDialog.customer-shipment-history-dialog #dialogBody {
+      display: block;
+      width: 100%;
+      max-width: none;
+      overflow: auto;
+      padding: 18px 22px 24px;
+    }
+    #recordDialog.customer-shipment-history-dialog #dialogBody .form-grid {
+      grid-template-columns: repeat(2, minmax(220px, 1fr));
+      width: 100%;
+      margin-bottom: 12px;
+    }
+    #recordDialog.customer-shipment-history-dialog #dialogBody .customer-shipment-filter,
+    #recordDialog.customer-shipment-history-dialog #dialogBody .customer-shipment-filter-actions,
+    #recordDialog.customer-shipment-history-dialog #dialogBody .table-wrap,
+    #recordDialog.customer-shipment-history-dialog #dialogBody table {
+      width: 100%;
+      max-width: none;
+    }
+    #recordDialog.customer-shipment-history-dialog #dialogBody table {
+      min-width: 100%;
+    }
+    @media (max-width: 800px) {
+      #recordDialog.customer-shipment-history-dialog {
+        width: 98vw;
+        max-width: 98vw;
+        height: 94vh;
+        max-height: 94vh;
+      }
+      #recordDialog.customer-shipment-history-dialog #dialogBody .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function openCustomerShipmentHistory(customerCode, range = {}) {
   const customer = state.customers.find((row) => String(row.code || "").toLowerCase() === String(customerCode || "").toLowerCase());
   if (!customer) return;
@@ -3134,6 +3189,7 @@ function openCustomerShipmentHistory(customerCode, range = {}) {
     const shipmentDate = String(shipmentItem.bookingDate || shipmentItem.shipmentDate || "").slice(0, 10);
     return belongsToCustomer && (!from || !shipmentDate || shipmentDate >= from) && (!to || !shipmentDate || shipmentDate <= to);
   });
+  ensureCustomerShipmentHistoryDialogStyle();
   openDialog({
     title: `Customer Shipments — ${customer.code}`,
     typeLabel: customer.name || "Customer",
@@ -3169,6 +3225,7 @@ function openCustomerShipmentHistory(customerCode, range = {}) {
       });
     }
   });
+  recordDialog.classList.add("customer-shipment-history-dialog");
 }
 
 function openCustomerDetails(customerCode) {
@@ -3572,6 +3629,10 @@ function shipmentJourneyTimeline(history, shipmentItem = {}) {
   </section>`;
 }
 
+function shipmentHistoryEffectiveDate(entry) {
+  return String(entry.statusDate || entry.updatedAt || "").slice(0, 10);
+}
+
 function shipmentTimelineCard(entry, index, total) {
   const status = String(entry.status || "Status update");
   const normalizedStatus = status.toLowerCase();
@@ -3591,7 +3652,7 @@ function shipmentTimelineCard(entry, index, total) {
     <div class="shipment-timeline-rail" aria-hidden="true"><span class="shipment-timeline-dot">${shipmentStatusIcon(status)}</span>${index < total - 1 ? '<span class="shipment-timeline-line"></span>' : ""}</div>
     <div class="shipment-timeline-content">
       <div class="shipment-timeline-title"><h5>${escapeHtml(status)}</h5><span class="shipment-timeline-state">${tone === "current" ? "Current" : tone === "cancelled" ? "Cancelled" : tone === "delayed" ? "Attention" : "Completed"}</span></div>
-      <div class="shipment-timeline-meta"><span><b>Date &amp; Time</b>${escapeHtml(formatShipmentTimelineDate(entry.updatedAt))}</span>${entry.updatedBy ? `<span><b>Updated By</b>${escapeHtml(entry.updatedBy)}</span>` : ""}</div>
+      <div class="shipment-timeline-meta"><span><b>Status Date</b>${escapeHtml(formatShipmentTimelineDate(shipmentHistoryEffectiveDate(entry)))}</span>${entry.updatedBy ? `<span><b>Updated By</b>${escapeHtml(entry.updatedBy)}</span>` : ""}</div>
       ${details.length ? `<div class="shipment-timeline-details">${details.map(([label, value]) => `<span><b>${escapeHtml(label)}</b>${escapeHtml(value)}</span>`).join("")}</div>` : ""}
       ${entry.notes ? `<p class="shipment-timeline-remark"><b>Remark</b>${escapeHtml(entry.notes)}</p>` : ""}
     </div>
@@ -6046,6 +6107,7 @@ async function saveDialogRecordInner() {
 function resetDialogShell() {
   editing = null;
   dialogState = null;
+  recordDialog.classList.remove("customer-shipment-history-dialog");
   dialogSecondary.classList.add("is-hidden");
   dialogSecondary.textContent = "Secondary";
   dialogSave.textContent = "Save Changes";
@@ -11114,10 +11176,18 @@ async function updateStatus(data) {
     podStatus: shipmentItem.podStatus,
     invoiceStatus: shipmentItem.invoiceStatus,
     notes: remark,
+    statusDate: entryDate,
     updatedBy: currentUserName(),
-    updatedAt: entryDate
+    // updatedAt is the real save timestamp; statusDate is the business/effective date selected by the user.
+    updatedAt: new Date().toISOString()
   };
-  const historySaved = await postRecord("statusHistory", historyEntry);
+  // Keep the effective date in notes as a backwards-compatible marker because the existing API
+  // may replace updated_at with today's timestamp and may not have a status_date column.
+  const postHistoryEntry = {
+    ...historyEntry,
+    notes: `${remark}${remark ? " " : ""}[STATUS_DATE:${entryDate}]`
+  };
+  const historySaved = await postRecord("statusHistory", postHistoryEntry);
   if (!historySaved) {
     Object.assign(shipmentItem, originalSnapshot);
     await persistRecord("shipment", shipmentItem);
