@@ -2432,6 +2432,13 @@ function apiAdminRequest(row) {
 }
 
 function apiAudit(row) {
+  let details = row.details || row.change_details || row.changeDetails || row.description || "";
+  if (typeof details === "string" && details.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(details);
+      details = parsed.text || parsed.details || parsed.changeDetails || details;
+    } catch {}
+  }
   return {
     id: row.id,
     dateTime: String(row.date_time || row.dateTime || "").replace("T", " ").slice(0, 16),
@@ -2440,7 +2447,7 @@ function apiAudit(row) {
     reference: row.reference || row.reference_no || row.referenceNo || "",
     // Keep the server-side change payload. Without this mapping, a sync immediately after an
     // update replaces the locally-captured before/after values with blank audit details.
-    details: row.details || row.change_details || row.changeDetails || row.description || ""
+    details
   };
 }
 
@@ -3515,6 +3522,7 @@ function renderPod() {
             <button type="button" class="secondary-button" data-action="generate-document" data-type="pod">Generate POD</button>
             <button type="button" class="secondary-button" data-action="export-document" data-type="pod">Save / Export</button>
             <button type="button" class="secondary-button" data-action="upload-pod-file" data-type="pod">Upload POD File</button>
+            <button type="button" class="secondary-button" data-action="manage-pod-file" data-type="pod">View / Replace / Delete POD</button>
           </div>
         </div>
       </article>
@@ -4351,10 +4359,11 @@ function openAuditDetailDialog(referenceKey) {
     return;
   }
   const items = entries.map((entry, index) => auditDetailEntryMarkup(entry, index + 1)).join("");
+  const changedFields = entries.reduce((total, entry) => total + parseChangeDetailPairs(entry.details).length, 0);
   openDialog({
     title: `Audit Trail - ${referenceKey}`,
     typeLabel: "Audit",
-    body: `<div class="audit-detail-list">${items}</div>`,
+    body: `<section class="audit-detail-summary"><div><span>History entries</span><strong>${entries.length}</strong></div><div><span>Field changes</span><strong>${changedFields}</strong></div><div><span>First activity</span><strong>${escapeHtml(entries[0]?.dateTime || "-")}</strong></div></section><div class="audit-detail-list">${items}</div>`,
     saveLabel: "Close",
     singleColumn: true,
     onSave() {
@@ -4389,6 +4398,10 @@ function cellHtml(type, key, row, index = 0) {
   if (type === "customers" && key === "code") {
     const code = String(row.code || "").trim();
     return code ? `<button type="button" class="table-inline-link" data-customer-details="${escapeHtml(code)}" aria-label="Open customer details for ${escapeHtml(code)}">${escapeHtml(code)}</button>` : "";
+  }
+  if (type === "document" && key === "documentNo") {
+    const documentNo = String(row.documentNo || "").trim();
+    return documentNo ? `<button type="button" class="table-inline-link" data-document-open="${escapeHtml(documentNo)}">${escapeHtml(documentNo)}</button>` : "";
   }
   const clickableRegisterKey = { suppliers: "code", tariff: "tariffNo", invoice: "invoiceNo" }[type];
   if (clickableRegisterKey && key === clickableRegisterKey) {
@@ -5196,6 +5209,14 @@ async function handleModuleClick(event) {
     return;
   }
 
+  if (action === "manage-pod-file") {
+    const jobNo = selectedRecordId("pod");
+    const documentItem = state.documents.find((item) => item.type === "POD" && item.linkedNo === jobNo);
+    if (documentItem) openDocumentFileDialog(documentItem.documentNo);
+    else notifyDenied("POD file not found", "Upload the signed POD file first, then you can view, replace, or delete it here.");
+    return;
+  }
+
   if (action === "export-list") {
     exportCollectionCsv(type);
     return;
@@ -5378,6 +5399,11 @@ function handleColumnResizeStart(event) {
 }
 
 function handleModuleLinkClick(event) {
+  const documentButton = event.target.closest("[data-document-open]");
+  if (documentButton) {
+    openDocumentFileDialog(documentButton.dataset.documentOpen || "");
+    return;
+  }
   const customerDetailsButton = event.target.closest("[data-customer-details]");
   if (customerDetailsButton) {
     openCustomerDetails(customerDetailsButton.dataset.customerDetails || "");
@@ -6382,6 +6408,96 @@ async function uploadPodFileForSelectedShipment(jobNo) {
     }
   }, { once: true });
   fileInput.click();
+}
+
+function openDocumentFileDialog(documentNo) {
+  const documentItem = state.documents.find((item) => item.documentNo === String(documentNo || "").trim());
+  if (!documentItem) return;
+  const isPod = String(documentItem.type || "").toUpperCase() === "POD";
+  openDialog({
+    title: `Document - ${documentItem.documentNo}`,
+    typeLabel: documentItem.type || "Document",
+    singleColumn: true,
+    saveLabel: "Close",
+    body: `<section class="document-file-details">
+      <div><span>Linked to</span><strong>${escapeHtml(documentItem.linkedNo || "-")}</strong></div>
+      <div><span>File name</span><strong>${escapeHtml(documentItem.fileName || "No file uploaded")}</strong></div>
+      <div><span>Status</span><strong>${escapeHtml(documentItem.status || "-")}</strong></div>
+      <div><span>Uploaded by</span><strong>${escapeHtml(documentItem.owner || "-")}</strong></div>
+    </section>
+    <div class="action-row document-file-actions">
+      <button type="button" class="secondary-button" data-dialog-action="view-document-file" ${documentItem.storageUrl ? "" : "disabled"}>View file</button>
+      <button type="button" class="secondary-button" data-dialog-action="replace-document-file" ${isPod ? "" : "disabled title=\"This legacy document has no secure upload source. Upload a new document record instead.\""}>Replace file</button>
+      <button type="button" class="danger-button" data-dialog-action="delete-document-file">Delete file</button>
+    </div>
+    <p class="empty-state">${isPod ? "Replacing this file updates the signed POD for the linked shipment." : "You can view or delete this uploaded document. Legacy document records without a secure upload source must be replaced by creating a new document record."}</p>`,
+    onSave() { recordDialog.close(); },
+    afterOpen() {
+      dialogBody.querySelector("[data-dialog-action='view-document-file']")?.addEventListener("click", () => viewLibraryDocument(documentItem));
+      dialogBody.querySelector("[data-dialog-action='replace-document-file']")?.addEventListener("click", () => replaceLibraryDocument(documentItem));
+      dialogBody.querySelector("[data-dialog-action='delete-document-file']")?.addEventListener("click", () => deleteLibraryDocument(documentItem));
+    }
+  });
+}
+
+function viewLibraryDocument(documentItem) {
+  if (!documentItem?.storageUrl) {
+    notifyDenied("File not available", "This document record has no uploaded file.");
+    return;
+  }
+  const viewer = window.open(documentItem.storageUrl, "_blank", "noopener");
+  if (!viewer) window.location.assign(documentItem.storageUrl);
+}
+
+async function replaceLibraryDocument(documentItem) {
+  if (String(documentItem?.type || "").toUpperCase() !== "POD") {
+    notifyDenied("Replacement unavailable", "Only signed POD files can be replaced from this screen. Create a new document record for other legacy documents.");
+    return;
+  }
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".pdf,.jpg,.jpeg,.png,image/jpeg,image/png,application/pdf";
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      let savedDocument;
+      savedDocument = await uploadPodDocument(documentItem.linkedNo, file);
+      const shipmentItem = state.shipments.find((item) => item.jobNo === documentItem.linkedNo);
+      if (shipmentItem) {
+        shipmentItem.podStatus = "Uploaded";
+        await persistRecord("shipment", shipmentItem);
+      }
+      state.documents = state.documents.map((item) => item.documentNo === documentItem.documentNo ? savedDocument : item);
+      addHistory("Replaced document file", documentItem.documentNo, `file: ${documentItem.fileName || "-"} -> ${file.name}`);
+      saveState();
+      recordDialog.close();
+      render();
+      notifySuccess("Document replaced", `${file.name} was uploaded successfully.`);
+    } catch (error) {
+      notifyDenied("File not replaced", error.message || "The replacement file could not be uploaded.");
+    }
+  }, { once: true });
+  input.click();
+}
+
+async function deleteLibraryDocument(documentItem) {
+  if (!documentItem?.documentNo || !window.confirm(`Delete the uploaded file for ${documentItem.documentNo}?`)) return;
+  const deleted = await deleteRecord("document", documentItem.documentNo);
+  if (!deleted) return;
+  state.documents = state.documents.filter((item) => item.documentNo !== documentItem.documentNo);
+  if (String(documentItem.type || "").toUpperCase() === "POD") {
+    const shipmentItem = state.shipments.find((item) => item.jobNo === documentItem.linkedNo);
+    if (shipmentItem) {
+      shipmentItem.podStatus = "Pending";
+      await persistRecord("shipment", shipmentItem);
+    }
+  }
+  addHistory("Deleted document file", documentItem.documentNo);
+  saveState();
+  recordDialog.close();
+  render();
+  notifySuccess("Document deleted", `${documentItem.documentNo} was removed.`);
 }
 
 function openAdminRequestDialog(record) {
