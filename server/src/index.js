@@ -2357,7 +2357,9 @@ async function hrCalendarRules(branch = "Kuwait HO") {
   const holidayMap = new Map();
   holidays.rows.filter((row) => row.branch === "All").forEach((row) => holidayMap.set(`${row.holiday_date}-${row.day_type}`, row));
   holidays.rows.filter((row) => row.branch === branch).forEach((row) => holidayMap.set(`${row.holiday_date}-${row.day_type}`, row));
-  return { branch, weekends: weekendRows.map((row) => Number(row.weekday)), holidays: [...holidayMap.values()], leaveTypes: types.rows };
+  const globalSettings = (await query("select settings_json from hr_leave_settings where settings_key='global' limit 1")).rows[0]?.settings_json || {};
+  const backdatedDays = Math.max(0, Number(globalSettings.backdated_days ?? 3));
+  return { branch, weekends: weekendRows.map((row) => Number(row.weekday)), holidays: [...holidayMap.values()], leaveTypes: types.rows, backdatedDays };
 }
 
 async function calculateHrLeave(startDate, endDate, branch = "Kuwait HO") {
@@ -2486,7 +2488,9 @@ app.get("/api/hr/leave-requests", requireEmployeePortalAuth, async (request, res
     const values = [];
     let where = "";
     if (!admin) { values.push(request.appSession.userName); where = "where lower(user_name)=lower($1)"; }
-    const result = await query(`select request_no,user_name,employee_name,leave_type,start_date,end_date,total_days,calendar_days,weekend_days,public_holiday_days,actual_leave_days,half_day_type,reason,rejoining_date,contact_during_leave,leave_address,emergency_contact,declaration_accepted,attachment_url,status,approved_by,approved_at,rejection_reason,cancellation_reason,applied_at,created_at,updated_at from leave_requests ${where} order by applied_at desc`, values);
+    const result = await query(`select r.request_no,r.user_name,r.employee_name,r.leave_type,r.start_date,r.end_date,r.total_days,r.calendar_days,r.weekend_days,r.public_holiday_days,r.actual_leave_days,r.half_day_type,r.reason,r.rejoining_date,r.contact_during_leave,r.leave_address,r.emergency_contact,r.declaration_accepted,r.declaration_accepted_at,r.attachment_url,r.status,r.approved_by,r.approved_at,r.rejection_reason,r.cancellation_reason,r.applied_at,r.created_at,r.updated_at,
+      e.employee_code,e.department,e.designation,e.reporting_manager,e.join_date,e.employment_status
+      from leave_requests r left join employees e on lower(e.user_name)=lower(r.user_name) ${where.replace("user_name","r.user_name")} order by r.applied_at desc`, values);
     return response.json({ok:true,rows:result.rows});
   } catch(error){ return next(error); }
 });
@@ -2659,6 +2663,30 @@ app.post("/api/hr/leave-requests/:requestNo/rejoin", requireEmployeePortalAuth, 
     if(!admin && String(existing.user_name).toLowerCase()!==String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"Not allowed."});
     const saved=await query("update leave_requests set rejoined_at=now(),rejoined_by=$1,updated_at=now() where request_no=$2 returning *",[request.appSession.userName,requestNo]);
     return response.json({ok:true,row:saved.rows[0]});
+  }catch(error){return next(error);}
+});
+
+app.get("/api/hr/calendar/settings", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const row=(await query("select settings_json from hr_leave_settings where settings_key='global' limit 1")).rows[0];
+    let settings={};
+    try{ settings = row?.settings_json && typeof row.settings_json === "object" ? row.settings_json : JSON.parse(row?.settings_json || "{}"); }catch{}
+    return response.json({ok:true,backdatedDays:Math.max(0,Number(settings.backdated_days ?? 3))});
+  }catch(error){return next(error);}
+});
+
+app.put("/api/hr/calendar/settings", requireHrAdmin, async (request,response,next)=>{
+  try{
+    const backdatedDays=Math.min(365,Math.max(0,Math.floor(Number(request.body?.backdatedDays ?? 3))));
+    const current=(await query("select settings_json from hr_leave_settings where settings_key='global' limit 1")).rows[0]?.settings_json || {};
+    let settings={};
+    try{ settings = current && typeof current === "object" ? current : JSON.parse(current || "{}"); }catch{ settings={}; }
+    settings.backdated_days=backdatedDays;
+    const saved=await query(`insert into hr_leave_settings(settings_key,settings_json)
+      values('global',$1)
+      on conflict(settings_key) do update set settings_json=excluded.settings_json
+      returning settings_key,settings_json`,[JSON.stringify(settings)]);
+    return response.json({ok:true,backdatedDays,row:saved.rows[0]});
   }catch(error){return next(error);}
 });
 
