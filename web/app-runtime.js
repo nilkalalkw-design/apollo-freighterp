@@ -4121,7 +4121,8 @@ function tableRow(type, row, index, columns, showLoad = true) {
 function tableActionButton(type, id) {
   if (type === "leaveRequest") {
     const record = state.leaveRequests.find((row) => row.requestNo === id);
-    const isPending = String(record?.status || "").toLowerCase() === "pending";
+    const leaveStatus = String(record?.status || "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+    const isPending = ["PENDING", "PENDING_REVIEW", "SUBMITTED", "AWAITING_APPROVAL"].includes(leaveStatus);
     const canDecide = isHrAdmin() && isPending;
     return `<div class="row-action-group">
       <button class="ghost-button" data-action="open" data-type="leaveRequest" data-id="${escapeHtml(id)}">Open</button>

@@ -2349,7 +2349,7 @@ function dateParts(startDate, endDate) {
 async function hrCalendarRules(branch = "Kuwait HO") {
   const [weekends, holidays, types] = await Promise.all([
     query("select branch,weekday,active from hr_weekend_rules where branch in ('All',$1) order by weekday", [branch]),
-    query("select holiday_date, day_type, title, notes, branch from hr_calendar_days where active = true and branch in ('All',$1) order by holiday_date", [branch]),
+    query("select id, holiday_date, day_type, title, notes, branch from hr_calendar_days where active = true and branch in ('All',$1) order by holiday_date", [branch]),
     query("select * from hr_leave_types where active = true order by id")
   ]);
   const branchWeekendRows = weekends.rows.filter((row) => row.branch === branch);
@@ -2364,16 +2364,22 @@ async function calculateHrLeave(startDate, endDate, branch = "Kuwait HO") {
   const dates = dateParts(startDate, endDate);
   if (!dates) throw new Error("A valid leave date range is required.");
   const rules = await hrCalendarRules(branch);
-  const holidayMap = new Map(rules.holidays.map((row) => [String(row.holiday_date).slice(0, 10), row]));
   let weekendDays = 0;
   let publicHolidayDays = 0;
   let workingDays = 0;
   for (const date of dates) {
     const key = date.toISOString().slice(0, 10);
     const day = date.getUTCDay();
-    if (rules.weekends.includes(day)) {
+    const dayRules = rules.holidays.filter((row) => String(row.holiday_date).slice(0, 10) === key);
+    const isWorkingDayOverride = dayRules.some((row) => String(row.day_type || "").toUpperCase() === "WORKING_DAY");
+    const isPublicHoliday = dayRules.some((row) => ["PUBLIC_HOLIDAY", "BLACKOUT"].includes(String(row.day_type || "").toUpperCase()));
+    // A configured Working Day override takes priority. Otherwise weekends and public holidays
+    // do not consume leave balance and are counted separately in the application record.
+    if (isWorkingDayOverride) {
+      workingDays += 1;
+    } else if (rules.weekends.includes(day)) {
       weekendDays += 1;
-    } else if (holidayMap.has(key) && ["PUBLIC_HOLIDAY", "BLACKOUT"].includes(String(holidayMap.get(key).day_type))) {
+    } else if (isPublicHoliday) {
       publicHolidayDays += 1;
     } else {
       workingDays += 1;
@@ -2596,7 +2602,8 @@ app.put("/api/hr/leave-requests/:requestNo/decision", requireEmployeePortalAuth,
     if (!["approve","reject"].includes(decision)) return response.status(400).json({ok:false,error:"Decision must be approve or reject."});
     const existing = (await query("select * from leave_requests where request_no=$1 limit 1",[requestNo])).rows[0];
     if (!existing) return response.status(404).json({ok:false,error:"Leave request not found."});
-    if (existing.status !== "Pending") return response.status(400).json({ok:false,error:`This request is already ${existing.status}.`});
+    const pendingStatus = ["PENDING", "PENDING_REVIEW", "SUBMITTED", "AWAITING_APPROVAL"].includes(String(existing.status || "").trim().toUpperCase().replace(/[\s-]+/g, "_"));
+    if (!pendingStatus) return response.status(400).json({ok:false,error:`This request is already ${existing.status}.`});
     const status = decision === "approve" ? "Approved" : "Rejected";
     const rejectionReason = decision === "reject" ? String(request.body?.reason || "").trim() : "";
     if (decision === "reject" && !rejectionReason) return response.status(400).json({ok:false,error:"A rejection reason is required."});
@@ -2668,7 +2675,13 @@ app.post("/api/hr/calendar/holiday", requireHrAdmin, async (request,response,nex
 });
 
 app.delete("/api/hr/calendar/holiday/:id", requireHrAdmin, async (request,response,next)=>{
-  try{const id=Number(request.params.id); const saved=await query("update hr_calendar_days set active=false,updated_at=now() where id=$1 returning *",[id]); if(!saved.rows[0]) return response.status(404).json({ok:false,error:"Calendar item not found."}); return response.json({ok:true,row:saved.rows[0]});}catch(error){return next(error);}
+  try{
+    const id=Number(request.params.id);
+    if(!Number.isInteger(id) || id < 1) return response.status(400).json({ok:false,error:"A valid calendar item is required."});
+    const saved=await query("update hr_calendar_days set active=false,updated_at=now() where id=$1 returning *",[id]);
+    if(!saved.rows[0]) return response.status(404).json({ok:false,error:"Calendar item not found or was already removed."});
+    return response.json({ok:true,row:saved.rows[0]});
+  }catch(error){return next(error);}
 });
 
 app.post("/api/hr/calendar/weekends", requireHrAdmin, async (request,response,next)=>{

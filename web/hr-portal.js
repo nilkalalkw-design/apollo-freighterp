@@ -56,6 +56,8 @@ function requestCoreRender(){ if(typeof window.__APOLLO_HR_RENDER === "function"
 function kpi(title,value,note){ return `<article class="hr-kpi"><strong>${esc(value)}</strong><span>${esc(title)}</span><small>${esc(note)}</small></article>`; }
 function panel(title,body,note=""){ return `<article class="panel hr-panel"><div class="hr-panel-head"><div><h3>${esc(title)}</h3>${note?`<small>${esc(note)}</small>`:""}</div></div>${body}</article>`; }
 function badge(status){ return `<span class="hr-status hr-status-${esc(String(status||"").toLowerCase())}">${esc(status||"")}</span>`; }
+function leaveStatusKey(status){ return String(status || "").trim().toUpperCase().replace(/[\s-]+/g,"_"); }
+function leaveIsPending(status){ return ["PENDING","PENDING_REVIEW","SUBMITTED","AWAITING_APPROVAL"].includes(leaveStatusKey(status)); }
 function dateDiffText(r){ return `${r.actual_leave_days ?? r.total_days ?? 0} working day(s) • ${r.weekend_days||0} weekend • ${r.public_holiday_days||0} holiday`; }
 function renderBalanceCards(balances=[]){
   if(!balances.length) return `<p class="empty-state">No leave balance has been configured for you.</p>`;
@@ -125,7 +127,12 @@ async function rejoin(no){try{await hrFetch(`/api/hr/leave-requests/${encodeURIC
 async function viewAttachment(no){try{const r=await hrFetch(`/api/hr/leave-requests/${encodeURIComponent(no)}/attachment`);window.open(r.url,"_blank","noopener");}catch(e){window.alert(e.message);}}
 async function saveHoliday(form){try{await hrFetch("/api/hr/calendar/holiday",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});await loadConfig();form.reset();requestCoreRender();}catch(e){window.alert(e.message);}}
 async function saveWeekends(form){try{const weekdays=Array.from(form.querySelectorAll("[name=weekday]:checked")).map(x=>Number(x.value));await hrFetch("/api/hr/calendar/weekends",{method:"POST",body:JSON.stringify({weekdays})});await loadConfig();requestCoreRender();}catch(e){window.alert(e.message);}}
-async function deleteCalendar(id){if(!window.confirm("Remove this calendar rule?"))return;try{await hrFetch(`/api/hr/calendar/holiday/${encodeURIComponent(id)}`,{method:"DELETE"});await loadConfig();requestCoreRender();}catch(e){window.alert(e.message);}}
+async function deleteCalendar(id){
+  if(!String(id||"").trim() || !/^\d+$/.test(String(id))) { window.alert("This calendar item cannot be removed yet. Refresh the page and try again."); return; }
+  if(!window.confirm("Remove this calendar rule?"))return;
+  try{await hrFetch(`/api/hr/calendar/holiday/${encodeURIComponent(id)}`,{method:"DELETE"});await loadConfig();requestCoreRender();}
+  catch(e){window.alert(e.message);}
+}
 async function savePolicy(form){try{await hrFetch("/api/hr/admin/policies",{method:"PUT",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});cache.policies=null;cache.adminBalances=null;await ensureAdminData();requestCoreRender();form.reset();}catch(e){window.alert(e.message);}}
 async function saveLeaveType(form){try{await hrFetch("/api/hr/admin/leave-types",{method:"PUT",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});cache.config=null;cache.policies=null;cache.leaveTypes=null;await loadConfig();await loadPolicies();await loadLeaveTypes();requestCoreRender();form.reset();}catch(e){window.alert(e.message);}}
 function openModal(html){document.querySelector("[data-hr-modal]")?.remove();document.body.insertAdjacentHTML("beforeend",html);bindHrEvents();}
@@ -135,6 +142,44 @@ function bindHrEvents(){if(bound)return;bound=true;
   document.addEventListener("change",async e=>{const f=e.target.closest("form[data-hr-form=leave-application]");if(!f)return;if(["startDate","endDate","halfDayType"].includes(e.target.name))await updateCalculation(f);});
 }
 async function updateCalculation(form){const start=form.querySelector("[name=startDate]")?.value,end=form.querySelector("[name=endDate]")?.value,half=form.querySelector("[name=halfDayType]")?.value,calc=form.querySelector("[data-hr-calculation]");if(!start||!end){calc.textContent="Choose dates to calculate actual leave days.";return;}try{const r=await hrFetch(`/api/hr/calendar?from=${encodeURIComponent(start)}&to=${encodeURIComponent(end)}`);const s=new Date(`${start}T00:00:00Z`),e=new Date(`${end}T00:00:00Z`);let weekend=0,holiday=0,working=0;const hs=new Map((r.holidays||[]).map(h=>[String(h.holiday_date).slice(0,10),h]));for(let d=new Date(s);d<=e;d.setUTCDate(d.getUTCDate()+1)){const k=d.toISOString().slice(0,10);if(r.weekends.includes(d.getUTCDay()))weekend++;else if(hs.has(k)&&["PUBLIC_HOLIDAY","BLACKOUT"].includes(hs.get(k).day_type))holiday++;else working++;}if(["FIRST_HALF","SECOND_HALF"].includes(half)){if(start!==end){calc.innerHTML=`<strong>Half-day leave must use the same start and end date.</strong>`;return;}working=Math.max(0,working-.5);}let rejoin=new Date(e);do{rejoin.setUTCDate(rejoin.getUTCDate()+1);}while(r.weekends.includes(rejoin.getUTCDay())||hs.has(rejoin.toISOString().slice(0,10)));const rejoinField=form.querySelector("[name=rejoiningDate]");if(rejoinField&&!rejoinField.value)rejoinField.value=rejoin.toISOString().slice(0,10);calc.innerHTML=`<strong>Actual leave days: ${working}</strong> • Calendar: ${Math.round((e-s)/86400000)+1} • Weekend: ${weekend} • Public holiday/restricted: ${holiday} • Suggested rejoining: ${rejoin.toISOString().slice(0,10)}`;}catch(e){calc.textContent=e.message;}}
+// Re-declare the approval view here so older data states (PENDING_REVIEW, Submitted, etc.)
+// always expose HR/Admin actions rather than only the exact legacy value "Pending".
+function renderAdminApprovals(){
+  ensureAdminData();
+  const rows=cache.requests||[];
+  const count=(status)=>rows.filter(r=>leaveStatusKey(r.status)===status).length;
+  return `<section class="hr-page"><div class="hr-hero"><div><p class="eyebrow">Admin / HR</p><h2>Leave Approvals</h2><p>Review the application, supporting document, dates and leave balance before deciding.</p></div><button class="secondary-button" data-hr-action="refresh">Refresh</button></div><div class="hr-kpi-grid">${kpi("Pending",rows.filter(r=>leaveIsPending(r.status)).length,"Requires HR action")}${kpi("Approved",count("APPROVED"),"Approved requests")}${kpi("Rejected",count("REJECTED"),"Rejected requests")}${kpi("Employees",cache.summary?.employees?.length||0,"Employee records")}</div>${panel("Leave Applications",rows.length?`<div class="hr-table-wrap"><table class="hr-table"><thead><tr><th>Request</th><th>Employee</th><th>Type</th><th>Period</th><th>Actual Leave</th><th>Rejoining</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows.map(r=>{const pending=leaveIsPending(r.status);return `<tr><td>${esc(r.request_no)}</td><td>${esc(r.employee_name)}</td><td>${esc(r.leave_type)}</td><td>${fmtDate(r.start_date)} → ${fmtDate(r.end_date)}</td><td>${esc(dateDiffText(r))}</td><td>${fmtDate(r.rejoining_date)}</td><td>${badge(r.status)}</td><td><button class="ghost-button" data-hr-action="view-request" data-id="${esc(r.request_no)}">View</button>${pending?`<button class="ghost-button" data-hr-action="approve" data-id="${esc(r.request_no)}">Approve</button><button class="ghost-button" data-hr-action="reject" data-id="${esc(r.request_no)}">Reject</button>`:""}</td></tr>`;}).join("")}</tbody></table></div>`:`<p class="empty-state">No leave applications found.</p>`)}</section>`;
+}
+
+function renderRequestDetails(r){
+  const canDecide=hrAdmin()&&leaveIsPending(r.status);
+  return `<div class="hr-detail-modal" data-hr-modal><div class="hr-modal"><div class="hr-modal-head"><h2>${esc(r.request_no)}</h2><button type="button" class="secondary-button" data-hr-action="close-modal">Close</button></div><div class="hr-detail-grid"><strong>Employee</strong><span>${esc(r.employee_name)}</span><strong>Leave Type</strong><span>${esc(r.leave_type)}</span><strong>Period</strong><span>${fmtDate(r.start_date)} → ${fmtDate(r.end_date)}</span><strong>Calculation</strong><span>${esc(dateDiffText(r))}</span><strong>Reason</strong><span>${esc(r.reason)}</span><strong>Contact During Leave</strong><span>${esc(r.contact_during_leave)}</span><strong>Leave Address</strong><span>${esc(r.leave_address)}</span><strong>Emergency Contact</strong><span>${esc(r.emergency_contact||"-")}</span><strong>Rejoining</strong><span>${fmtDate(r.rejoining_date)}</span><strong>Declaration</strong><span>${r.declaration_accepted?"Accepted":"Not accepted"}</span><strong>Status</strong><span>${badge(r.status)}</span>${r.rejection_reason?`<strong>Rejection Reason</strong><span>${esc(r.rejection_reason)}</span>`:""}${r.attachment_url?`<strong>Supporting Document</strong><span><button class="ghost-button" data-hr-action="view-attachment" data-id="${esc(r.request_no)}">View Document</button></span>`:""}</div>${canDecide?`<div class="dialog-actions"><button class="secondary-button" data-hr-action="reject" data-id="${esc(r.request_no)}">Reject Request</button><button data-hr-action="approve" data-id="${esc(r.request_no)}">Approve Request</button></div>`:""}</div></div>`;
+}
+
+function hrCalendarBranchSelector(){
+  const selected=activeCalendarBranch();
+  return `<label class="hr-calendar-branch-select">Calendar Branch<select data-hr-calendar-branch><option value="Kuwait HO" ${selected==="Kuwait HO"?"selected":""}>Kuwait HO</option><option value="Dubai" ${selected==="Dubai"?"selected":""}>Dubai</option></select></label>`;
+}
+
+// Each branch maintains its own public holidays and weekends. The selected branch is sent with
+// every calendar save, while ordinary employees continue to see their assigned branch only.
+function renderAdminCalendar(){
+  ensureAdminData();
+  const cfg=cache.config||{weekends:[],holidays:[]};
+  const branch=activeCalendarBranch();
+  const names=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  return `<section class="hr-page"><div class="hr-hero"><div><p class="eyebrow">Admin / HR</p><h2>HR Calendar & Rules</h2><p>Public holidays and weekends are managed separately for Kuwait HO and Dubai.</p></div><div>${hrCalendarBranchSelector()}<button class="secondary-button" data-hr-action="refresh">Refresh</button></div></div>${panel(`${branch} Weekend Configuration`,`<form data-hr-form="weekends" class="hr-inline-form"><input type="hidden" name="branch" value="${esc(branch)}"><div class="hr-weekend-checks">${names.map((name,index)=>`<label><input type="checkbox" name="weekday" value="${index}" ${cfg.weekends.includes(index)?"checked":""}>${esc(name)}</label>`).join("")}</div><button type="submit">Save ${esc(branch)} Weekend Rules</button></form>`)}${panel(`Add / Update ${branch} Calendar Date`,`<form data-hr-form="holiday" class="hr-form"><input type="hidden" name="branch" value="${esc(branch)}"><div class="hr-form-grid"><label>Date<input type="date" name="holidayDate" required></label><label>Type<select name="dayType"><option value="PUBLIC_HOLIDAY">Public Holiday</option><option value="BLACKOUT">Blackout / Restricted</option><option value="WORKING_DAY">Working Day Override</option></select></label><label class="hr-full">Title<input name="title" required></label><label class="hr-full">Notes<textarea name="notes" rows="2"></textarea></label></div><button type="submit">Save ${esc(branch)} Calendar Rule</button></form>`)}${panel(`${branch} Configured Dates`,cfg.holidays?.length?`<div class="hr-table-wrap"><table class="hr-table"><thead><tr><th>Date</th><th>Type</th><th>Title</th><th>Notes</th><th>Action</th></tr></thead><tbody>${cfg.holidays.map(day=>`<tr><td>${fmtDate(day.holiday_date)}</td><td>${esc(day.day_type)}</td><td>${esc(day.title)}</td><td>${esc(day.notes)}</td><td><button class="ghost-button" data-hr-action="delete-calendar" data-id="${esc(day.id)}">Remove</button></td></tr>`).join("")}</tbody></table></div>`:`<p class="empty-state">No ${esc(branch)} calendar dates are configured.</p>`)}<p class="empty-state">Public holidays are excluded from deducted leave days for employees assigned to this branch.</p></section>`;
+}
+
+document.addEventListener("change", async event=>{
+  const branchField=event.target.closest("[data-hr-calendar-branch]");
+  if(!branchField) return;
+  cache.calendarBranch=String(branchField.value||"").trim()==="Dubai"?"Dubai":"Kuwait HO";
+  cache.config=null;
+  try { await loadConfig(); requestCoreRender(); }
+  catch(error){ window.alert(error.message || "Calendar branch could not be loaded."); }
+});
+
 window.ApolloHR={renderMyLeave:()=>{ensureLoaded();return renderMyLeave();},renderBalance:()=>{ensureLoaded();return renderBalance();},renderCalendar:()=>{ensureLoaded();return renderCalendar();},renderAdminApprovals:()=>{ensureAdminData();return renderAdminApprovals();},renderAdminCalendar:()=>{ensureAdminData();return renderAdminCalendar();},renderAdminPolicies:()=>{ensureAdminData();return renderAdminPolicies()+renderDelegations();},renderAdminBalance:()=>{ensureAdminData();return renderAdminBalance();}};
 window.addEventListener("apollo-hr-refresh",requestCoreRender);
 document.addEventListener("click",async event=>{const button=event.target.closest("[data-hr-action='extend-leave'],[data-hr-action='remove-delegation']");if(!button)return;if(button.dataset.hrAction==="extend-leave")return extendLeave(button.dataset.id);if(!window.confirm("End this delegated approval?"))return;try{await hrFetch(`/api/hr/admin/delegations/${encodeURIComponent(button.dataset.id)}`,{method:"DELETE"});cache.delegations=null;await loadDelegations();requestCoreRender();}catch(e){window.alert(e.message);}});
