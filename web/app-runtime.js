@@ -4734,7 +4734,7 @@ function defaultColumnLayouts() {
       ["pieces", "PKGS / CARTONS"],
       ["palletCount", "No# of Pallets"],
       ["actualKg", "G.WT"],
-      ["manualChargeableKg", "C.WT"],
+      ["chargeableKg", "C.WT"],
       ["status", "STATUS"],
       ["createdBy", "USERNAME"]
     ],
