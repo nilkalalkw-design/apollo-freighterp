@@ -1287,6 +1287,21 @@ label {
   color: var(--muted);
 }
 
+.pod-split-history {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #cbdcf1;
+  border-radius: 8px;
+  background: #f4f8fc;
+}
+
+.pod-split-history .table-wrap {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 .pod-action-row {
   flex-wrap: wrap;
 }
@@ -1970,6 +1985,13 @@ tr.shipment-row-cancelled td { background: #f2f3f5; }
 .selected-job-list {
   display: grid;
   gap: 10px;
+}
+
+/* The manifest's "Add Shipment" picker + added-shipment list was only ever occupying one of the
+   dialog's two grid columns by default, squeezing the shipment table into half the available
+   width. Spanning both columns gives it the full width the data actually needs. */
+[data-consolidation-picker] {
+  grid-column: 1 / -1;
 }
 
 .selected-job-chip {

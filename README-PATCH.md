@@ -1,54 +1,79 @@
-# Deploy Patch — Split-POD critical bug fixes (SUPERSEDES the two previous POD patches)
+# Deploy Patches — ERP Portal Updates
 
-This replaces both the "Split / Partial POD generation" patch and the "POD
-print layout fixes" patch sent earlier - it contains everything from both
-PLUS three critical fixes found on re-inspection. Use this one instead of
-the earlier two.
+This file documents the latest deployment patches included in the ERP portal.
 
-3 files - replace/add each at the same relative path:
+---
 
-- `web/app-runtime.js`   → replace
-- `server/src/index.js`  → replace
-- `server/sql/024_shipment_pod_splits.sql` → add (if you haven't already -
-  harmless to re-run if you have)
+# 1. Split-POD Critical Bug Fixes
 
-## Bugs found and fixed in this pass
+This replaces both the "Split / Partial POD generation" patch and the
+"POD print layout fixes" patch sent earlier.
 
-1. **`pod_splits_json` was wired to the wrong resource on the server** - it
-   had accidentally been registered under `quotations` instead of
-   `shipments`. This meant delivery splits would never actually reach the
-   database (silently dropped on save), and saving a quotation could throw a
-   database error. Fixed: it's now correctly registered on `shipments` only.
+## Files
 
-2. **Delivery details weren't being saved at all** - this app stores many
-   shipment fields (including all delivery/POD details) inside one JSON
-   blob column (`notes`), and every save path needs to rebuild that blob
-   before saving. The new POD save function was missing this step, so the
-   "latest delivery" info would silently revert to old data after a page
-   reload. Fixed.
+- `web/app-runtime.js` → replace
+- `server/src/index.js` → replace
+- `server/sql/024_shipment_pod_splits.sql` → add
 
-3. **Delivery history would vanish after every page reload** - even after
-   fix #1, the app never read the saved split data back out of the database
-   when loading shipments. The data was safe in the database the whole
-   time, but the app wouldn't display it after a refresh. Fixed.
+## Bugs fixed
 
-None of these would have been obvious from just using the feature once in a
-single session (everything looks fine until you reload the page or check the
-database) - caught by a full save → reload → re-display trace.
+1. `pod_splits_json` was registered under the wrong server resource.
+   It is now correctly registered under `shipments`.
 
-## Also included (from the earlier two patches, unchanged)
+2. Delivery details were not being rebuilt into the shipment `notes`
+   JSON before saving. This caused delivery information to revert after
+   a page reload.
 
-- Split/partial POD generation: record a shipment's delivery in multiple
-  parts (e.g. 10 of 26 pallets to one location, 16 to another), each with
-  its own signed POD PDF, its own file, and the shipment only becomes fully
-  "Delivered" once every piece is accounted for.
-- Receiver Remarks box (2 blank lines) added to the printed POD.
-- Signature block made smaller with tighter spacing, on screen and in print.
-- "Delivery Sequence" (e.g. "Delivery 2 of 2") shown on every printed POD.
-- Delivery Address confirmed correct per-split, now also shown in the
-  in-app delivery history list for easy visual verification.
+3. Delivery history was not being loaded back from the database after
+   a page reload. Saved split delivery information is now displayed
+   correctly.
 
-## After copying the files
+## Included POD features
 
-1. Restart/redeploy the server (runs the migration if not already applied).
-2. Redeploy/refresh the frontend (clear any CDN/browser cache).
+- Split/partial POD generation
+- Multiple delivery parts for one shipment
+- Individual signed POD PDF for each delivery part
+- Shipment becomes fully Delivered only after all parts are accounted for
+- Receiver Remarks box
+- Improved signature block spacing
+- Delivery Sequence such as "Delivery 2 of 2"
+- Correct delivery address for each split
+- Delivery history displayed in the application
+
+---
+
+# 2. Manifest Bulk Status Update Fix
+
+## Files
+
+- `web/app-runtime.js` → replace
+- `server/src/index.js` → replace
+
+No additional database changes are required for this fix.
+
+## Bug fixed
+
+The previous customer-block check compared the customer's block status
+against the branch of the currently logged-in staff user.
+
+This caused problems with bulk operations such as "Update Manifest Status",
+because one operator can update shipments belonging to different branches.
+
+The check now uses the shipment's own stored branch.
+
+For older shipments where the branch cannot be determined, the system no
+longer incorrectly blocks the operation simply because the branch is unknown.
+
+A customer that is fully blocked without a branch recorded continues to
+remain blocked everywhere.
+
+---
+
+# Deployment
+
+1. Restart/redeploy the server.
+2. Ensure the required SQL migrations have been applied.
+3. Redeploy/refresh the frontend.
+4. Clear CDN/browser cache if required.
+5. Test shipment saving, page reload, split POD, delivery history and
+   manifest bulk status update.

@@ -19,7 +19,7 @@ const hrFetch = async (path, options = {}) => {
 };
 const today = () => new Date().toISOString().slice(0, 10);
 const year = () => new Date().getFullYear();
-const fmtDate = v => v ? new Date(`${String(v).slice(0,10)}T00:00:00Z`).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric",timeZone:"UTC"}) : "—";
+const fmtDate = v => v ? (() => { const d = new Date(`${String(v).slice(0,10)}T00:00:00Z`); const pad = n => String(n).padStart(2,"0"); return `${pad(d.getUTCDate())}-${pad(d.getUTCMonth()+1)}-${d.getUTCFullYear()}`; })() : "—";
 let cache = { config:null, requests:null, summary:null, adminBalances:null, policies:null, leaveTypes:null, delegations:null, ledger:null, calendarBranch:"" };
 let bound = false;
 let baseLoadPromise = null;
