@@ -746,6 +746,11 @@ label {
   padding: 16px;
 }
 
+/* The branch totals need extra width for the two currency columns. */
+.kpi.kpi-branch {
+  grid-column: span 2;
+}
+
 .kpi-branch-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -795,9 +800,12 @@ label {
   .kpi-branch-cell:first-child {
     padding-left: 0;
   }
-  .kpi.kpi-branch .kpi-branch-cell strong {
+  .kpi.kpi-branch   .kpi-branch-cell strong {
     font-size: 12px;
     letter-spacing: -0.3px;
+  }
+  .kpi.kpi-branch {
+    grid-column: span 1;
   }
 }
 
