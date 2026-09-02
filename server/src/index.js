@@ -2804,12 +2804,14 @@ app.put("/api/hr/admin/policies", requireHrAdmin, async (request,response,next)=
   try{
     const data=request.body||{}; const year=Number(data.year||new Date().getFullYear());
     const userName=String(data.userName||"").trim(); const code=String(data.leaveTypeCode||"").trim().toUpperCase();
+    const adjustmentStart=isoDate(data.adjustmentStartDate), adjustmentEnd=isoDate(data.adjustmentEndDate);
+    if((adjustmentStart&&!adjustmentEnd)||(!adjustmentStart&&adjustmentEnd)|| (adjustmentStart&&adjustmentEnd&&adjustmentEnd<adjustmentStart)) return response.status(400).json({ok:false,error:"A valid adjustment date range is required."});
     if(!userName||!code) return response.status(400).json({ok:false,error:"Employee and leave type are required."});
     const existing=(await query("select adjustment from hr_employee_leave_policies where lower(user_name)=lower($1) and leave_type_code=$2 and year=$3 limit 1",[userName,code,year])).rows[0];
     const previousAdjustment=Number(existing?.adjustment||0), nextAdjustment=Number(data.adjustment||0);
-    const saved=await query(`insert into hr_employee_leave_policies(user_name,leave_type_code,year,entitlement,carry_forward,adjustment,notes,created_by,created_at,updated_at)
-      values($1,$2,$3,$4,$5,$6,$7,$8,now(),now()) on conflict(user_name,leave_type_code,year) do update set entitlement=excluded.entitlement,carry_forward=excluded.carry_forward,adjustment=excluded.adjustment,notes=excluded.notes,updated_at=now() returning *`,
-      [userName,code,year,Number(data.entitlement||0),Number(data.carryForward||0),Number(data.adjustment||0),String(data.notes||"").trim(),request.appSession.userName]);
+    const saved=await query(`insert into hr_employee_leave_policies(user_name,leave_type_code,year,entitlement,carry_forward,adjustment,notes,adjustment_start_date,adjustment_end_date,created_by,created_at,updated_at)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) on conflict(user_name,leave_type_code,year) do update set entitlement=excluded.entitlement,carry_forward=excluded.carry_forward,adjustment=excluded.adjustment,notes=excluded.notes,adjustment_start_date=excluded.adjustment_start_date,adjustment_end_date=excluded.adjustment_end_date,updated_at=now() returning *`,
+      [userName,code,year,Number(data.entitlement||0),Number(data.carryForward||0),Number(data.adjustment||0),String(data.notes||"").trim(),adjustmentStart||null,adjustmentEnd||null,request.appSession.userName]);
     if(previousAdjustment!==nextAdjustment) await query(`insert into hr_leave_adjustment_audit(user_name,leave_type_code,year,previous_adjustment,new_adjustment,reason,adjusted_by)
       values($1,$2,$3,$4,$5,$6,$7)`,[userName,code,year,previousAdjustment,nextAdjustment,String(data.notes||"Manual HR adjustment").trim(),request.appSession.userName]);
     const balance=await hrBalanceForUser(userName,year,code);
@@ -3116,7 +3118,7 @@ async function start() {
   await ensurePortalSecret();
 
   app.listen(port, () => {
-    console.log(`ApolloFreightERP server running on port ${port}`);
+    console.log(`Apollo Freight Solutions Portal server running on port ${port}`);
   });
 }
 
