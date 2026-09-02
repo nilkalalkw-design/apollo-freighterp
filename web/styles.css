@@ -773,14 +773,16 @@ label {
   text-transform: uppercase;
 }
 
-.kpi-branch-cell strong {
+.kpi.kpi-branch .kpi-branch-cell strong {
   display: block;
   margin: 8px 0 3px;
   color: var(--blue);
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.15;
   white-space: nowrap;
   letter-spacing: -0.2px;
+  overflow: hidden;
+  text-overflow: clip;
 }
 
 @media (max-width: 600px) {
@@ -793,8 +795,8 @@ label {
   .kpi-branch-cell:first-child {
     padding-left: 0;
   }
-  .kpi-branch-cell strong {
-    font-size: 14px;
+  .kpi.kpi-branch .kpi-branch-cell strong {
+    font-size: 12px;
     letter-spacing: -0.3px;
   }
 }
