@@ -8,7 +8,11 @@ const esc = (v) => String(v ?? "").replace(/[&<>\"']/g, c => ({"&":"&amp;","<":"
 const session = () => { try { return JSON.parse(sessionStorage.getItem(HR_SESSION_KEY) || "null"); } catch { return null; } };
 const hrToken = () => String(session()?.token || "");
 const hrUser = () => String(session()?.userName || "");
-const hrAdmin = () => ["admin", "hr"].includes(String(session()?.role || "").toLowerCase()) && String(session()?.portal || "").toLowerCase() === "employee";
+const hrAdmin = () => {
+  const current = session() || {};
+  const role = String(current.role || "").toLowerCase();
+  return String(current.portal || "").toLowerCase() === "employee" && (["admin", "hr"].includes(role) || current.isHrAdmin === true);
+};
 const hrFetch = async (path, options = {}) => {
   const headers = { ...(options.headers || {}), Authorization: `Bearer ${hrToken()}` };
   if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";

@@ -2240,7 +2240,7 @@ app.get("/api/employee-profile-documents", requireEmployeePortalAuth, async (req
   const sessionUser = String(request.appSession?.userName || "").trim();
   const role = String(request.appSession?.role || "").toLowerCase();
   const requestedUser = String(request.query?.employee || "").trim();
-  const isAdmin = ["admin", "hr"].includes(role) && Boolean(request.appSession?.employeePortal);
+  const isAdmin = isHrAdminSession(request.appSession);
   if (!sessionUser) return response.status(401).json({ ok: false, error: "Login required." });
   const userName = isAdmin && requestedUser ? requestedUser : sessionUser;
   if (!isAdmin && requestedUser && requestedUser.toLowerCase() !== sessionUser.toLowerCase()) {
@@ -2263,7 +2263,7 @@ app.get("/api/employee-profile-documents", requireEmployeePortalAuth, async (req
 app.get("/api/employee-profile-documents/:documentNo/view", requireEmployeePortalAuth, async (request, response, next) => {
   const userName = String(request.appSession?.userName || "").trim();
   const role = String(request.appSession?.role || "").toLowerCase();
-  const isAdmin = ["admin", "hr"].includes(role) && Boolean(request.appSession?.employeePortal);
+  const isAdmin = isHrAdminSession(request.appSession);
   const documentNo = String(request.params.documentNo || "").trim();
   if (!userName || !documentNo) return response.status(400).json({ ok: false, error: "Document not found." });
   try {
@@ -2295,7 +2295,7 @@ app.post("/api/employee-profile-documents", requireEmployeePortalAuth, async (re
   const sessionUser = String(request.appSession?.userName || "").trim();
   const role = String(request.appSession?.role || "").toLowerCase();
   const requestedUser = String(request.body?.employeeUserName || "").trim();
-  const isAdmin = ["admin", "hr"].includes(role) && Boolean(request.appSession?.employeePortal);
+  const isAdmin = isHrAdminSession(request.appSession);
   const userName = isAdmin && requestedUser ? requestedUser : sessionUser;
   if (!sessionUser || (!isAdmin && requestedUser && requestedUser.toLowerCase() !== sessionUser.toLowerCase())) {
     return response.status(403).json({ ok: false, error: "You can only upload your own employee documents." });
@@ -2359,7 +2359,7 @@ app.delete("/api/employee-profile-documents/:documentNo", requireEmployeePortalA
   try {
     const sessionUser = String(request.appSession?.userName || "").trim();
     const role = String(request.appSession?.role || "").toLowerCase();
-    const isAdmin = ["admin", "hr"].includes(role) && Boolean(request.appSession?.employeePortal);
+    const isAdmin = isHrAdminSession(request.appSession);
     const documentNo = String(request.params.documentNo || "").trim();
     const documentItem = (await query("select document_no,linked_no,type from documents where document_no=$1 and type=any($2::text[]) limit 1", [documentNo, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]])).rows[0];
     if (!documentItem) return response.status(404).json({ok:false,error:"Employee document not found."});
@@ -2429,11 +2429,15 @@ app.post("/api/pod-documents", requireAppAuth, async (request, response, next) =
 
 
 // --- HR Leave Management ----------------------------------------------------
+function isHrAdminSession(session) {
+  const role = String(session?.role || "").toLowerCase();
+  return Boolean(session?.employeePortal && (["admin", "hr"].includes(role) || session?.isHrAdmin === true));
+}
+
 function requireHrAdmin(request, response, next) {
   const session = request.appSession || appAuthFromRequest(request);
-  const role = String(session?.role || "").toLowerCase();
   if (!session) return response.status(401).json({ ok: false, error: "Login required." });
-  if (!session.employeePortal || !["admin", "hr"].includes(role)) {
+  if (!isHrAdminSession(session)) {
     return response.status(403).json({ ok: false, error: "HR Admin access is required." });
   }
   request.appSession = session;
@@ -2442,7 +2446,7 @@ function requireHrAdmin(request, response, next) {
 
 async function canApproveLeave(session) {
   const role = String(session?.role || "").toLowerCase();
-  if (session?.employeePortal && ["admin", "hr"].includes(role)) return { allowed: true, delegated: false };
+  if (isHrAdminSession(session)) return { allowed: true, delegated: false };
   if (!session?.employeePortal || !session?.userName) return { allowed: false, delegated: false };
   const delegated = await query(
     `select id from hr_leave_delegations
@@ -2465,7 +2469,7 @@ function normalizeHrBranch(value) {
 
 function hrBranchForRequest(request, requestedBranch = "") {
   const role = String(request.appSession?.role || "").toLowerCase();
-  if (["admin", "hr"].includes(role) && String(requestedBranch || "").trim()) return normalizeHrBranch(requestedBranch);
+  if (isHrAdminSession(request.appSession) && String(requestedBranch || "").trim()) return normalizeHrBranch(requestedBranch);
   return normalizeHrBranch(String(request.appSession?.branchAccess || "").split(",")[0]);
 }
 
@@ -2602,7 +2606,7 @@ app.get("/api/hr/leave-ledger", requireEmployeePortalAuth, async (request, respo
   try {
     const requestedUser = String(request.query.userName || request.appSession.userName || "").trim();
     const role = String(request.appSession.role || "").toLowerCase();
-    if (requestedUser.toLowerCase() !== String(request.appSession.userName || "").toLowerCase() && !["admin", "hr"].includes(role)) return response.status(403).json({ok:false,error:"You can only view your own leave ledger."});
+    if (requestedUser.toLowerCase() !== String(request.appSession.userName || "").toLowerCase() && !isHrAdminSession(request.appSession)) return response.status(403).json({ok:false,error:"You can only view your own leave ledger."});
     const rows = (await query("select user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by,created_at from hr_leave_ledger where lower(user_name)=lower($1) order by created_at desc limit 100", [requestedUser])).rows;
     return response.json({ok:true,rows});
   } catch (error) { return next(error); }
