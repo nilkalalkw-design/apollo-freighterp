@@ -111,7 +111,13 @@
               Global search
               <input id="globalSearch" placeholder="Search shipment, waybill, invoice, customer" />
             </label>
-            <button id="changePasswordButton" type="button" class="secondary-button">Change Password</button>
+            <div class="top-action-stack">
+              <button id="changePasswordButton" type="button" class="secondary-button">Change Password</button>
+              <details id="erpAnnouncementsDropdown" class="erp-announcements-dropdown">
+                <summary>Latest Announcements</summary>
+                <div id="erpAnnouncementsList" class="erp-announcements-list"><span class="announcement-loading">Loading announcements...</span></div>
+              </details>
+            </div>
             <button id="logoutButton" type="button" class="navy-button">Logout</button>
           </div>
 

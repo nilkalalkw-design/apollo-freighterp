@@ -76,6 +76,8 @@ const userContextText = document.querySelector("#userContextText");
 const moduleContent = document.querySelector("#moduleContent");
 const apiBanner = document.querySelector("#apiBanner");
 const globalSearch = document.querySelector("#globalSearch");
+const erpAnnouncementsDropdown = document.querySelector("#erpAnnouncementsDropdown");
+const erpAnnouncementsList = document.querySelector("#erpAnnouncementsList");
 const fromDate = document.querySelector("#fromDate");
 const toDate = document.querySelector("#toDate");
 const applyFilters = document.querySelector("#applyFilters");
@@ -2222,6 +2224,7 @@ async function syncFromApi() {
       state.leaveRequests = (leaveRequests.rows || []).map(apiLeaveRequest);
       state.payslips = (payslips.rows || []).map(apiPayslip);
       state.hrAnnouncements = (hrAnnouncements.rows || []).map(apiHrAnnouncement);
+      renderErpAnnouncementsDropdown();
       state.employeeProfileDocuments = (employeeProfileDocuments.rows || []).map(apiDocument);
       if (settings.rows?.length) {
         state.settings = apiSettings(settings.rows[0]);
@@ -2597,6 +2600,17 @@ function apiPayslip(row) {
   };
 }
 
+function renderErpAnnouncementsDropdown() {
+  if (!erpAnnouncementsDropdown || !erpAnnouncementsList) return;
+  const session = currentSession();
+  const visible = Boolean(session?.token) && !isHrSession() && !isCustomerSession();
+  erpAnnouncementsDropdown.hidden = !visible;
+  if (!visible) return;
+  const announcements = [...(state.hrAnnouncements || [])].sort((a,b) => (b.pinned - a.pinned) || (b.postedAt || "").localeCompare(a.postedAt || ""));
+  erpAnnouncementsList.innerHTML = announcements.length
+    ? announcements.slice(0, 5).map(row => `<article class="erp-announcement-item${row.pinned ? " is-pinned" : ""}"><strong>${escapeHtml(row.pinned ? "Pinned: " : "")}${escapeHtml(row.title)}</strong><span>${escapeHtml(row.body)}</span><small>${escapeHtml(row.postedBy || "HR")} · ${escapeHtml(row.postedAt ? new Date(row.postedAt).toLocaleDateString() : "")}</small></article>`).join("")
+    : `<span class="announcement-empty">No announcements yet.</span>`;
+}
 function apiHrAnnouncement(row) {
   return {
     id: String(row.id),
@@ -2736,6 +2750,7 @@ function render() {
     "Post Announcement": renderHrAdminAnnouncements
   };
   moduleContent.innerHTML = (renderers[activeModule] || renderDashboard)();
+  renderErpAnnouncementsDropdown();
   window.__APOLLO_HR_RENDER = () => { if (typeof render === "function") render(); };
   // Lets hr-portal.js (a separate script, loaded independently) write to the same audit log as
   // the rest of the app after an HR Admin action - approvals, rejections, send-backs, holiday and
