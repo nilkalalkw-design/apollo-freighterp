@@ -2882,10 +2882,13 @@ app.put("/api/hr/admin/leave-types", requireHrAdmin, async (request,response,nex
 
 app.get("/api/hr/admin/policies", requireHrAdmin, async (request,response,next)=>{
   try{
-    const year=Number(request.query.year||new Date().getFullYear());
+    const yearParam=String(request.query.year||"").trim().toLowerCase();
+    const year=Number(yearParam||new Date().getFullYear());
     const types=(await query("select code,name,annual_entitlement,paid,allow_half_day,allow_during_probation,allow_carry_forward,max_carry_forward,allow_negative_balance,active from hr_leave_types order by id")).rows;
-    const policies=(await query("select * from hr_employee_leave_policies where year=$1 order by user_name,leave_type_code",[year])).rows;
-    return response.json({ok:true,year,types,policies});
+    const policies=yearParam==="all"
+      ? (await query("select * from hr_employee_leave_policies order by year desc,user_name,leave_type_code")).rows
+      : (await query("select * from hr_employee_leave_policies where year=$1 order by user_name,leave_type_code",[year])).rows;
+    return response.json({ok:true,year:yearParam==="all"?"all":year,types,policies});
   }catch(error){return next(error);}
 });
 
@@ -2896,13 +2899,20 @@ app.put("/api/hr/admin/policies", requireHrAdmin, async (request,response,next)=
     const adjustmentStart=isoDate(data.adjustmentStartDate), adjustmentEnd=isoDate(data.adjustmentEndDate);
     if((adjustmentStart&&!adjustmentEnd)||(!adjustmentStart&&adjustmentEnd)|| (adjustmentStart&&adjustmentEnd&&adjustmentEnd<adjustmentStart)) return response.status(400).json({ok:false,error:"A valid adjustment date range is required."});
     if(!userName||!code) return response.status(400).json({ok:false,error:"Employee and leave type are required."});
-    const existing=(await query("select adjustment from hr_employee_leave_policies where lower(user_name)=lower($1) and leave_type_code=$2 and year=$3 limit 1",[userName,code,year])).rows[0];
+    const recordId=Number(data.id||0);
+    const existing=(await query(recordId
+      ? "select adjustment from hr_employee_leave_policies where id=$1 limit 1"
+      : "select adjustment from hr_employee_leave_policies where lower(user_name)=lower($1) and leave_type_code=$2 and year=$3 limit 1",
+      recordId?[recordId]:[userName,code,year])).rows[0];
     const previousAdjustment=Number(existing?.adjustment||0), nextAdjustment=Number(data.adjustment||0);
     const previousUsedDays=Number(data.previousUsedDays||0);
     if(previousUsedDays<0) return response.status(400).json({ok:false,error:"Previous used leave cannot be negative."});
-    const saved=await query(`insert into hr_employee_leave_policies(user_name,leave_type_code,year,entitlement,carry_forward,adjustment,previous_used_days,notes,adjustment_start_date,adjustment_end_date,created_by,created_at,updated_at)
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now()) on conflict(user_name,leave_type_code,year) do update set entitlement=excluded.entitlement,carry_forward=excluded.carry_forward,adjustment=excluded.adjustment,previous_used_days=excluded.previous_used_days,notes=excluded.notes,adjustment_start_date=excluded.adjustment_start_date,adjustment_end_date=excluded.adjustment_end_date,updated_at=now() returning *`,
-      [userName,code,year,Number(data.entitlement||0),Number(data.carryForward||0),Number(data.adjustment||0),previousUsedDays,String(data.notes||"").trim(),adjustmentStart||null,adjustmentEnd||null,request.appSession.userName]);
+    const saved=recordId
+      ? await query(`update hr_employee_leave_policies set user_name=$1,leave_type_code=$2,year=$3,entitlement=$4,carry_forward=$5,adjustment=$6,previous_used_days=$7,notes=$8,adjustment_start_date=$9,adjustment_end_date=$10,updated_at=now() where id=$11 returning *`,
+        [userName,code,year,Number(data.entitlement||0),Number(data.carryForward||0),Number(data.adjustment||0),previousUsedDays,String(data.notes||"").trim(),adjustmentStart||null,adjustmentEnd||null,recordId])
+      : await query(`insert into hr_employee_leave_policies(user_name,leave_type_code,year,entitlement,carry_forward,adjustment,previous_used_days,notes,adjustment_start_date,adjustment_end_date,created_by,created_at,updated_at)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now()) on conflict(user_name,leave_type_code,year) do update set entitlement=excluded.entitlement,carry_forward=excluded.carry_forward,adjustment=excluded.adjustment,previous_used_days=excluded.previous_used_days,notes=excluded.notes,adjustment_start_date=excluded.adjustment_start_date,adjustment_end_date=excluded.adjustment_end_date,updated_at=now() returning *`,
+        [userName,code,year,Number(data.entitlement||0),Number(data.carryForward||0),Number(data.adjustment||0),previousUsedDays,String(data.notes||"").trim(),adjustmentStart||null,adjustmentEnd||null,request.appSession.userName]);
     if(previousAdjustment!==nextAdjustment) await query(`insert into hr_leave_adjustment_audit(user_name,leave_type_code,year,previous_adjustment,new_adjustment,reason,adjusted_by)
       values($1,$2,$3,$4,$5,$6,$7)`,[userName,code,year,previousAdjustment,nextAdjustment,String(data.notes||"Manual HR adjustment").trim(),request.appSession.userName]);
     const balance=await hrBalanceForUser(userName,year,code);
