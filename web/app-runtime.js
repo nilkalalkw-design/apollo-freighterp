@@ -1378,9 +1378,18 @@ function shipmentIsDelivered(row) { return !shipmentIsPartiallyDelivered(row) &&
 // so those existing behaviors are not touched.
 function shipmentStatusIsDelivered(row) { return shipmentStatusKey(row?.status) === "delivered"; }
 function shipmentIsInTransit(row) { return shipmentStatusKey(row?.status) === "in transit"; }
+function shipmentIsOpen(row) { return ["draft", "booked"].includes(shipmentStatusKey(row?.status)); }
 function shipmentPodIsUploaded(row) { return String(row?.podStatus || "").trim().toLowerCase() === "uploaded"; }
 function shipmentNeedsPendingPod(row) { return shipmentStatusIsDelivered(row) && !shipmentPodIsUploaded(row); }
+function shipmentHasApprovedInvoice(row) {
+  const jobNo = String(row?.jobNo || "").trim().toLowerCase();
+  return (state.invoices || []).some((invoiceRow) =>
+    String(invoiceRow?.shipmentNo || "").trim().toLowerCase() === jobNo
+    && String(invoiceRow?.status || "").trim().toLowerCase() === "approved"
+  );
+}
 function shipmentIsUnbilled(row) {
+  if (shipmentHasApprovedInvoice(row)) return false;
   const invoiceStatus = String(row?.invoiceStatus || "").trim().toLowerCase();
   return ["unbilled", "draft", "missing rate"].includes(invoiceStatus);
 }
@@ -3222,12 +3231,12 @@ function dashboardBranchKpi(title, invoiceRows, metric, valueForRow, caption) {
 function renderDashboard() {
   const rows = filteredRows(visibleRows(state.shipments));
   const invoiceRows = dashboardInvoiceRows();
-  const open = liveShipmentDataReady ? rows.length : "—";
+  const open = liveShipmentDataReady ? rows.filter(shipmentIsOpen).length : "—";
   const transit = liveShipmentDataReady ? rows.filter(shipmentIsInTransit).length : "—";
   const pod = liveShipmentDataReady ? rows.filter(shipmentNeedsPendingPod).length : "—";
   const unbilled = liveShipmentDataReady ? rows.filter(shipmentIsUnbilled).length : "—";
   const closedJobs = liveShipmentDataReady ? rows.filter(shipmentIsClosedJob).length : "—";
-  const liveShipmentCaption = liveShipmentDataReady ? "Live shipment records" : "Waiting for live data";
+  const liveShipmentCaption = liveShipmentDataReady ? "Draft and Booked jobs remaining" : "Waiting for live data";
   const pendingPodCaption = liveShipmentDataReady ? "Delivered but POD not uploaded" : "Waiting for live data";
   const unbilledCaption = liveShipmentDataReady ? "Invoice not completed" : "Waiting for live data";
   const closedJobsCaption = liveShipmentDataReady ? "Delivered + live POD uploaded" : "Waiting for live data";
@@ -3344,7 +3353,7 @@ function dashboardMetricConfig(metric) {
 
   const rows = filteredRows(visibleRows(state.shipments));
   if (metric === "open-shipments") {
-    const selected = liveShipmentDataReady ? rows : [];
+    const selected = liveShipmentDataReady ? rows.filter(shipmentIsOpen) : [];
     return {
       title: "Open Shipments",
       summary: "All live shipment records",
