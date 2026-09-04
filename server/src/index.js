@@ -8,6 +8,10 @@ const path = require("path");
 const { allowedOrigins, autoMigrate, configuredSecret, databaseHost, databaseUrl, databaseUrlSource, isCloudSqlSocket, isNeonDatabase, port } = require("./config");
 const { getPool, query, testConnection } = require("./db");
 const { runMigrations } = require("./migrate");
+const { authRouter: maintenanceAuthRouter } = require("./maintenance/routes/auth");
+const { expensesRouter: maintenanceExpensesRouter } = require("./maintenance/routes/expenses");
+const { usersRouter: maintenanceUsersRouter } = require("./maintenance/routes/users");
+const { vehiclesRouter: maintenanceVehiclesRouter } = require("./maintenance/routes/vehicles");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -94,9 +98,10 @@ if (allowedOrigins.includes("*")) {
 let customerPortalSecret = configuredSecret || "";
 
 async function ensurePortalSecret() {
-  if (customerPortalSecret) return customerPortalSecret;
-
   try {
+    // The unified PostgreSQL database is the single source of truth. This
+    // deliberately checks the database before any legacy Render environment
+    // secret so both ERP-issued and Maintenance-validated tokens converge.
     const existing = await query("select secret_value from system_secrets where secret_key = $1 limit 1", [
       "customer_portal_secret"
     ]);
@@ -122,9 +127,8 @@ async function ensurePortalSecret() {
     return customerPortalSecret;
   } catch (error) {
     console.warn(
-      `Could not persist a login secret to the database (${error.message}). Falling back to a per-process ` +
-      "secret - existing sessions will need to log in again after every restart until CUSTOMER_PORTAL_SECRET " +
-      "is set or the database/system_secrets table is reachable."
+      `Could not read or persist the shared login secret in the database (${error.message}). Falling back to the configured ` +
+      "secret - existing sessions require the same CUSTOMER_PORTAL_SECRET on every service."
     );
     customerPortalSecret = customerPortalSecret || crypto.randomBytes(32).toString("hex");
     runtimeStatus.loginSecret = "unstable";
@@ -3099,6 +3103,13 @@ app.post("/api/shipments", requireAppAuth, async (request, response, next) => {
     return next(error);
   }
 });
+
+// Maintenance is an ERP module: these routes use the ERP database and ERP-only HMAC handoff.
+// They must be mounted before the generic ERP resource handlers below.
+app.use("/api/maintenance/auth", maintenanceAuthRouter);
+app.use("/api/maintenance/expenses", maintenanceExpensesRouter);
+app.use("/api/maintenance/users", maintenanceUsersRouter);
+app.use("/api/maintenance/vehicles", maintenanceVehiclesRouter);
 
 app.get("/api/:resource", requireAppAuth, async (request, response, next) => {
   const resourceName = request.params.resource;
