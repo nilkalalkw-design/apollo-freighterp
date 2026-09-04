@@ -62,6 +62,7 @@ let customerPortalData = null;
 let sharedShipmentRefreshTimer = null;
 let sharedShipmentRefreshInProgress = false;
 let sharedShipmentRefreshEventsBound = false;
+let liveShipmentDataReady = false;
 
 const loginScreen = document.querySelector("#loginScreen");
 const appShell = document.querySelector("#appShell");
@@ -1377,9 +1378,29 @@ function shipmentIsDelivered(row) { return !shipmentIsPartiallyDelivered(row) &&
 // so those existing behaviors are not touched.
 function shipmentStatusIsDelivered(row) { return shipmentStatusKey(row?.status) === "delivered"; }
 function shipmentPodIsUploaded(row) { return String(row?.podStatus || "").trim().toLowerCase() === "uploaded"; }
-// "Closed Job" = Delivered status AND POD Uploaded, per the Dashboard Closed Jobs card and the
-// read-only-for-normal-users rule.
-function shipmentIsClosedJob(row) { return shipmentStatusIsDelivered(row) && shipmentPodIsUploaded(row); }
+function shipmentHasLiveUploadedPod(row) {
+  const jobNo = String(row?.jobNo || "").trim().toLowerCase();
+  const airwayBillNo = String(row?.airwayBillNo || "").trim().toLowerCase();
+  if (!jobNo && !airwayBillNo) return false;
+  return (state.documents || []).some((document) => {
+    if (String(document?.type || "").trim().toLowerCase() !== "pod") return false;
+    if (String(document?.status || "").trim().toLowerCase() !== "uploaded") return false;
+    if (!String(document?.storageUrl || "").trim()) return false;
+    // Historical AWB backfill rows carry status/file values but are synchronization artifacts,
+    // not distinct user uploads. Do not let them inflate the live Closed Jobs KPI.
+    if (/^POD-AWB-BACKFILL-/i.test(String(document?.documentNo || "").trim())) return false;
+    const linkedNo = String(document?.linkedNo || "").trim().toLowerCase();
+    if (linkedNo === jobNo) return true;
+    if (!airwayBillNo) return false;
+    const linkedShipment = (state.shipments || []).find((shipment) => String(shipment?.jobNo || "").trim().toLowerCase() === linkedNo);
+    return String(linkedShipment?.airwayBillNo || "").trim().toLowerCase() === airwayBillNo;
+  });
+}
+// "Closed Job" = Delivered status AND POD Uploaded AND a live uploaded POD file exists for the
+// shipment's AWB group. This prevents status-only/backfill rows from inflating the Dashboard KPI.
+function shipmentIsClosedJob(row) {
+  return shipmentStatusIsDelivered(row) && shipmentPodIsUploaded(row) && shipmentHasLiveUploadedPod(row);
+}
 // A normal (non-admin) user may edit a Delivered shipment until its POD is uploaded.
 // Once both conditions are complete, it becomes a Closed Job and only Admin can edit it.
 function shipmentIsReadOnlyForCurrentUser(row) { return shipmentIsClosedJob(row) && !isAdminSession(); }
@@ -2164,6 +2185,7 @@ function showLogin() {
 }
 
 function showApp() {
+  liveShipmentDataReady = false;
   loginScreen.classList.add("is-hidden");
   appShell.classList.remove("is-hidden");
   appShell.classList.toggle("hr-portal-theme", isHrSession());
@@ -2198,6 +2220,7 @@ async function refreshSharedShipmentData() {
     state.documents = (documents.rows || []).map(apiDocument);
     state.invoices = (invoices.rows || []).map(apiInvoice);
     state.shipmentStatusHistory = (shipmentStatusHistory.rows || []).map(apiShipmentStatusHistory);
+    liveShipmentDataReady = true;
     saveState();
     render();
   } catch {
@@ -2327,6 +2350,7 @@ async function syncFromApi() {
       state.hrAnnouncements = (hrAnnouncements.rows || []).map(apiHrAnnouncement);
       renderErpAnnouncementsDropdown();
       state.employeeProfileDocuments = (employeeProfileDocuments.rows || []).map(apiDocument);
+      liveShipmentDataReady = true;
       if (settings.rows?.length) {
         state.settings = apiSettings(settings.rows[0]);
         state.dropdownOptions = {
@@ -2338,6 +2362,7 @@ async function syncFromApi() {
     saveState();
     maybePlayAdminNotification();
   } catch (error) {
+    liveShipmentDataReady = false;
     state.api = { status: "API offline", database: "local data", mode: "browser", error: error.message };
   } finally {
     // Always clears, whichever branch ran (customer portal, success, or failure) - so the person
@@ -3195,7 +3220,8 @@ function renderDashboard() {
   const transit = rows.filter((row) => row.status === "In-Transit").length;
   const pod = rows.filter((row) => row.podStatus !== "Uploaded").length;
   const unbilled = rows.filter((row) => ["Unbilled", "Missing rate"].includes(row.invoiceStatus)).length;
-  const closedJobs = rows.filter(shipmentIsClosedJob).length;
+  const closedJobs = liveShipmentDataReady ? rows.filter(shipmentIsClosedJob).length : "—";
+  const closedJobsCaption = liveShipmentDataReady ? "Delivered + live POD uploaded" : "Waiting for live data";
   const pendingRequests = pendingRequestCount();
   const pendingCustomerRequests = state.shipmentRequests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(String(row.status || "").toUpperCase())).length;
   const pendingCharges = state.additionalCharges.filter((row) => row.status === "Pending Approval").length;
@@ -3214,7 +3240,7 @@ function renderDashboard() {
         ${kpi("In Transit", transit, "Your shipments moving", "in-transit")}
         ${kpi("Pending POD", pod, "Need delivery proof", "pending-pod")}
         ${kpi("Unbilled", unbilled, "Your jobs ready for billing", "unbilled")}
-        ${kpi("Closed Jobs", closedJobs, "Delivered with POD uploaded", "closed-jobs")}
+        ${kpi("Closed Jobs", closedJobs, closedJobsCaption, "closed-jobs")}
         ${kpi("Pending Requests", pendingRequests, "Your pending approvals", "pending-requests")}
         ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
       </section>
@@ -3227,7 +3253,7 @@ function renderDashboard() {
       ${kpi("In Transit", transit, "Currently moving", "in-transit")}
       ${kpi("Pending POD", pod, "Need delivery proof", "pending-pod")}
       ${kpi("Unbilled", unbilled, "Ready for billing review", "unbilled")}
-      ${kpi("Closed Jobs", closedJobs, "Delivered with POD uploaded", "closed-jobs")}
+      ${kpi("Closed Jobs", closedJobs, closedJobsCaption, "closed-jobs")}
       ${kpi("Pending Requests", pendingRequests, "Need admin action", "pending-requests")}
       ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
       ${kpi("Customer Portal", portalCustomerCount(), "Customer users", "customer-portal")}
@@ -3349,10 +3375,10 @@ function dashboardMetricConfig(metric) {
   }
 
   if (metric === "closed-jobs") {
-    const selected = rows.filter(shipmentIsClosedJob);
+    const selected = liveShipmentDataReady ? rows.filter(shipmentIsClosedJob) : [];
     return {
       title: "Closed Jobs",
-      summary: "Delivered shipments with POD uploaded",
+      summary: liveShipmentDataReady ? "Delivered shipments with a live uploaded POD" : "Waiting for live shipment and POD data",
       rows: selected,
       columns: dashboardShipmentColumns()
     };
