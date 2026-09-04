@@ -6764,12 +6764,21 @@ async function uploadPodDocument(jobNo, file, splitNo = "") {
     throw new Error("POD file must be 10 MB or smaller.");
   }
   const contentBase64 = await readFileAsBase64(file);
+  const shipmentForPod = state.shipments.find((row) => row.jobNo === jobNo);
   const result = await fetchJson("/api/pod-documents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jobNo, fileName: file.name, mimeType: file.type, contentBase64, splitNo: String(splitNo || "") })
+    body: JSON.stringify({ jobNo, airwayBillNo: shipmentForPod?.airwayBillNo || "", fileName: file.name, mimeType: file.type, contentBase64, splitNo: String(splitNo || "") })
   });
   const documentItem = apiDocument(result.row || {});
+  (Array.isArray(result.relatedRows) ? result.relatedRows : []).forEach((row) => {
+    const local = state.shipments.find((item) => item.jobNo === row.job_no || item.jobNo === row.jobNo);
+    if (local) Object.assign(local, apiShipment(row));
+  });
+  (Array.isArray(result.relatedDocuments) ? result.relatedDocuments : []).forEach((row) => {
+    const relatedDocument = apiDocument(row || {});
+    state.documents = [...state.documents.filter((item) => item.documentNo !== relatedDocument.documentNo), relatedDocument];
+  });
   // Only replace a document with the SAME document number (i.e. re-uploading the same split's
   // file) - different splits get different document numbers from the server, so their documents
   // co-exist instead of one overwriting another.
@@ -12142,16 +12151,19 @@ async function updateStatus(data) {
     notifyDenied("Shipment not found", "Select a valid Job No.");
     return false;
   }
-
   const newStatus = String(data.status || shipmentItem.status).trim();
   const oldStatus = shipmentItem.status;
-  if (newStatus.toLowerCase() === String(oldStatus || "").trim().toLowerCase()) {
+  const airwayBillNo = String(shipmentItem.airwayBillNo || "").trim();
+  const normalizedAwb = airwayBillNo.toLowerCase();
+  const awbGroup = normalizedAwb
+    ? state.shipments.filter((row) => String(row.airwayBillNo || "").trim().toLowerCase() === normalizedAwb)
+    : [shipmentItem];
+  if (newStatus.toLowerCase() === String(oldStatus || "").trim().toLowerCase() && (!airwayBillNo || awbGroup.every((row) => String(row.status || "").trim().toLowerCase() === newStatus.toLowerCase()))) {
     notifyDenied("Status already selected", `${jobNo} is already ${oldStatus}. Choose a different status to create a new journey update.`);
     return false;
   }
   const remark = data.notes || "";
   const entryDate = data.date || today();
-  shipmentItem.status = newStatus;
   if (isBranchTransferStatus(newStatus) && !data.expectedArrivalDate && !shipmentItem.expectedArrivalDate) {
     notifyDenied("Expected arrival required", "Enter the expected arrival date before dispatching this shipment to the receiving branch.");
     return false;
@@ -12160,26 +12172,55 @@ async function updateStatus(data) {
     shipmentItem.receivingBranch = shipmentReceivingBranch(shipmentItem);
     if (data.expectedArrivalDate) shipmentItem.expectedArrivalDate = data.expectedArrivalDate;
   }
-  shipmentItem.notes = shipmentMetaNotes(shipmentItem);
-  await persistRecord("shipment", shipmentItem);
-
-  const historyEntry = {
-    jobNo,
-    status: newStatus,
-    podStatus: shipmentItem.podStatus,
-    invoiceStatus: shipmentItem.invoiceStatus,
-    notes: remark,
-    updatedBy: currentUserName(),
-    updatedAt: entryDate
-  };
-  state.shipmentStatusHistory.unshift(historyEntry);
-  await postRecord("statusHistory", historyEntry);
-
-  const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}${shipmentItem.expectedArrivalDate ? ` | expected arrival: ${shipmentItem.expectedArrivalDate}` : ""}`;
-  addHistory("Updated shipment status", `${jobNo} -> ${newStatus}`, statusDetails);
-  notifySuccess("Status updated", `${jobNo} is now ${newStatus}.`);
+  if (!airwayBillNo) {
+    shipmentItem.status = newStatus;
+    shipmentItem.notes = shipmentMetaNotes(shipmentItem);
+    const saved = await persistRecord("shipment", shipmentItem);
+    if (!saved) return false;
+  } else {
+    try {
+      const result = await fetchJson("/api/shipments/status-by-awb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ airwayBillNo, status: newStatus, notes: remark, updatedBy: currentUserName(), updatedAt: entryDate })
+      });
+      const serverRows = Array.isArray(result.rows) ? result.rows : [];
+      if (serverRows.length) {
+        serverRows.forEach((row) => {
+          const local = state.shipments.find((item) => item.jobNo === row.job_no || item.jobNo === row.jobNo);
+          if (local) Object.assign(local, apiShipment(row));
+        });
+      } else {
+        awbGroup.forEach((row) => {
+          row.status = newStatus;
+          row.notes = shipmentMetaNotes(row);
+        });
+      }
+    } catch (error) {
+      notifyDenied("Status not saved", error.message || "The Airway Bill status could not be updated.");
+      return false;
+    }
+  }
+  const updatedGroup = airwayBillNo ? awbGroup : [shipmentItem];
+  for (const row of updatedGroup) {
+    const historyEntry = {
+      jobNo: row.jobNo,
+      status: newStatus,
+      podStatus: row.podStatus,
+      invoiceStatus: row.invoiceStatus,
+      notes: airwayBillNo ? (remark ? `${remark} | AWB ${airwayBillNo}` : `Updated by AWB ${airwayBillNo}`) : remark,
+      updatedBy: currentUserName(),
+      updatedAt: entryDate
+    };
+    state.shipmentStatusHistory.unshift(historyEntry);
+    if (!airwayBillNo) await postRecord("statusHistory", historyEntry);
+  }
+  const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}${airwayBillNo ? ` | AWB ${airwayBillNo} | ${updatedGroup.length} shipment(s) updated` : ""}${shipmentItem.expectedArrivalDate ? ` | expected arrival: ${shipmentItem.expectedArrivalDate}` : ""}`;
+  addHistory("Updated shipment status", `${airwayBillNo ? `AWB ${airwayBillNo}` : jobNo} -> ${newStatus}`, statusDetails);
+  notifySuccess("Status updated", airwayBillNo ? `AWB ${airwayBillNo} and ${updatedGroup.length} related shipment(s) are now ${newStatus}.` : `${jobNo} is now ${newStatus}.`);
   state.ui.expandedStatusJob = jobNo;
 }
+
 
 // Manifest ("load") status update - deliberately separate from the normal Edit Manifest dialog
 // save path, which routes non-admin changes through an admin-approval request (see

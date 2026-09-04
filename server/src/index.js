@@ -6,7 +6,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const path = require("path");
 const { allowedOrigins, autoMigrate, configuredSecret, databaseHost, databaseUrl, databaseUrlSource, isCloudSqlSocket, isNeonDatabase, port } = require("./config");
-const { query, testConnection } = require("./db");
+const { getPool, query, testConnection } = require("./db");
 const { runMigrations } = require("./migrate");
 
 const app = express();
@@ -2379,6 +2379,7 @@ app.post("/api/pod-documents", requireAppAuth, async (request, response, next) =
   // per split). Optional for backward compatibility - omitting it keeps the old single-POD-per-
   // shipment behavior (overwrites any previous POD for that job).
   const splitNo = String(request.body?.splitNo || "").trim();
+  const requestedAirwayBillNo = String(request.body?.airwayBillNo || request.body?.airway_bill_no || "").trim();
   const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
   if (!userName || !jobNo || !fileName || !contentBase64 || !allowedTypes.has(mimeType)) {
     return response.status(400).json({ ok: false, error: "POD file must be a PDF, JPG, JPEG, or PNG file." });
@@ -2387,7 +2388,7 @@ app.post("/api/pod-documents", requireAppAuth, async (request, response, next) =
   if (!cloudinary) return response.status(503).json({ ok: false, error: "Cloudinary is not configured on the server." });
 
   try {
-    const shipment = await query("select job_no from shipments where lower(job_no) = lower($1) limit 1", [jobNo]);
+    const shipment = await query("select job_no, airway_bill_no from shipments where lower(job_no) = lower($1) limit 1", [jobNo]);
     if (!shipment.rows[0]) return response.status(404).json({ ok: false, error: "Shipment not found." });
     const fileBuffer = Buffer.from(contentBase64, "base64");
     if (!fileBuffer.length || fileBuffer.length > 10 * 1024 * 1024) {
@@ -2420,7 +2421,33 @@ app.post("/api/pod-documents", requireAppAuth, async (request, response, next) =
        returning document_no, linked_no, type, status, date, owner, file_name, storage_url, notes, created_at`,
       [documentNo, jobNo, userName, fileName, uploaded.secure_url, notes]
     );
-    return response.status(201).json({ ok: true, row: saved.rows[0] });
+    const airwayBillNo = String(shipment.rows[0].airway_bill_no || requestedAirwayBillNo).trim();
+    let relatedRows = [shipment.rows[0]];
+    let relatedDocuments = [saved.rows[0]];
+    if (airwayBillNo) {
+      const grouped = await withDatabaseTransaction(async (client) => {
+        const updated = await client.query(
+          "update shipments set status = 'Delivered', pod_status = 'Uploaded', updated_at = now() where lower(trim(airway_bill_no)) = lower(trim($1)) returning *",
+          [airwayBillNo]
+        );
+        for (const related of updated.rows) {
+          const relatedJobPart = safeEmployeeDocumentPart(related.job_no);
+          const relatedDocumentNo = splitNo ? `POD-${relatedJobPart.toUpperCase()}-${safeEmployeeDocumentPart(splitNo).toUpperCase()}` : `POD-${relatedJobPart.toUpperCase()}`;
+          const relatedDocument = await client.query(
+            `insert into documents (document_no, linked_no, type, status, date, owner, file_name, storage_url, notes, created_by)
+             values ($1, $2, 'POD', 'Uploaded', current_date, $3, $4, $5, $6, $3)
+             on conflict (document_no) do update set file_name = excluded.file_name, storage_url = excluded.storage_url, notes = excluded.notes, status = 'Uploaded', date = current_date, owner = excluded.owner, updated_at = now()
+             returning document_no, linked_no, type, status, date, owner, file_name, storage_url, notes, created_at`,
+            [relatedDocumentNo, related.job_no, userName, fileName, uploaded.secure_url, notes]
+          );
+          relatedDocuments.push(relatedDocument.rows[0]);
+        }
+        return { rows: updated.rows, documents: relatedDocuments };
+      });
+      relatedRows = grouped.rows;
+      relatedDocuments = grouped.documents;
+    }
+    return response.status(201).json({ ok: true, row: saved.rows[0], airwayBillNo, relatedRows, relatedDocuments });
   } catch (error) {
     return next(error);
   }
@@ -2999,6 +3026,59 @@ async function findBlockedCustomer(customerName, branch) {
   return null;
 }
 
+async function withDatabaseTransaction(work) {
+  const client = await getPool().connect();
+  try {
+    await client.query("begin");
+    const result = await work(client);
+    await client.query("commit");
+    return result;
+  } catch (error) {
+    try { await client.query("rollback"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+app.post("/api/shipments/status-by-awb", requireAppAuth, async (request, response, next) => {
+  try {
+    const airwayBillNo = String(request.body?.airwayBillNo ?? request.body?.airway_bill_no ?? "").trim();
+    const newStatus = String(request.body?.status || "").trim();
+    const updatedBy = String(request.body?.updatedBy || request.appSession?.userName || "system").trim();
+    const updatedAt = String(request.body?.updatedAt || new Date().toISOString()).trim();
+    const notes = String(request.body?.notes || "").trim();
+    if (!airwayBillNo) return response.status(400).json({ ok: false, error: "An Airway Bill number is required." });
+    if (!newStatus) return response.status(400).json({ ok: false, error: "A shipment status is required." });
+    const rows = await withDatabaseTransaction(async (client) => {
+      const found = await client.query("select * from shipments where lower(trim(airway_bill_no)) = lower(trim($1)) order by job_no for update", [airwayBillNo]);
+      if (!found.rows.length) {
+        const error = new Error("No shipments were found for this Airway Bill number.");
+        error.status = 404;
+        throw error;
+      }
+      const updated = [];
+      for (const current of found.rows) {
+        const oldStatus = String(current.status || "").trim();
+        if (oldStatus.toLowerCase() !== newStatus.toLowerCase()) {
+          const saved = await client.query("update shipments set status = $1, updated_at = now() where job_no = $2 returning *", [newStatus, current.job_no]);
+          const row = saved.rows[0];
+          updated.push(row);
+          await client.query(
+            "insert into shipment_status_history (job_no, status, pod_status, invoice_status, notes, updated_by, updated_at) values ($1, $2, $3, $4, $5, $6, $7)",
+            [row.job_no, newStatus, row.pod_status || "", row.invoice_status || "", notes ? `${notes} | AWB ${airwayBillNo}` : `Updated by AWB ${airwayBillNo}`, updatedBy, updatedAt]
+          );
+        } else {
+          updated.push(current);
+        }
+      }
+      return updated;
+    });
+    response.json({ ok: true, airwayBillNo, rows });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) return response.json({ ok: true, mode: "demo", airwayBillNo: request.body?.airwayBillNo || "", rows: [] });
+    return next(error);
+  }
+});
 app.post("/api/shipments", requireAppAuth, async (request, response, next) => {
   try {
     const customerName = request.body?.customer || request.body?.customerName || "";
