@@ -2167,7 +2167,8 @@ async function switchPortal(target) {
       notifyDenied("Access denied", "Maintenance Portal access is not enabled for this account. Contact Company Management.");
       return;
     }
-    const maintenanceWindow = window.open(MAINTENANCE_PORTAL_URL, "_blank", "noopener,noreferrer");
+    const handoffUrl = `${MAINTENANCE_PORTAL_URL}#erpToken=${encodeURIComponent(session.token || "")}`;
+    const maintenanceWindow = window.open(handoffUrl, "_blank", "noopener,noreferrer");
     if (!maintenanceWindow) {
       notifyDenied("Maintenance Portal", "The browser blocked the new tab. Please allow pop-ups for this ERP portal and try again.");
     }
