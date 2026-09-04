@@ -1377,7 +1377,13 @@ function shipmentIsDelivered(row) { return !shipmentIsPartiallyDelivered(row) &&
 // above (which also matches completed/closed/invoiced and drives unrelated alert/arrival logic)
 // so those existing behaviors are not touched.
 function shipmentStatusIsDelivered(row) { return shipmentStatusKey(row?.status) === "delivered"; }
+function shipmentIsInTransit(row) { return shipmentStatusKey(row?.status) === "in transit"; }
 function shipmentPodIsUploaded(row) { return String(row?.podStatus || "").trim().toLowerCase() === "uploaded"; }
+function shipmentNeedsPendingPod(row) { return shipmentStatusIsDelivered(row) && !shipmentPodIsUploaded(row); }
+function shipmentIsUnbilled(row) {
+  const invoiceStatus = String(row?.invoiceStatus || "").trim().toLowerCase();
+  return ["unbilled", "draft", "missing rate"].includes(invoiceStatus);
+}
 function shipmentHasLiveUploadedPod(row) {
   const jobNo = String(row?.jobNo || "").trim().toLowerCase();
   const airwayBillNo = String(row?.airwayBillNo || "").trim().toLowerCase();
@@ -3216,11 +3222,14 @@ function dashboardBranchKpi(title, invoiceRows, metric, valueForRow, caption) {
 function renderDashboard() {
   const rows = filteredRows(visibleRows(state.shipments));
   const invoiceRows = dashboardInvoiceRows();
-  const open = rows.filter((row) => ["Draft", "Booked"].includes(row.status)).length;
-  const transit = rows.filter((row) => row.status === "In-Transit").length;
-  const pod = rows.filter((row) => row.podStatus !== "Uploaded").length;
-  const unbilled = rows.filter((row) => ["Unbilled", "Missing rate"].includes(row.invoiceStatus)).length;
+  const open = liveShipmentDataReady ? rows.length : "—";
+  const transit = liveShipmentDataReady ? rows.filter(shipmentIsInTransit).length : "—";
+  const pod = liveShipmentDataReady ? rows.filter(shipmentNeedsPendingPod).length : "—";
+  const unbilled = liveShipmentDataReady ? rows.filter(shipmentIsUnbilled).length : "—";
   const closedJobs = liveShipmentDataReady ? rows.filter(shipmentIsClosedJob).length : "—";
+  const liveShipmentCaption = liveShipmentDataReady ? "Live shipment records" : "Waiting for live data";
+  const pendingPodCaption = liveShipmentDataReady ? "Delivered but POD not uploaded" : "Waiting for live data";
+  const unbilledCaption = liveShipmentDataReady ? "Invoice not completed" : "Waiting for live data";
   const closedJobsCaption = liveShipmentDataReady ? "Delivered + live POD uploaded" : "Waiting for live data";
   const pendingRequests = pendingRequestCount();
   const pendingCustomerRequests = state.shipmentRequests.filter((row) => ["SUBMITTED", "PENDING_REVIEW"].includes(String(row.status || "").toUpperCase())).length;
@@ -3236,10 +3245,10 @@ function renderDashboard() {
   if (!isAdminSession()) {
     return `
       <section class="kpi-grid">
-        ${kpi("Open Shipments", open, "Your draft and booked jobs", "open-shipments")}
-        ${kpi("In Transit", transit, "Your shipments moving", "in-transit")}
-        ${kpi("Pending POD", pod, "Need delivery proof", "pending-pod")}
-        ${kpi("Unbilled", unbilled, "Your jobs ready for billing", "unbilled")}
+        ${kpi("Open Shipments", open, liveShipmentCaption, "open-shipments")}
+        ${kpi("In Transit", transit, "Status: In-Transit", "in-transit")}
+        ${kpi("Pending POD", pod, pendingPodCaption, "pending-pod")}
+        ${kpi("Unbilled", unbilled, unbilledCaption, "unbilled")}
         ${kpi("Closed Jobs", closedJobs, closedJobsCaption, "closed-jobs")}
         ${kpi("Pending Requests", pendingRequests, "Your pending approvals", "pending-requests")}
         ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
@@ -3249,10 +3258,10 @@ function renderDashboard() {
   }
   return `
     <section class="kpi-grid">
-      ${kpi("Open Shipments", open, "Draft and booked jobs", "open-shipments")}
-      ${kpi("In Transit", transit, "Currently moving", "in-transit")}
-      ${kpi("Pending POD", pod, "Need delivery proof", "pending-pod")}
-      ${kpi("Unbilled", unbilled, "Ready for billing review", "unbilled")}
+      ${kpi("Open Shipments", open, liveShipmentCaption, "open-shipments")}
+      ${kpi("In Transit", transit, "Status: In-Transit", "in-transit")}
+      ${kpi("Pending POD", pod, pendingPodCaption, "pending-pod")}
+      ${kpi("Unbilled", unbilled, unbilledCaption, "unbilled")}
       ${kpi("Closed Jobs", closedJobs, closedJobsCaption, "closed-jobs")}
       ${kpi("Pending Requests", pendingRequests, "Need admin action", "pending-requests")}
       ${kpi("Customer Requests", pendingCustomerRequests, "Shipment requests to review", "customer-requests")}
@@ -3335,40 +3344,40 @@ function dashboardMetricConfig(metric) {
 
   const rows = filteredRows(visibleRows(state.shipments));
   if (metric === "open-shipments") {
-    const selected = rows.filter((row) => ["Draft", "Booked"].includes(row.status));
+    const selected = liveShipmentDataReady ? rows : [];
     return {
       title: "Open Shipments",
-      summary: "Draft and booked shipments",
+      summary: "All live shipment records",
       rows: selected,
       columns: dashboardShipmentColumns()
     };
   }
 
   if (metric === "in-transit") {
-    const selected = rows.filter((row) => row.status === "In-Transit");
+    const selected = liveShipmentDataReady ? rows.filter(shipmentIsInTransit) : [];
     return {
       title: "In Transit",
-      summary: "Shipments currently moving",
+      summary: "Shipments whose status is In-Transit",
       rows: selected,
       columns: dashboardShipmentColumns()
     };
   }
 
   if (metric === "pending-pod") {
-    const selected = rows.filter((row) => row.podStatus !== "Uploaded");
+    const selected = liveShipmentDataReady ? rows.filter(shipmentNeedsPendingPod) : [];
     return {
       title: "Pending POD",
-      summary: "Shipments waiting for delivery proof",
+      summary: "Delivered shipments whose POD is not uploaded",
       rows: selected,
       columns: dashboardShipmentColumns()
     };
   }
 
   if (metric === "unbilled") {
-    const selected = rows.filter((row) => ["Unbilled", "Missing rate"].includes(row.invoiceStatus));
+    const selected = liveShipmentDataReady ? rows.filter(shipmentIsUnbilled) : [];
     return {
       title: "Unbilled",
-      summary: "Shipments waiting for invoice completion",
+      summary: "Shipments whose invoice is not completed",
       rows: selected,
       columns: dashboardShipmentColumns()
     };
