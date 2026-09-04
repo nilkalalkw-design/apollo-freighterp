@@ -1381,16 +1381,17 @@ function shipmentIsInTransit(row) { return shipmentStatusKey(row?.status) === "i
 function shipmentIsOpen(row) { return ["draft", "booked"].includes(shipmentStatusKey(row?.status)); }
 function shipmentPodIsUploaded(row) { return String(row?.podStatus || "").trim().toLowerCase() === "uploaded"; }
 function shipmentNeedsPendingPod(row) { return shipmentStatusIsDelivered(row) && !shipmentPodIsUploaded(row); }
-function shipmentHasApprovedInvoice(row) {
+function shipmentInvoiceRecord(row) {
   const jobNo = String(row?.jobNo || "").trim().toLowerCase();
-  return (state.invoices || []).some((invoiceRow) =>
-    String(invoiceRow?.shipmentNo || "").trim().toLowerCase() === jobNo
-    && String(invoiceRow?.status || "").trim().toLowerCase() === "approved"
-  );
+  return (state.invoices || []).find((invoiceRow) => String(invoiceRow?.shipmentNo || "").trim().toLowerCase() === jobNo);
+}
+function shipmentHasApprovedInvoice(row) {
+  return String(shipmentInvoiceRecord(row)?.status || "").trim().toLowerCase() === "approved";
 }
 function shipmentIsUnbilled(row) {
-  if (shipmentHasApprovedInvoice(row)) return false;
-  const invoiceStatus = String(row?.invoiceStatus || "").trim().toLowerCase();
+  const linkedInvoice = shipmentInvoiceRecord(row);
+  if (linkedInvoice && shipmentHasApprovedInvoice(row)) return false;
+  const invoiceStatus = String(linkedInvoice?.status || row?.invoiceStatus || "").trim().toLowerCase();
   return ["unbilled", "draft", "missing rate"].includes(invoiceStatus);
 }
 function shipmentHasLiveUploadedPod(row) {
