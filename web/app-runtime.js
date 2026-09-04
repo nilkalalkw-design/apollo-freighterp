@@ -776,9 +776,9 @@ function documentRow(documentNo, linkedNo, type, status, date, owner, fileName =
   return { documentNo, linkedNo, type, status, date, owner, fileName, createdBy };
 }
 
-// Documents keep their stored document number and linked job number unchanged. The register's
-// "Linked To" column is a live display value resolved from the shipment so it can show the AWB
-// that drives the existing AWB-wide status/POD synchronization together with the related job.
+// Documents keep their stored document number and linked job number unchanged. The register derives
+// the AWB group from the linked shipment so one uploaded POD can show every related job without
+// exposing the synchronized per-job clone rows as separate document records.
 function documentLinkedShipment(row) {
   const linkedNo = String(row?.linkedNo || "").trim();
   if (!linkedNo) return { airwayBillNo: "", jobNo: "" };
@@ -790,19 +790,90 @@ function documentLinkedShipment(row) {
     jobNo: String(shipment?.jobNo || (String(linkedNo).toUpperCase().startsWith("AWB") ? "" : linkedNo)).trim()
   };
 }
-
+function documentLinkedJobNumbers(row) {
+  const { airwayBillNo, jobNo } = documentLinkedShipment(row);
+  const normalizedAwb = airwayBillNo.toLowerCase();
+  const relatedJobs = normalizedAwb
+    ? (state.shipments || [])
+      .filter((item) => String(item?.airwayBillNo || "").trim().toLowerCase() === normalizedAwb)
+      .map((item) => String(item?.jobNo || "").trim())
+      .filter(Boolean)
+    : [];
+  return [...new Set(relatedJobs.length ? relatedJobs : (jobNo ? [jobNo] : []))];
+}
 function documentLinkedToText(row) {
   const linkedNo = String(row?.linkedNo || "").trim();
-  const { airwayBillNo, jobNo } = documentLinkedShipment(row);
-  if (airwayBillNo && jobNo) return `${airwayBillNo} | ${jobNo}`;
-  return airwayBillNo || jobNo || linkedNo;
+  const { airwayBillNo } = documentLinkedShipment(row);
+  const jobNumbers = documentLinkedJobNumbers(row);
+  if (airwayBillNo && jobNumbers.length) return `${airwayBillNo} | Job: ${jobNumbers.join(", ")}`;
+  return airwayBillNo || jobNumbers.join(", ") || linkedNo;
 }
-
 function documentLinkedToMarkup(row) {
   const linkedText = documentLinkedToText(row);
   if (!linkedText) return `<span class="empty-state">-</span>`;
-  const { airwayBillNo, jobNo } = documentLinkedShipment(row);
-  return `<span class="document-linked-to" title="${escapeHtml(linkedText)}">${airwayBillNo ? `<strong>${escapeHtml(airwayBillNo)}</strong>` : ""}${jobNo ? `<small>Job: ${escapeHtml(jobNo)}</small>` : ""}</span>`;
+  const { airwayBillNo } = documentLinkedShipment(row);
+  const jobNumbers = documentLinkedJobNumbers(row);
+  const separator = airwayBillNo && jobNumbers.length ? " | " : "";
+  return `<span class="document-linked-to" title="${escapeHtml(linkedText)}">${airwayBillNo ? `<strong>${escapeHtml(airwayBillNo)}</strong>` : ""}${separator}${jobNumbers.length ? `<span>Job: ${escapeHtml(jobNumbers.join(", "))}</span>` : ""}</span>`;
+}
+function documentRegisterGroupingKey(row) {
+  if (String(row?.type || "").trim().toLowerCase() !== "pod") return "";
+  const storageUrl = String(row?.storageUrl || "").trim();
+  if (!storageUrl) return "";
+  const { airwayBillNo } = documentLinkedShipment(row);
+  return `${airwayBillNo.toLowerCase()}|${storageUrl}`;
+}
+function documentRowIsSynthetic(row) {
+  return /^POD-AWB-BACKFILL-/i.test(String(row?.documentNo || "").trim());
+}
+function documentRowIsOriginalJob(row) {
+  const documentNo = String(row?.documentNo || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const linkedNo = String(row?.linkedNo || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return Boolean(linkedNo && documentNo.startsWith(`pod${linkedNo}`));
+}
+function documentRowCreatedTime(row) {
+  const createdAt = String(row?.createdAt || "").trim();
+  const time = createdAt ? Date.parse(createdAt) : Number.NaN;
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+}
+function preferredDocumentRow(candidate, current) {
+  if (!current) return candidate;
+  if (documentRowIsSynthetic(candidate) !== documentRowIsSynthetic(current)) {
+    return documentRowIsSynthetic(candidate) ? current : candidate;
+  }
+  if (documentRowIsOriginalJob(candidate) !== documentRowIsOriginalJob(current)) {
+    return documentRowIsOriginalJob(candidate) ? candidate : current;
+  }
+  return documentRowCreatedTime(candidate) < documentRowCreatedTime(current) ? candidate : current;
+}
+function documentRegisterRows(rows) {
+  const result = [];
+  const grouped = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const isPod = String(row?.type || "").trim().toLowerCase() === "pod";
+    // AWB backfill rows are synchronization artifacts, not separate user uploads. They remain in
+    // state so shipment/POD operations are intact, but the Documents register must show the
+    // original uploaded file only.
+    if (isPod && documentRowIsSynthetic(row)) return;
+    const groupKey = documentRegisterGroupingKey(row);
+    if (!groupKey) {
+      result.push(row);
+      return;
+    }
+    const current = grouped.get(groupKey);
+    if (!current) {
+      grouped.set(groupKey, row);
+      result.push(row);
+      return;
+    }
+    const preferred = preferredDocumentRow(row, current);
+    if (preferred !== current) {
+      const currentIndex = result.indexOf(current);
+      if (currentIndex >= 0) result[currentIndex] = preferred;
+      grouped.set(groupKey, preferred);
+    }
+  });
+  return result;
 }
 
 function additionalCharge(
@@ -1286,7 +1357,8 @@ function filteredRows(rows) {
   const to = toDate.value;
   return rows.filter((row) => {
     const date = recordDate(row);
-    const textMatch = !query || Object.values(row).join(" ").toLowerCase().includes(query);
+    const derivedSearchText = row?.type === "POD" ? documentLinkedToText(row) : "";
+    const textMatch = !query || `${Object.values(row).join(" ")} ${derivedSearchText}`.toLowerCase().includes(query);
     const fromMatch = !from || !date || date >= from;
     const toMatch = !to || !date || date <= to;
     return textMatch && fromMatch && toMatch && adminBranchFilterMatch(row);
@@ -2380,6 +2452,7 @@ function apiDocument(row) {
   const item = documentRow(row.document_no, row.linked_no, row.type, row.status, String(row.date || today()).slice(0, 10), row.owner, row.file_name || "", row.owner || "admin");
   item.fileName = row.file_name || "";
   item.storageUrl = row.storage_url || "";
+  item.createdAt = row.created_at || "";
   return item;
 }
 
@@ -3588,7 +3661,7 @@ function renderTariffs() {
 }
 
 function renderDocuments() {
-  const rows = filteredRows(visibleRows(state.documents));
+  const rows = filteredRows(documentRegisterRows(visibleRows(state.documents)));
   return `
     <section class="split-grid wide-left">
       <article class="panel">${panelHeader("Document Library", "Attachments")} ${registerColumnSettingsMarkup("document", "Document Register columns", defaultColumnLayouts().document)} ${table("document", rows, documentColumns(), false, "document")}</article>
@@ -5324,7 +5397,7 @@ function collectionFor(type) {
     customers: state.customers,
     suppliers: state.suppliers,
     tariff: visibleRows(state.tariffs),
-    document: visibleRows(state.documents),
+    document: documentRegisterRows(visibleRows(state.documents)),
     charge: visibleRows(state.additionalCharges),
     invoice: visibleRows(state.invoices),
     quotation: visibleRows(state.quotations),
