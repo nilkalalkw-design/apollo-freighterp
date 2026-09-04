@@ -3,6 +3,18 @@
   "cleanUrls": true,
   "rewrites": [
     {
+      "source": "/maintenance",
+      "destination": "/web/maintenance/index.html"
+    },
+    {
+      "source": "/maintenance/",
+      "destination": "/web/maintenance/index.html"
+    },
+    {
+      "source": "/maintenance/assets/(.*)",
+      "destination": "/web/maintenance/assets/$1"
+    },
+    {
       "source": "/app.js",
       "destination": "/web/app.js"
     },
