@@ -2431,10 +2431,6 @@ app.post("/api/pod-documents", requireAppAuth, async (request, response, next) =
           [airwayBillNo]
         );
         for (const related of updated.rows) {
-          await client.query(
-            "insert into shipment_status_history (job_no, status, pod_status, invoice_status, notes, updated_by, updated_at) values ($1, 'Delivered', 'Uploaded', $2, $3, $4, now())",
-            [related.job_no, related.invoice_status || "", `POD uploaded for AWB ${airwayBillNo}; shared across the AWB group`, userName]
-          );
           const relatedJobPart = safeEmployeeDocumentPart(related.job_no);
           const relatedDocumentNo = splitNo ? `POD-${relatedJobPart.toUpperCase()}-${safeEmployeeDocumentPart(splitNo).toUpperCase()}` : `POD-${relatedJobPart.toUpperCase()}`;
           const relatedDocument = await client.query(

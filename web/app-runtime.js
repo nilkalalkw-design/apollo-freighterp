@@ -1370,9 +1370,7 @@ function playBeep() {
 }
 
 async function addHistory(action, reference, details = "") {
-  const isNewRecordEvent = /^(Created|Generated|Posted|Issued)\b/i.test(String(action || ""));
-  const normalizedDetails = details || (isNewRecordEvent ? "New" : "");
-  const record = audit(localDateTime(), currentUserName(), action, reference, normalizedDetails);
+  const record = audit(localDateTime(), currentUserName(), action, reference, details);
   state.audit.unshift(record);
   saveState();
   const saved = await postRecord("audit", record);
@@ -3666,11 +3664,10 @@ function renderShipmentStatus() {
   const rows = prioritizeBookedStatus(filteredRows(visibleRows(state.shipments)));
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Shipment Status Register", "Click Job No for shipment details or Airway Bill No for grouped status")}
- ${shipmentStatusTable(rows)}</article>
+      <article class="panel">${panelHeader("Shipment Status Register", "Click a Job No to update status")} ${shipmentStatusTable(rows)}</article>
       <article class="panel">${panelHeader("Status Actions", "Quick Open / Email")}
         <div class="action-stack">
-          <p class="empty-state">Click a Job No for shipment details, or click an Airway Bill No to update the complete AWB group. Status changes are saved to every affected shipment’s tracking history. Use Send Update to email the customer.</p>
+          <p class="empty-state">Pick a Job No below to expand it in the register, or click any row directly. Change status, add a remark, and it's saved to tracking history. Use Send Update to email the customer.</p>
           ${loadSelectorMarkup("status", "Shipment To Open")}
           <div class="action-row">
             <button type="button" data-action="load-record" data-type="status">Open</button>
@@ -3717,7 +3714,7 @@ function shipmentStatusTable(rows) {
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const currentPage = Math.min(Math.max(1, Number(state.ui.tablePages[scope] || 1)), totalPages);
   const pageRows = sortedRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const expandedAwb = state.ui.expandedStatusAwb || "";
+  const expandedJob = state.ui.expandedStatusJob || "";
   const locked = isColumnWidthLocked(scope);
   const headCells = columns.map(([key, label]) => sortableHeaderCell("shipment", scope, key, label, locked)).join("");
   const filterRow = columnFilterRowMarkup(scope, columns, false);
@@ -3733,17 +3730,13 @@ function shipmentStatusTable(rows) {
 
 
 
-function shipmentStatusRowMarkup(row, index, columns, expandedAwb) {
+function shipmentStatusRowMarkup(row, index, columns, expandedJob) {
   const jobNo = row.jobNo;
-  const airwayBillNo = String(row.airwayBillNo || "").trim();
-  const isExpanded = Boolean(airwayBillNo) && airwayBillNo.toLowerCase() === String(expandedAwb || "").trim().toLowerCase();
+  const isExpanded = jobNo === expandedJob;
   const cells = columns
     .map(([key]) => {
       if (key === "jobNo") {
-        return `<td><button type="button" class="table-inline-link" data-action="open-shipment-details" data-id="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button></td>`;
-      }
-      if (key === "airwayBillNo") {
-        return `<td>${airwayBillNo ? `<button type="button" class="table-inline-link" data-action="toggle-status-awb" data-awb="${escapeHtml(airwayBillNo)}" aria-label="Update status for Airway Bill ${escapeHtml(airwayBillNo)}">${escapeHtml(airwayBillNo)}</button>` : `<span class="empty-state">-</span>`}</td>`;
+        return `<td><button type="button" class="table-inline-link" data-action="toggle-status-row" data-id="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button></td>`;
       }
       return `<td>${cellHtml("shipment", key, row, index)}</td>`;
     })
@@ -3754,18 +3747,14 @@ function shipmentStatusRowMarkup(row, index, columns, expandedAwb) {
 
 function shipmentStatusExpandRowMarkup(row, colSpan) {
   const jobNo = row.jobNo;
-  const airwayBillNo = String(row.airwayBillNo || "").trim();
-  const groupJobs = airwayBillNo
-    ? state.shipments.filter((item) => String(item.airwayBillNo || "").trim().toLowerCase() === airwayBillNo.toLowerCase()).map((item) => item.jobNo)
-    : [jobNo];
   const history = (state.shipmentStatusHistory || [])
-    .filter((entry) => groupJobs.includes(entry.jobNo))
+    .filter((entry) => entry.jobNo === jobNo)
     .sort((left, right) => new Date(left.updatedAt || 0) - new Date(right.updatedAt || 0));
   return `<tr class="status-expand-row"><td colspan="${colSpan}">
     <div class="status-expand-panel">
       <div class="status-expand-panel-header">
-        <h4>${airwayBillNo ? `Update AWB Status - ${escapeHtml(airwayBillNo)}` : `Update Status - ${escapeHtml(jobNo)}`}</h4>
-        <button type="button" class="ghost-button" data-action="toggle-status-awb" data-awb="${escapeHtml(airwayBillNo)}">Collapse ▲</button>
+        <h4>Update Status - ${escapeHtml(jobNo)}</h4>
+        <button type="button" class="ghost-button" data-action="toggle-status-row" data-id="${escapeHtml(jobNo)}">Collapse ▲</button>
       </div>
       <form data-form="status" class="inline-status-form">
         <input type="hidden" name="jobNo" value="${escapeHtml(jobNo)}" />
@@ -4557,14 +4546,14 @@ function parseChangeDetailPairs(details) {
     .map((item) => item.trim())
     .filter(Boolean)
     .map((item) => {
-      const modernMatch = item.match(/^Before:\s*(.*?)\s*->\s*After:\s*(.*)$/i);
-      if (modernMatch) return { before: modernMatch[1].trim(), after: modernMatch[2].trim() };
       const colonIndex = item.indexOf(":");
       if (colonIndex === -1) return null;
+      const field = item.slice(0, colonIndex).trim();
       const valuePart = item.slice(colonIndex + 1).trim();
       const arrowIndex = valuePart.indexOf("->");
-      if (arrowIndex === -1) return null;
+      if (!field || arrowIndex === -1) return null;
       return {
+        field,
         before: valuePart.slice(0, arrowIndex).trim(),
         after: valuePart.slice(arrowIndex + 2).trim()
       };
@@ -4584,10 +4573,10 @@ function auditHistoryForReference(referenceKey) {
 function auditDetailEntryMarkup(entry, position) {
   const pairs = parseChangeDetailPairs(entry.details);
   const changesMarkup = pairs.length
-    ? `<table class="audit-change-table"><thead><tr><th>Before</th><th>After</th></tr></thead><tbody>${pairs
+    ? `<table class="audit-change-table"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>${pairs
         .map(
           (pair) =>
-            `<tr><td>${escapeHtml(pair.before || "-")}</td><td>${escapeHtml(pair.after || "-")}</td></tr>`
+            `<tr><td>${escapeHtml(pair.field)}</td><td>${escapeHtml(pair.before || "-")}</td><td>${escapeHtml(pair.after || "-")}</td></tr>`
         )
         .join("")}</tbody></table>`
     : entry.details
@@ -4679,12 +4668,8 @@ function cellHtml(type, key, row, index = 0) {
   if (type === "audit" && key === "details") {
     const value = String(row.details || "");
     if (!value) return `<span class="audit-details-empty">-</span>`;
-    const pairs = parseChangeDetailPairs(value);
-    const displayValue = pairs.length
-      ? pairs.map((pair) => `Before: ${pair.before || "-"} → After: ${pair.after || "-"}`).join(" | ")
-      : value;
-    const short = displayValue.length > 80 ? `${displayValue.slice(0, 80)}...` : displayValue;
-    return `<span class="audit-details" title="${escapeHtml(displayValue)}">${escapeHtml(short)}</span>`;
+    const short = value.length > 80 ? `${value.slice(0, 80)}...` : value;
+    return `<span class="audit-details" title="${escapeHtml(value)}">${escapeHtml(short)}</span>`;
   }
   if (key === "palletCount") return escapeHtml(cargoPalletCount(row));
   if (key === "truckDetails") return escapeHtml([row.vehicleNo, row.driverName, row.driverMobile].filter(Boolean).join(" / "));
@@ -5554,21 +5539,6 @@ async function handleModuleClick(event) {
 
   if (action === "send-status-email") {
     sendShipmentStatusEmail(selectedRecordId("status"));
-    return;
-  }
-
-  if (action === "open-shipment-details") {
-    openRecord("shipment", id);
-    return;
-  }
-
-  if (action === "toggle-status-awb") {
-    const airwayBillNo = String(event.target.closest("[data-action='toggle-status-awb']")?.dataset.awb || "").trim();
-    if (!airwayBillNo) return;
-    state.ui.expandedStatusAwb = String(state.ui.expandedStatusAwb || "").toLowerCase() === airwayBillNo.toLowerCase() ? "" : airwayBillNo;
-    state.ui.expandedStatusJob = "";
-    saveState();
-    render();
     return;
   }
 
@@ -9190,7 +9160,7 @@ function dialogSafeValue(name, fallback = "") {
 function summarizeChanges(previous, next) {
   return Object.keys(next)
     .filter((key) => String(previous[key] ?? "") !== String(next[key] ?? ""))
-    .map((key) => `Before: ${previous[key] ?? ""} -> After: ${next[key] ?? ""}`)
+    .map((key) => `${key}: ${previous[key] ?? ""} -> ${next[key] ?? ""}`)
     .join(" | ");
 }
 
@@ -12158,7 +12128,6 @@ async function updateEmployeeProfile(data) {
     notifyDenied("Profile not saved", "Enter your full name first.");
     return false;
   }
-  const previousRecord = existing ? { ...existing } : null;
   const saved = existing ? await persistRecord("employee", record) : await postRecord("employee", record);
   if (!saved) {
     notifyDenied("Profile not saved", "Could not save your profile. Please try again.");
@@ -12166,7 +12135,7 @@ async function updateEmployeeProfile(data) {
   }
   if (existing) Object.assign(existing, record);
   else state.employees.unshift(record);
-  addHistory(existing ? "Updated employee profile" : "Created employee profile", userName, existing ? summarizeChanges(previousRecord, record) : "New");
+  addHistory("Updated employee profile", userName);
   notifySuccess("Profile saved", "Your employee profile was updated.");
   return true;
 }
@@ -12246,11 +12215,10 @@ async function updateStatus(data) {
     state.shipmentStatusHistory.unshift(historyEntry);
     if (!airwayBillNo) await postRecord("statusHistory", historyEntry);
   }
-  const statusDetails = `Before: ${oldStatus} -> After: ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}${airwayBillNo ? ` | AWB ${airwayBillNo} | ${updatedGroup.length} shipment(s) updated` : ""}${shipmentItem.expectedArrivalDate ? ` | expected arrival: ${shipmentItem.expectedArrivalDate}` : ""}`;
+  const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}${airwayBillNo ? ` | AWB ${airwayBillNo} | ${updatedGroup.length} shipment(s) updated` : ""}${shipmentItem.expectedArrivalDate ? ` | expected arrival: ${shipmentItem.expectedArrivalDate}` : ""}`;
   addHistory("Updated shipment status", `${airwayBillNo ? `AWB ${airwayBillNo}` : jobNo} -> ${newStatus}`, statusDetails);
   notifySuccess("Status updated", airwayBillNo ? `AWB ${airwayBillNo} and ${updatedGroup.length} related shipment(s) are now ${newStatus}.` : `${jobNo} is now ${newStatus}.`);
-  state.ui.expandedStatusJob = airwayBillNo ? "" : jobNo;
-  state.ui.expandedStatusAwb = airwayBillNo || "";
+  state.ui.expandedStatusJob = jobNo;
 }
 
 
