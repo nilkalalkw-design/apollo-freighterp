@@ -1,6 +1,7 @@
 const API_URL = (window.APOLLO_API_URL || "https://apollo-freighterp-f9kt.onrender.com").replace(/\/$/, "");
 const STORAGE_KEY = "apollofreighterp-web-state-v3";
 const SESSION_KEY = "apollofreighterp-session";
+const MAINTENANCE_PORTAL_URL = "https://apollo-freight-client.vercel.app/";
 
 const customerModules = [
   ["Customer Dashboard", "Shipment requests, tracking updates, and notifications"],
@@ -2166,7 +2167,10 @@ async function switchPortal(target) {
       notifyDenied("Access denied", "Maintenance Portal access is not enabled for this account. Contact Company Management.");
       return;
     }
-    notifyDenied("Maintenance Portal", "The Maintenance Portal connection will be added when its code is provided.");
+    const maintenanceWindow = window.open(MAINTENANCE_PORTAL_URL, "_blank", "noopener,noreferrer");
+    if (!maintenanceWindow) {
+      notifyDenied("Maintenance Portal", "The browser blocked the new tab. Please allow pop-ups for this ERP portal and try again.");
+    }
     return;
   }
   const portal = target === "hr" ? "employee" : "company";
