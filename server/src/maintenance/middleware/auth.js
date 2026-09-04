@@ -65,11 +65,11 @@ async function requireAuth(req, res, next) {
     const payload = await verifyErpToken(match[1]);
     const userName = String(payload?.userName || payload?.username || "").trim();
     if (!payload || !userName || payload.portal !== "app") return res.status(401).json({ message: "Use your ERP account to open Maintenance." });
-    const result = await query(`SELECT id, user_name, email, role, account_status, maintenance_portal_access, can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history FROM app_users WHERE LOWER(TRIM(user_name)) = LOWER($1) LIMIT 1`, [userName]);
+    const result = await query(`SELECT id, user_name, email, role, account_status, erp_portal_access, maintenance_portal_access, can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history FROM app_users WHERE LOWER(TRIM(user_name)) = LOWER($1) LIMIT 1`, [userName]);
     const row = result.rows[0];
     if (!row || String(row.account_status || "Active").toLowerCase() !== "active") return res.status(403).json({ message: "Your ERP account is not active." });
     if (row.maintenance_portal_access !== true) return res.status(403).json({ message: "Maintenance Portal access is not enabled for this ERP account." });
-    req.user = { id: row.id, name: row.user_name, username: row.user_name, email: row.email || "", role: normalizeRole(row.role), permissions: permissionsFromErpUser(row), erpRole: row.role, canViewUpdatedHistory: row.can_view_updated_history === true };
+    req.user = { id: row.id, name: row.user_name, username: row.user_name, email: row.email || "", role: normalizeRole(row.role), permissions: permissionsFromErpUser(row), erpRole: row.role, erpPortalAccess: row.erp_portal_access !== false, canViewUpdatedHistory: row.can_view_updated_history === true };
     return next();
   } catch (error) {
     console.error("ERP auth lookup failed:", error);

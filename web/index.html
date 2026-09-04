@@ -45,9 +45,10 @@
                 <button type="button" class="login-mode-button is-active" data-login-mode-option="company" aria-pressed="true">Company Portal</button>
                 <button type="button" class="login-mode-button" data-login-mode-option="customer" aria-pressed="false">Customer Portal</button>
                 <button type="button" class="login-mode-button" data-login-mode-option="employee" aria-pressed="false">Employee Login</button>
+                <button type="button" class="login-mode-button" data-login-mode-option="maintenance" aria-pressed="false">Maintenance Portal</button>
               </div>
               <input id="loginModeField" type="hidden" name="loginMode" value="company" />
-              <p class="login-mode-help">Choose Customer Portal to sign in with the customer user ID created in Company Portal, or Employee Login to access the HR Portal with your existing company user ID.</p>
+              <p class="login-mode-help">Choose Company Portal, Employee Login for HR, or Maintenance Portal. All options use the same ERP user name and password, and each portal checks its own User Management permission.</p>
               <p id="loginMessage" class="form-message" role="status"></p>
               <button type="submit">Login</button>
             </form>

@@ -209,6 +209,13 @@ body {
   text-transform: capitalize;
 }
 
+.portal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
 .grid {
   display: grid;
   gap: 20px;

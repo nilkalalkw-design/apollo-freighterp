@@ -1545,7 +1545,7 @@ async function syncManifestShipmentStatuses(loadItem) {
   return updatedCount;
 }
 
-function boot() {
+async function boot() {
   renderModuleNav();
 
   moduleNav.addEventListener("click", (event) => {
@@ -1644,7 +1644,13 @@ function boot() {
   if (currentSession()) {
     showApp();
   } else {
-    showLogin();
+    try {
+      const restored = await restoreHandoffSession();
+      if (restored) showApp();
+      else showLogin();
+    } catch {
+      showLogin();
+    }
   }
 }
 
@@ -2113,6 +2119,15 @@ async function handleLogin(event) {
       }
       customerPortalData = null;
       rememberSession({ ...session, portal: "employee" });
+    } else if (loginMode === "maintenance") {
+      const session = await attemptApiLogin(userName, password, "maintenance");
+      if (!session.maintenancePortalAccess) {
+        throw new Error("Maintenance Portal access is not enabled for this account. Contact your Admin to enable it.");
+      }
+      customerPortalData = null;
+      rememberSession({ ...session, portal: "company" });
+      window.location.assign(`${MAINTENANCE_PORTAL_URL}#erpToken=${encodeURIComponent(session.token || "")}`);
+      return;
     } else {
       const session = await attemptApiLogin(userName, password);
       if (session.erpPortalAccess === false) {
@@ -2154,6 +2169,23 @@ async function attemptApiLogin(userName, password, loginMode = "company") {
     body: JSON.stringify({ userName, password, loginMode })
   });
   return result.session;
+}
+
+async function restoreHandoffSession() {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const token = params.get("erpToken");
+  if (!token) return false;
+
+  window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+  const result = await fetchJson("/api/session/handoff", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token })
+  });
+  if (!result?.session?.token) return false;
+  customerPortalData = null;
+  rememberSession({ ...result.session, portal: "company" });
+  return true;
 }
 
 async function switchPortal(target) {

@@ -465,7 +465,12 @@ function App() {
           <span>Signed in as</span>
           <strong>{user?.name || "No user"}</strong>
           <span className="role-badge">{user?.role || "unknown"}</span>
-          <button className="secondary-action" type="button" onClick={handleLogout}>Logout</button>
+          <div className="portal-actions">
+            {user?.erpPortalAccess !== false ? (
+              <button className="secondary-action" type="button" onClick={handleBackToErp}>Back to ERP Portal</button>
+            ) : null}
+            <button className="secondary-action" type="button" onClick={handleLogout}>Logout</button>
+          </div>
         </div>
       </header>
 
@@ -1274,6 +1279,14 @@ function App() {
     } catch (resetError) {
       setAuthError(resetError.message);
     }
+  }
+
+  function handleBackToErp() {
+    if (!token) {
+      window.location.assign("/");
+      return;
+    }
+    window.location.assign(`/#erpToken=${encodeURIComponent(token)}`);
   }
 
   function handleLogout() {

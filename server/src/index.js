@@ -1740,10 +1740,73 @@ app.get("/api/health", async (_request, response) => {
   }
 });
 
+app.post("/api/session/handoff", loginRateLimiter, async (request, response, next) => {
+  const token = String(request.body?.token || "").trim();
+  const payload = verifyCustomerToken(token);
+  const identifier = String(payload?.userName || payload?.username || "").trim();
+  if (!payload || payload.portal !== "app" || !identifier) {
+    return response.status(401).json({ ok: false, error: "Invalid or expired ERP session." });
+  }
+
+  try {
+    const result = await query(
+      `select user_name, email, role, account_status, branch_access, branch_view_scope, section_access,
+              can_view_all_entry, can_view_only_self_entry, can_edit_all_entry, can_view_updated_history,
+              can_billing_sales_entry, can_billing_cost_entry, hr_portal_access, erp_portal_access,
+              maintenance_portal_access, is_hr_admin
+       from app_users
+       where lower(user_name) = lower($1)
+       limit 1`,
+      [identifier]
+    );
+    const row = result.rows[0];
+    if (!row || String(row.account_status || "Active").toLowerCase() !== "active") {
+      return response.status(403).json({ ok: false, error: "This user account is not active." });
+    }
+    if (row.erp_portal_access === false) {
+      return response.status(403).json({ ok: false, error: "ERP Portal access is not enabled for this account." });
+    }
+
+    return response.json({
+      ok: true,
+      session: {
+        userName: row.user_name,
+        email: row.email,
+        role: row.role,
+        branchAccess: row.branch_access,
+        branchViewScope: row.branch_view_scope || "Assigned Branch Only",
+        sectionAccess: row.section_access,
+        canViewAllEntry: row.can_view_all_entry,
+        canViewOnlySelfEntry: row.can_view_only_self_entry,
+        canEditAllEntry: row.can_edit_all_entry,
+        canViewUpdatedHistory: row.can_view_updated_history,
+        canBillingSalesEntry: row.can_billing_sales_entry !== false,
+        canBillingCostEntry: row.can_billing_cost_entry !== false,
+        hrPortalAccess: Boolean(row.hr_portal_access),
+        erpPortalAccess: row.erp_portal_access !== false,
+        maintenancePortalAccess: Boolean(row.maintenance_portal_access),
+        isHrAdmin: Boolean(row.is_hr_admin),
+        token: signCustomerToken({
+          userName: row.user_name,
+          role: row.role,
+          portal: "app",
+          employeePortal: false,
+          isHrAdmin: Boolean(row.is_hr_admin),
+          exp: Date.now() + APP_TOKEN_TTL_MS
+        })
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.post("/api/login", loginRateLimiter, async (request, response, next) => {
   const identifier = String(request.body?.userName || request.body?.email || "").trim();
   const password = String(request.body?.password || "");
-  const employeeLogin = String(request.body?.loginMode || "").trim().toLowerCase() === "employee";
+  const loginMode = String(request.body?.loginMode || "company").trim().toLowerCase();
+  const employeeLogin = loginMode === "employee";
+  const maintenanceLogin = loginMode === "maintenance";
 
   if (!identifier || !password) {
     return response.status(400).json({
@@ -1771,7 +1834,10 @@ app.post("/api/login", loginRateLimiter, async (request, response, next) => {
     if (employeeLogin && !row.hr_portal_access) {
       return response.status(403).json({ ok: false, error: "HR Portal access is not enabled for this account." });
     }
-    if (!employeeLogin && !row.erp_portal_access) {
+    if (maintenanceLogin && !row.maintenance_portal_access) {
+      return response.status(403).json({ ok: false, error: "Maintenance Portal access is not enabled for this account." });
+    }
+    if (!employeeLogin && !maintenanceLogin && !row.erp_portal_access) {
       return response.status(403).json({ ok: false, error: "ERP Portal access is not enabled for this account." });
     }
 
