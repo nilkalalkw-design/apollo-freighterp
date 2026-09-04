@@ -1628,6 +1628,25 @@ th {
   text-decoration: underline;
 }
 
+.document-linked-to {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.document-linked-to strong {
+  color: var(--blue);
+  font-size: 12px;
+}
+
+.document-linked-to small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .kpi[data-dashboard-metric] {
   cursor: pointer;
 }

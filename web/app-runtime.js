@@ -776,6 +776,35 @@ function documentRow(documentNo, linkedNo, type, status, date, owner, fileName =
   return { documentNo, linkedNo, type, status, date, owner, fileName, createdBy };
 }
 
+// Documents keep their stored document number and linked job number unchanged. The register's
+// "Linked To" column is a live display value resolved from the shipment so it can show the AWB
+// that drives the existing AWB-wide status/POD synchronization together with the related job.
+function documentLinkedShipment(row) {
+  const linkedNo = String(row?.linkedNo || "").trim();
+  if (!linkedNo) return { airwayBillNo: "", jobNo: "" };
+  const normalizedLink = linkedNo.toLowerCase();
+  const shipment = (state.shipments || []).find((item) => [item?.jobNo, item?.airwayBillNo]
+    .some((value) => String(value || "").trim().toLowerCase() === normalizedLink));
+  return {
+    airwayBillNo: String(shipment?.airwayBillNo || (String(linkedNo).toUpperCase().startsWith("AWB") ? linkedNo : "")).trim(),
+    jobNo: String(shipment?.jobNo || (String(linkedNo).toUpperCase().startsWith("AWB") ? "" : linkedNo)).trim()
+  };
+}
+
+function documentLinkedToText(row) {
+  const linkedNo = String(row?.linkedNo || "").trim();
+  const { airwayBillNo, jobNo } = documentLinkedShipment(row);
+  if (airwayBillNo && jobNo) return `${airwayBillNo} | ${jobNo}`;
+  return airwayBillNo || jobNo || linkedNo;
+}
+
+function documentLinkedToMarkup(row) {
+  const linkedText = documentLinkedToText(row);
+  if (!linkedText) return `<span class="empty-state">-</span>`;
+  const { airwayBillNo, jobNo } = documentLinkedShipment(row);
+  return `<span class="document-linked-to" title="${escapeHtml(linkedText)}">${airwayBillNo ? `<strong>${escapeHtml(airwayBillNo)}</strong>` : ""}${jobNo ? `<small>Job: ${escapeHtml(jobNo)}</small>` : ""}</span>`;
+}
+
 function additionalCharge(
   refNo,
   shipmentNo,
@@ -4263,16 +4292,19 @@ function columnFilterRowMarkup(scope, columns, showLoad) {
   return `<tr class="column-filter-row">${cells}${showLoad ? "<th></th>" : ""}</tr>`;
 }
 
+function tableColumnValue(scope, key, row) {
+  const tableType = String(scope || "").split(":")[0];
+  if (key === "consoleNo") return consoleNoForShipment(row?.jobNo);
+  if (tableType === "document" && key === "linkedNo") return documentLinkedToText(row);
+  return row?.[key];
+}
+
 function applyColumnFilters(scope, rows, columns) {
   const filters = state.ui.columnFilters?.[scope] || {};
   const activeEntries = Object.entries(filters).filter(([key, term]) => String(term || "").trim() && columns.some(([columnKey]) => columnKey === key));
   if (!activeEntries.length) return rows;
   return rows.filter((row) => activeEntries.every(([key, term]) => {
-    // consoleNo isn't a stored field - it's computed live from state.loads (see
-    // consoleNoForShipment) - so filtering/sorting on it needs to read the computed value instead
-    // of row.consoleNo, which is always undefined.
-    const rawValue = key === "consoleNo" ? consoleNoForShipment(row?.jobNo) : row?.[key];
-    const cellText = String(display(rawValue) ?? "").toLowerCase();
+    const cellText = String(display(tableColumnValue(scope, key, row)) ?? "").toLowerCase();
     return cellText.includes(String(term).trim().toLowerCase());
   }));
 }
@@ -4319,8 +4351,7 @@ function applySort(scope, rows) {
   if (!sortState || !sortState.key) return rows;
   const key = sortState.key;
   const factor = sortState.direction === "asc" ? 1 : -1;
-  // consoleNo isn't a stored field - see applyColumnFilters above for why.
-  const valueFor = (row) => (key === "consoleNo" ? consoleNoForShipment(row?.jobNo) : row?.[key]);
+  const valueFor = (row) => tableColumnValue(scope, key, row);
   return [...rows].sort((left, right) => factor * compareCellValues(valueFor(left), valueFor(right)));
 }
 
@@ -4336,7 +4367,7 @@ function compareCellValues(left, right) {
 
 function guessDefaultSortDirection(type, key) {
   const rows = allCollectionFor(type) || [];
-  const sample = rows.map((row) => row?.[key]).find((value) => value !== undefined && value !== null && String(value).trim() !== "");
+  const sample = rows.map((row) => tableColumnValue(type, key, row)).find((value) => value !== undefined && value !== null && String(value).trim() !== "");
   if (sample === undefined) return "desc";
   const text = String(sample).trim();
   const isDateLike = /^\d{4}-\d{2}-\d{2}/.test(text) || /^\d{2}[-/]\d{2}[-/]\d{4}/.test(text);
@@ -4708,6 +4739,7 @@ function cellHtml(type, key, row, index = 0) {
     const label = `AUD-${auditId}`;
     return `<button type="button" class="table-inline-link" data-audit-open data-audit-ref="${escapeHtml(auditReferenceKey(row.reference))}" aria-label="Open audit trail for ${escapeHtml(String(row.reference || ""))}">${escapeHtml(label)}</button>`;
   }
+  if (type === "document" && key === "linkedNo") return documentLinkedToMarkup(row);
   if (type === "audit" && key === "details") {
     const value = String(row.details || "");
     if (!value) return `<span class="audit-details-empty">-</span>`;
@@ -5070,7 +5102,7 @@ function defaultColumnLayouts() {
     customers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"], ["createdBy", "USERNAME"]],
     suppliers: [["code", "Code"], ["name", "Name"], ["locationOrLane", "Lane / Location"], ["email", "Email"], ["mobile", "Mobile"], ["terms", "Terms"], ["status", "Status"], ["branch", "Branch"], ["createdBy", "USERNAME"]],
     tariff: [["tariffNo", "Tariff"], ["customer", "Consignee"], ["origin", "Origin"], ["destination", "Destination"], ["mainSection", "Main Section"], ["currency", "Currency"], ["minCharge", "Minimum Charge"], ["grandTotal", "Grand Total"], ["createdBy", "USERNAME"]],
-    document: [["documentNo", "Document"], ["linkedNo", "Linked No"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]],
+    document: [["documentNo", "Documents"], ["linkedNo", "Linked To"], ["type", "Type"], ["status", "Status"], ["date", "Date"], ["owner", "Owner"]],
     invoice: [["invoiceNo", "Invoice"], ["customer", "Consignee"], ["shipmentNo", "Shipment"], ["revenue", "Revenue"], ["supplierCost", "Cost"], ["status", "Status"], ["date", "Date"], ["createdBy", "USERNAME"]],
     quotation: [["quotationNo", "Quotation"], ["date", "Date"], ["customerName", "Customer"], ["customerMobile", "Mobile"], ["customerEmail", "Email"], ["cbm", "CBM"], ["status", "Status"], ["createdBy", "USERNAME"]],
     shipmentRequest: [["requestNo", "Request"], ["createdAt", "Date"], ["customerName", "Customer"], ["shipmentType", "Type"], ["origin", "Origin"], ["destination", "Destination"], ["itemName", "Item"], ["status", "Status"]],
@@ -9464,6 +9496,7 @@ function displayCellValue(type, key, row, index = 0) {
   if (key === "palletCount") return cargoPalletCount(row);
   if (key === "truckDetails") return [row.vehicleNo, row.driverName, row.driverMobile].filter(Boolean).join(" / ");
   if (type === "shipment" && key === "consoleNo") return consoleNoForShipment(row.jobNo);
+  if (type === "document" && key === "linkedNo") return documentLinkedToText(row);
   return formatDateDisplay(row[key] ?? "");
 }
 
