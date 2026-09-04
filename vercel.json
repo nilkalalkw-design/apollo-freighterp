@@ -4,11 +4,11 @@
   "rewrites": [
     {
       "source": "/maintenance",
-      "destination": "/web/maintenance/index.html"
+      "destination": "/maintenance/index.html"
     },
     {
       "source": "/maintenance/",
-      "destination": "/web/maintenance/index.html"
+      "destination": "/maintenance/index.html"
     },
     {
       "source": "/maintenance/assets/(.*)",
