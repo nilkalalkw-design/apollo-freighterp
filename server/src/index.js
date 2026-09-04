@@ -12,6 +12,7 @@ const { authRouter: maintenanceAuthRouter } = require("./maintenance/routes/auth
 const { expensesRouter: maintenanceExpensesRouter } = require("./maintenance/routes/expenses");
 const { usersRouter: maintenanceUsersRouter } = require("./maintenance/routes/users");
 const { vehiclesRouter: maintenanceVehiclesRouter } = require("./maintenance/routes/vehicles");
+const { healthRouter: maintenanceHealthRouter } = require("./maintenance/routes/health");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -3106,6 +3107,7 @@ app.post("/api/shipments", requireAppAuth, async (request, response, next) => {
 
 // Maintenance is an ERP module: these routes use the ERP database and ERP-only HMAC handoff.
 // They must be mounted before the generic ERP resource handlers below.
+app.use("/api/maintenance/health", maintenanceHealthRouter);
 app.use("/api/maintenance/auth", maintenanceAuthRouter);
 app.use("/api/maintenance/expenses", maintenanceExpensesRouter);
 app.use("/api/maintenance/users", maintenanceUsersRouter);
