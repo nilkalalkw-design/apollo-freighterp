@@ -12413,16 +12413,11 @@ boot();
     const hidden = s.hidden || {};
     const order = Array.isArray(s.order) ? s.order : [];
 
-    const orderedItems = order
-      .map(id => items.find(x => x.dataset.apolloDashboardColumnId === id))
-      .filter(Boolean);
-    const currentOrder = items.map(el => el.dataset.apolloDashboardColumnId);
-    const desiredOrder = orderedItems.length === items.length
-      ? orderedItems.map(el => el.dataset.apolloDashboardColumnId)
-      : currentOrder;
-    if (orderedItems.length === items.length && desiredOrder.some((id, index) => id !== currentOrder[index])) {
-      orderedItems.forEach(el => r.appendChild(el));
-    }
+    order.forEach(id => {
+      const el = items.find(x => x.dataset.apolloDashboardColumnId === id);
+      if (el) r.appendChild(el);
+    });
+
     items.forEach(el => {
       el.style.display = hidden[el.dataset.apolloDashboardColumnId] ? "none" : "";
     });
