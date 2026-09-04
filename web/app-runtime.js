@@ -1,7 +1,7 @@
 const API_URL = (window.APOLLO_API_URL || "https://apollo-freighterp-f9kt.onrender.com").replace(/\/$/, "");
 const STORAGE_KEY = "apollofreighterp-web-state-v3";
 const SESSION_KEY = "apollofreighterp-session";
-const MAINTENANCE_PORTAL_URL = "https://apollo-freight-client.vercel.app/";
+const MAINTENANCE_PORTAL_URL = "/maintenance/";
 
 const customerModules = [
   ["Customer Dashboard", "Shipment requests, tracking updates, and notifications"],
