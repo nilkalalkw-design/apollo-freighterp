@@ -3664,7 +3664,7 @@ function renderShipmentStatus() {
   const rows = prioritizeBookedStatus(filteredRows(visibleRows(state.shipments)));
   return `
     <section class="split-grid wide-left">
-      <article class="panel">${panelHeader("Shipment Status Register", "Click a Job No to update status")} ${shipmentStatusTable(rows)}</article>
+      <article class="panel">${panelHeader("Shipment Status Register", "Click Job No for shipment details or AWB No for grouped status update")} ${shipmentStatusTable(rows)}</article>
       <article class="panel">${panelHeader("Status Actions", "Quick Open / Email")}
         <div class="action-stack">
           <p class="empty-state">Pick a Job No below to expand it in the register, or click any row directly. Change status, add a remark, and it's saved to tracking history. Use Send Update to email the customer.</p>
@@ -3715,6 +3715,7 @@ function shipmentStatusTable(rows) {
   const currentPage = Math.min(Math.max(1, Number(state.ui.tablePages[scope] || 1)), totalPages);
   const pageRows = sortedRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const expandedJob = state.ui.expandedStatusJob || "";
+  const expandedAwb = state.ui.expandedStatusAwb || "";
   const locked = isColumnWidthLocked(scope);
   const headCells = columns.map(([key, label]) => sortableHeaderCell("shipment", scope, key, label, locked)).join("");
   const filterRow = columnFilterRowMarkup(scope, columns, false);
@@ -3722,7 +3723,7 @@ function shipmentStatusTable(rows) {
   const tableStyle = widths && Object.keys(widths).length ? ` style="table-layout:fixed"` : "";
   const hasActiveFilter = Object.values(state.ui.columnFilters?.[scope] || {}).some((term) => String(term || "").trim());
   const body = sortedRows.length
-    ? pageRows.map((row, index) => shipmentStatusRowMarkup(row, index + ((currentPage - 1) * pageSize), columns, expandedJob)).join("")
+    ? pageRows.map((row, index) => shipmentStatusRowMarkup(row, index + ((currentPage - 1) * pageSize), columns, expandedJob, expandedAwb)).join("")
     : `<tr><td colspan="${columns.length}">${empty(hasActiveFilter ? "No records match the column filters." : "No records found.")}</td></tr>`;
   const pager = totalPages > 1 ? `<div class="table-pagination"><span>Showing ${((currentPage - 1) * pageSize) + 1}-${Math.min(currentPage * pageSize, sortedRows.length)} of ${sortedRows.length}</span><div><button type="button" class="secondary-button" data-action="table-page" data-page-scope="${scope}" data-page="${currentPage - 1}" ${currentPage === 1 ? "disabled" : ""}>Previous</button><span>Page ${currentPage} / ${totalPages}</span><button type="button" class="secondary-button" data-action="table-page" data-page-scope="${scope}" data-page="${currentPage + 1}" ${currentPage === totalPages ? "disabled" : ""}>Next</button></div></div>` : "";
   return `${columnLockToggleMarkup(scope, locked)}<div class="table-wrap"><table${tableStyle}><thead><tr>${headCells}</tr>${filterRow}</thead><tbody>${body}</tbody></table></div>${pager}`;
@@ -3730,19 +3731,61 @@ function shipmentStatusTable(rows) {
 
 
 
-function shipmentStatusRowMarkup(row, index, columns, expandedJob) {
-  const jobNo = row.jobNo;
-  const isExpanded = jobNo === expandedJob;
+function shipmentStatusRowMarkup(row, index, columns, expandedJob, expandedAwb) {
+  const jobNo = String(row.jobNo || "").trim();
+  const airwayBillNo = String(row.airwayBillNo || "").trim();
+  const isJobExpanded = jobNo === expandedJob;
+  const isAwbExpanded = Boolean(airwayBillNo) && airwayBillNo.toLowerCase() === String(expandedAwb || "").toLowerCase();
   const cells = columns
     .map(([key]) => {
       if (key === "jobNo") {
-        return `<td><button type="button" class="table-inline-link" data-action="toggle-status-row" data-id="${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button></td>`;
+        return `<td><button type="button" class="table-inline-link" data-shipment-open data-shipment-id="${escapeHtml(jobNo)}" aria-label="Open shipment details for ${escapeHtml(jobNo)}">${escapeHtml(jobNo)}</button></td>`;
+      }
+      if (key === "airwayBillNo") {
+        return `<td><button type="button" class="table-inline-link" data-action="toggle-status-awb" data-awb="${escapeHtml(airwayBillNo)}" aria-label="Update status for Airway Bill ${escapeHtml(airwayBillNo)}">${escapeHtml(airwayBillNo)}</button></td>`;
       }
       return `<td>${cellHtml("shipment", key, row, index)}</td>`;
     })
     .join("");
+  const isExpanded = isJobExpanded || isAwbExpanded;
   const mainRow = `<tr class="${isExpanded ? "is-expanded" : ""}">${cells}</tr>`;
-  return isExpanded ? mainRow + shipmentStatusExpandRowMarkup(row, columns.length) : mainRow;
+  if (isJobExpanded) return mainRow + shipmentStatusExpandRowMarkup(row, columns.length);
+  if (isAwbExpanded) return mainRow + shipmentAwbExpandRowMarkup(airwayBillNo, columns.length);
+  return mainRow;
+}
+
+function shipmentAwbExpandRowMarkup(airwayBillNo, colSpan) {
+  const normalizedAwb = String(airwayBillNo || "").trim().toLowerCase();
+  const group = state.shipments.filter((row) => String(row.airwayBillNo || "").trim().toLowerCase() === normalizedAwb);
+  const representative = group[0];
+  if (!representative) return "";
+  const jobNumbers = group.map((row) => row.jobNo).filter(Boolean).join(", ");
+  const history = (state.shipmentStatusHistory || [])
+    .filter((entry) => group.some((row) => row.jobNo === entry.jobNo))
+    .sort((left, right) => new Date(left.updatedAt || 0) - new Date(right.updatedAt || 0));
+  return `<tr class="status-expand-row"><td colspan="${colSpan}">
+    <div class="status-expand-panel">
+      <div class="status-expand-panel-header">
+        <h4>Update Status - AWB ${escapeHtml(airwayBillNo)}</h4>
+        <button type="button" class="ghost-button" data-action="toggle-status-awb" data-awb="${escapeHtml(airwayBillNo)}">Collapse ▲</button>
+      </div>
+      <p class="empty-state">This AWB is linked to ${group.length} shipment(s): ${escapeHtml(jobNumbers)}. The selected status will be applied to every linked shipment across all branches.</p>
+      <form data-form="status" class="inline-status-form">
+        <input type="hidden" name="jobNo" value="${escapeHtml(representative.jobNo)}" />
+        ${strictSelect("status", "Status", statusOptions(), representative.status)}
+        ${input("date", "Date", today(), false, "date")}
+        ${input("notes", "Manual Remark", "")}
+        <div class="expected-arrival-field" data-expected-arrival-field ${isBranchTransferStatus(representative.status) || representative.expectedArrivalDate ? "" : "hidden"}>
+          ${input("expectedArrivalDate", "Expected Arrival Date", representative.expectedArrivalDate || "", false, "date")}
+        </div>
+        <div class="action-row">
+          <button type="submit" class="primary-button">Save AWB Status Update</button>
+          <button type="button" class="secondary-button" data-action="send-status-email-row" data-id="${escapeHtml(representative.jobNo)}">Send Update</button>
+        </div>
+      </form>
+      ${shipmentJourneyTimeline(history, representative)}
+    </div>
+  </td></tr>`;
 }
 
 function shipmentStatusExpandRowMarkup(row, colSpan) {
@@ -5544,6 +5587,16 @@ async function handleModuleClick(event) {
 
   if (action === "toggle-status-row") {
     state.ui.expandedStatusJob = state.ui.expandedStatusJob === id ? "" : id;
+    state.ui.expandedStatusAwb = "";
+    saveState();
+    render();
+    return;
+  }
+
+  if (action === "toggle-status-awb") {
+    const awb = String(button.dataset.awb || "").trim();
+    state.ui.expandedStatusAwb = String(state.ui.expandedStatusAwb || "").toLowerCase() === awb.toLowerCase() ? "" : awb;
+    state.ui.expandedStatusJob = "";
     saveState();
     render();
     return;
@@ -12218,7 +12271,15 @@ async function updateStatus(data) {
   const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}${airwayBillNo ? ` | AWB ${airwayBillNo} | ${updatedGroup.length} shipment(s) updated` : ""}${shipmentItem.expectedArrivalDate ? ` | expected arrival: ${shipmentItem.expectedArrivalDate}` : ""}`;
   addHistory("Updated shipment status", `${airwayBillNo ? `AWB ${airwayBillNo}` : jobNo} -> ${newStatus}`, statusDetails);
   notifySuccess("Status updated", airwayBillNo ? `AWB ${airwayBillNo} and ${updatedGroup.length} related shipment(s) are now ${newStatus}.` : `${jobNo} is now ${newStatus}.`);
-  state.ui.expandedStatusJob = jobNo;
+  if (airwayBillNo) {
+    state.ui.expandedStatusAwb = airwayBillNo;
+    state.ui.expandedStatusJob = "";
+  } else {
+    state.ui.expandedStatusJob = jobNo;
+    state.ui.expandedStatusAwb = "";
+  }
+  saveState();
+  render();
 }
 
 
