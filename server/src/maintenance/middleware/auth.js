@@ -50,7 +50,9 @@ function permissionsFromErpUser(row) {
   const role = normalizeRole(row.role);
   const isAdmin = role === "admin";
   return {
-    create: isAdmin || row.can_edit_all_entry === true || row.can_view_all_entry === true,
+    // Maintenance Portal access is the explicit permission to create new maintenance entries.
+    // Edit/delete ownership and all-record visibility remain controlled by their separate flags below.
+    create: isAdmin || row.maintenance_portal_access === true || row.can_edit_all_entry === true || row.can_view_all_entry === true,
     updateOwn: isAdmin || row.can_view_only_self_entry !== true,
     viewAll: isAdmin || row.can_view_all_entry === true,
     editAll: isAdmin || row.can_edit_all_entry === true
@@ -69,7 +71,7 @@ async function requireAuth(req, res, next) {
     const row = result.rows[0];
     if (!row || String(row.account_status || "Active").toLowerCase() !== "active") return res.status(403).json({ message: "Your ERP account is not active." });
     if (row.maintenance_portal_access !== true) return res.status(403).json({ message: "Maintenance Portal access is not enabled for this ERP account." });
-    req.user = { id: row.id, name: row.user_name, username: row.user_name, email: row.email || "", role: normalizeRole(row.role), permissions: permissionsFromErpUser(row), erpRole: row.role, erpPortalAccess: row.erp_portal_access !== false, canViewUpdatedHistory: row.can_view_updated_history === true };
+    req.user = { id: row.id, name: row.user_name, username: row.user_name, email: row.email || "", role: normalizeRole(row.role), permissions: permissionsFromErpUser(row), erpRole: row.role, erpPortalAccess: row.erp_portal_access !== false, maintenancePortalAccess: row.maintenance_portal_access === true, canViewUpdatedHistory: row.can_view_updated_history === true };
     return next();
   } catch (error) {
     console.error("ERP auth lookup failed:", error);
