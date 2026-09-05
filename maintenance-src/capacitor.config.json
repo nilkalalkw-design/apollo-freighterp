@@ -1,9 +1,0 @@
-{
-  "appId": "com.apollofreight.solutions",
-  "appName": "Apollo-Freight Solutions",
-  "webDir": "client/dist",
-  "bundledWebRuntime": false,
-  "server": {
-    "androidScheme": "https"
-  }
-}
