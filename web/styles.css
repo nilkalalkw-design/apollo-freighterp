@@ -1405,10 +1405,66 @@ label {
   background: #fff;
 }
 
-.employee-document-card small {
+.employee-document-list {
+  display: grid;
+  gap: 8px;
+}
+
+.employee-document-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) auto auto minmax(180px, auto);
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.employee-document-row.is-locked {
+  border-color: #e3b9bd;
+  background: #fff8f8;
+}
+
+.employee-document-row-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.employee-document-row-main small {
   color: var(--muted);
 }
 
+.employee-document-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.document-locked,
+.document-unlocked {
+  width: max-content;
+  padding: 3px 8px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.document-locked {
+  color: var(--red-text);
+  background: #ffe6e8;
+}
+
+.document-unlocked {
+  color: var(--green-text);
+  background: var(--green-soft);
+}
+
+.employee-document-card small {
+  color: var(--muted);
+}
 .employee-profile-thumbnail {
   width: 78px;
   height: 78px;
@@ -1439,6 +1495,30 @@ label {
 .document-missing {
   color: #7a5b14;
   background: #fff4d8;
+}
+
+.post-login-announcement-notice {
+  margin-bottom: 18px;
+  border-color: #c7d9ef;
+  background: linear-gradient(135deg, #f6faff 0%, #ffffff 72%);
+}
+
+.post-login-announcement-notice .panel-header {
+  align-items: flex-start;
+}
+
+.post-login-announcement-notice h2 {
+  margin: 2px 0 4px;
+}
+
+.announcement-unread-badge {
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #1c4f86;
+  background: #dcecff;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .pod-cargo-summary span {

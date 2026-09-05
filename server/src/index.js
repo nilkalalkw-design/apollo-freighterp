@@ -21,7 +21,9 @@ const EMPLOYEE_DOCUMENT_TYPES = {
   "Civil ID Front": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "CIVIL-FRONT", privateAsset: true },
   "Civil ID Back": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "CIVIL-BACK", privateAsset: true },
   "Passport Front": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "PASS-FRONT", privateAsset: true },
-  "Passport Back": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "PASS-BACK", privateAsset: true }
+  "Passport Back": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "PASS-BACK", privateAsset: true },
+  "Work Permit": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "WORK-PERMIT", privateAsset: true },
+  "Other": { kind: "raw", mimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]), maxBytes: 10 * 1024 * 1024, code: "OTHER", privateAsset: true }
 };
 const EMPLOYEE_DOCUMENT_TYPE_NAMES = new Set(Object.keys(EMPLOYEE_DOCUMENT_TYPES));
 
@@ -2047,6 +2049,44 @@ app.post("/api/customer-login", loginRateLimiter, async (request, response, next
   }
 });
 
+app.get("/api/hr-announcement-reads", requireAppAuth, async (request, response, next) => {
+  const userName = String(request.appSession?.userName || "").trim().toLowerCase();
+  if (!userName) return response.status(401).json({ ok: false, error: "Login required." });
+  try {
+    const result = await query(
+      "select announcement_id, read_at from hr_announcement_reads where lower(user_name)=lower($1) order by read_at desc",
+      [userName]
+    );
+    return response.json({ ok: true, rows: result.rows });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) return response.json({ ok: true, mode: "demo", rows: [] });
+    return next(error);
+  }
+});
+
+app.post("/api/hr-announcement-reads", requireAppAuth, async (request, response, next) => {
+  const userName = String(request.appSession?.userName || "").trim().toLowerCase();
+  const announcementId = Number(request.body?.announcementId);
+  if (!userName || !Number.isInteger(announcementId) || announcementId <= 0) {
+    return response.status(400).json({ ok: false, error: "A valid announcement is required." });
+  }
+  try {
+    const announcement = (await query("select id from hr_announcements where id=$1 limit 1", [announcementId])).rows[0];
+    if (!announcement) return response.status(404).json({ ok: false, error: "Announcement not found." });
+    const result = await query(
+      `insert into hr_announcement_reads (announcement_id, user_name, read_at)
+       values ($1, $2, now())
+       on conflict (announcement_id, user_name) do update set read_at=excluded.read_at
+       returning announcement_id, read_at`,
+      [announcementId, userName]
+    );
+    return response.status(201).json({ ok: true, row: result.rows[0] });
+  } catch (error) {
+    if (isDatabaseSetupError(error)) return response.status(201).json({ ok: true, mode: "demo", row: { announcement_id: announcementId, user_name: userName } });
+    return next(error);
+  }
+});
+
 app.get("/api/customer/bootstrap", requireCustomerPortalAuth, async (request, response, next) => {
   try {
     const data = await customerPortalSnapshot(request.customerSession);
@@ -2381,6 +2421,13 @@ app.post("/api/employee-profile-documents", requireEmployeePortalAuth, async (re
   }
   if (!typeConfig.mimeTypes.has(mimeType)) return response.status(400).json({ ok: false, error: "Employee documents must be PDF, JPG, JPEG, or PNG files." });
 
+  if (!isAdmin) {
+    const existing = (await query("select notes from documents where document_no=$1 and type=any($2::text[]) limit 1", [employeeDocumentNo(userName, typeConfig), [...EMPLOYEE_DOCUMENT_TYPE_NAMES]])).rows[0];
+    let metadata = {};
+    try { metadata = JSON.parse(existing?.notes || "{}"); } catch { metadata = {}; }
+    if (metadata.locked === true) return response.status(423).json({ ok: false, error: "This document is locked by HR. Contact HR to unlock it before replacing the file." });
+  }
+
   const cloudinary = cloudinaryConfig();
   if (!cloudinary) {
     return response.status(503).json({ ok: false, error: "Cloudinary is not configured on the server." });
@@ -2426,15 +2473,34 @@ app.post("/api/employee-profile-documents", requireEmployeePortalAuth, async (re
   }
 });
 
+app.put("/api/employee-profile-documents/:documentNo/lock", requireEmployeePortalAuth, async (request, response, next) => {
+  try {
+    if (!isHrAdminSession(request.appSession)) return response.status(403).json({ ok: false, error: "Only HR can lock or unlock employee documents." });
+    const documentNo = String(request.params.documentNo || "").trim();
+    const locked = request.body?.locked === true || String(request.body?.locked || "").toLowerCase() === "true";
+    const existing = (await query("select document_no, notes from documents where document_no=$1 and type=any($2::text[]) limit 1", [documentNo, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]])).rows[0];
+    if (!existing) return response.status(404).json({ ok: false, error: "Employee document not found." });
+    let metadata = {};
+    try { metadata = JSON.parse(existing.notes || "{}"); } catch { metadata = {}; }
+    metadata.locked = locked;
+    metadata.lockedAt = locked ? new Date().toISOString() : "";
+    metadata.lockedBy = locked ? String(request.appSession?.userName || "HR") : "";
+    const result = await query("update documents set notes=$2, updated_at=now() where document_no=$1 returning document_no, linked_no, type, status, date, owner, file_name, storage_url, notes, created_at", [documentNo, JSON.stringify(metadata)]);
+    return response.json({ ok: true, row: result.rows[0] });
+  } catch (error) { return next(error); }
+});
+
 app.delete("/api/employee-profile-documents/:documentNo", requireEmployeePortalAuth, async (request, response, next) => {
   try {
     const sessionUser = String(request.appSession?.userName || "").trim();
-    const role = String(request.appSession?.role || "").toLowerCase();
     const isAdmin = isHrAdminSession(request.appSession);
     const documentNo = String(request.params.documentNo || "").trim();
-    const documentItem = (await query("select document_no,linked_no,type from documents where document_no=$1 and type=any($2::text[]) limit 1", [documentNo, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]])).rows[0];
+    const documentItem = (await query("select document_no,linked_no,type,notes from documents where document_no=$1 and type=any($2::text[]) limit 1", [documentNo, [...EMPLOYEE_DOCUMENT_TYPE_NAMES]])).rows[0];
     if (!documentItem) return response.status(404).json({ok:false,error:"Employee document not found."});
     if (!isAdmin && String(documentItem.linked_no || "").toLowerCase() !== sessionUser.toLowerCase()) return response.status(403).json({ok:false,error:"You can only delete your own employee documents."});
+    let metadata = {};
+    try { metadata = JSON.parse(documentItem.notes || "{}"); } catch { metadata = {}; }
+    if (!isAdmin && metadata.locked === true) return response.status(423).json({ ok: false, error: "This document is locked by HR. Contact HR to unlock it before deleting the file." });
     await query("delete from documents where document_no=$1", [documentNo]);
     return response.json({ok:true,documentNo});
   } catch (error) { return next(error); }

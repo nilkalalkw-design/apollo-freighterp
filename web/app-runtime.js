@@ -232,6 +232,7 @@ function seedState() {
     hrAnnouncements: [
       { id: "1", title: "Welcome to the HR Portal", body: "This is a demo announcement. Connect a database to start managing real employee records, leave requests, payslips, and announcements.", postedBy: "admin", audience: "All", pinned: true, postedAt: today }
     ],
+    hrAnnouncementReadIds: {},
     settings: {
       settingsKey: "default",
       companyName: "APOLLO FREIGHT SOLUTIONS",
@@ -1122,6 +1123,7 @@ function normalizeState(stored) {
     leaveRequests: Array.isArray(stored.leaveRequests) ? stored.leaveRequests : defaults.leaveRequests,
     payslips: Array.isArray(stored.payslips) ? stored.payslips : defaults.payslips,
     hrAnnouncements: Array.isArray(stored.hrAnnouncements) ? stored.hrAnnouncements : defaults.hrAnnouncements,
+    hrAnnouncementReadIds: stored.hrAnnouncementReadIds && typeof stored.hrAnnouncementReadIds === "object" && !Array.isArray(stored.hrAnnouncementReadIds) ? stored.hrAnnouncementReadIds : defaults.hrAnnouncementReadIds,
     settings: {
       ...defaults.settings,
       ...(stored.settings || {})
@@ -2401,6 +2403,7 @@ async function syncFromApi() {
       state.leaveRequests = (leaveRequests.rows || []).map(apiLeaveRequest);
       state.payslips = (payslips.rows || []).map(apiPayslip);
       state.hrAnnouncements = (hrAnnouncements.rows || []).map(apiHrAnnouncement);
+      await syncAnnouncementReadState();
       renderErpAnnouncementsDropdown();
       state.employeeProfileDocuments = (employeeProfileDocuments.rows || []).map(apiDocument);
       liveShipmentDataReady = true;
@@ -2531,6 +2534,11 @@ function apiDocument(row) {
   item.fileName = row.file_name || "";
   item.storageUrl = row.storage_url || "";
   item.createdAt = row.created_at || "";
+  let metadata = {};
+  try { metadata = JSON.parse(row.notes || "{}"); } catch { metadata = {}; }
+  item.locked = metadata.locked === true;
+  item.lockedAt = metadata.lockedAt || "";
+  item.lockedBy = metadata.lockedBy || "";
   return item;
 }
 
@@ -2801,6 +2809,73 @@ function apiHrAnnouncement(row) {
     pinned: Boolean(row.pinned),
     postedAt: row.posted_at || ""
   };
+}
+
+function sortedHrAnnouncements() {
+  return [...(state.hrAnnouncements || [])].sort((a, b) => (Number(b.pinned) - Number(a.pinned)) || String(b.postedAt || "").localeCompare(String(a.postedAt || "")));
+}
+
+function announcementReadKey(userName = currentUserName()) {
+  return String(userName || "").trim().toLowerCase() || "anonymous";
+}
+
+function localReadAnnouncementSet(userName = currentUserName()) {
+  const byUser = state.hrAnnouncementReadIds?.[announcementReadKey(userName)];
+  return new Set(Array.isArray(byUser) ? byUser.map((id) => String(id)) : []);
+}
+
+function latestUnreadAnnouncement(userName = currentUserName()) {
+  const readIds = localReadAnnouncementSet(userName);
+  return sortedHrAnnouncements().find((row) => !readIds.has(String(row.id))) || null;
+}
+
+function postLoginAnnouncementNotice() {
+  const session = currentSession();
+  if (!session?.token || isCustomerSession()) return "";
+  const row = latestUnreadAnnouncement();
+  if (!row) return "";
+  const posted = String(row.postedAt || "").replace("T", " ").slice(0, 16);
+  return `<section class="panel post-login-announcement-notice"><div class="panel-header"><div><p class="eyebrow">New announcement</p><h2>${escapeHtml(row.title)}</h2><small>${escapeHtml(row.postedBy || "HR")} · ${escapeHtml(posted)}</small></div><span class="announcement-unread-badge">Unread</span></div><p>${escapeHtml(row.body)}</p><div class="action-row"><button type="button" data-action="mark-announcement-read" data-id="${escapeHtml(row.id)}">Mark as read</button></div></section>`;
+}
+
+async function syncAnnouncementReadState() {
+  if (!currentSession()?.token || isCustomerSession()) return;
+  try {
+    const result = await fetchJson("/api/hr-announcement-reads");
+    const serverIds = (result.rows || []).map((row) => String(row.announcement_id ?? row.announcementId ?? "")).filter(Boolean);
+    if (!serverIds.length) return;
+    const key = announcementReadKey();
+    const current = state.hrAnnouncementReadIds && typeof state.hrAnnouncementReadIds === "object" ? state.hrAnnouncementReadIds : {};
+    const merged = new Set([...(Array.isArray(current[key]) ? current[key].map((value) => String(value)) : []), ...serverIds]);
+    state.hrAnnouncementReadIds = { ...current, [key]: [...merged] };
+  } catch (error) {
+    // The announcement read endpoint is additive. Keep the locally stored state when an older live
+    // server has not deployed it yet, so the normal bootstrap and existing portal flows continue.
+    console.warn("Announcement read state could not be loaded", error);
+  }
+}
+
+async function markAnnouncementRead(id) {
+  const announcementId = String(id || "").trim();
+  if (!announcementId || !currentSession()?.token) return;
+  const key = announcementReadKey();
+  const current = state.hrAnnouncementReadIds && typeof state.hrAnnouncementReadIds === "object" ? state.hrAnnouncementReadIds : {};
+  const readIds = new Set(Array.isArray(current[key]) ? current[key].map((value) => String(value)) : []);
+  readIds.add(announcementId);
+  state.hrAnnouncementReadIds = { ...current, [key]: [...readIds] };
+  saveState();
+  render();
+  try {
+    await fetchJson("/api/hr-announcement-reads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ announcementId: Number(announcementId) })
+    });
+  } catch (error) {
+    // Local persistence keeps the notice dismissed even when an older live server has not yet run
+    // the additive read-state migration. The announcement remains available in its panel.
+    console.warn("Announcement read state could not be synced to the server", error);
+  }
 }
 
 function apiSettings(row) {
@@ -3094,7 +3169,7 @@ function renderHrDashboard() {
   const approvedLeave = myLeave.filter((row) => row.status === "Approved").length;
   const myPayslips = state.payslips.filter((row) => row.userName === currentUserName());
   const announcements = [...state.hrAnnouncements].sort((a, b) => (b.pinned - a.pinned) || (b.postedAt || "").localeCompare(a.postedAt || ""));
-  return `<section class="kpi-grid">
+  return `${postLoginAnnouncementNotice()}<section class="kpi-grid">
       ${kpi("My Pending Leave", pendingLeave, "Awaiting approval")}
       ${kpi("My Approved Leave", approvedLeave, "This account")}
       ${kpi("My Payslips", myPayslips.length, "Available to view")}
@@ -3161,20 +3236,21 @@ function employeeProfileDocumentsPanel() {
     ["Civil ID Front", "Civil ID — Front", "PDF, JPG or PNG • Maximum 10 MB"],
     ["Civil ID Back", "Civil ID — Back", "PDF, JPG or PNG • Maximum 10 MB"],
     ["Passport Front", "Passport — Front", "PDF, JPG or PNG • Maximum 10 MB"],
-    ["Passport Back", "Passport — Back", "PDF, JPG or PNG • Maximum 10 MB"]
+    ["Passport Back", "Passport — Back", "PDF, JPG or PNG • Maximum 10 MB"],
+    ["Work Permit", "Work Permit", "PDF, JPG or PNG • Maximum 10 MB"],
+    ["Other", "Other Document", "PDF, JPG or PNG • Maximum 10 MB"]
   ];
   return `<section class="form-section employee-document-panel"><h3>Personal Documents</h3>
-    <p class="empty-state">Your documents are stored privately. Upload a replacement any time.</p>
-    <div class="employee-document-grid">
+    <p class="empty-state">Your documents are stored privately. HR-locked documents remain viewable but cannot be changed or deleted.</p>
+    <div class="employee-document-list">
       ${documentTypes.map(([type, label, help]) => {
         const documentItem = documents.find((item) => item.type === type);
-        return `<article class="employee-document-card">
-          <strong>${escapeHtml(label)}</strong>
-          <small>${escapeHtml(help)}</small>
-          ${type === "Employee Photo" && documentItem?.storageUrl ? `<img class="employee-profile-thumbnail" src="${escapeHtml(documentItem.storageUrl)}" alt="Employee profile" />` : ""}
+        const locked = documentItem?.locked === true;
+        return `<article class="employee-document-row${locked ? " is-locked" : ""}">
+          <div class="employee-document-row-main"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(help)}</small>${type === "Employee Photo" && documentItem?.storageUrl ? `<img class="employee-profile-thumbnail" src="${escapeHtml(documentItem.storageUrl)}" alt="Employee profile" />` : ""}</div>
           <span class="${documentItem?.storageUrl ? "document-uploaded" : "document-missing"}">${documentItem?.storageUrl ? "Uploaded" : "Not uploaded"}</span>
-          ${documentItem?.storageUrl ? `<button type="button" class="secondary-button" data-action="view-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">View file</button><button type="button" class="secondary-button" data-action="delete-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">Delete file</button>` : ""}
-          <button type="button" class="secondary-button" data-action="upload-employee-document" data-document-type="${escapeHtml(type)}">${documentItem?.storageUrl ? "Replace file" : "Upload file"}</button>
+          ${locked ? `<span class="document-locked">Locked by HR</span>` : ""}
+          <div class="employee-document-row-actions">${documentItem?.storageUrl ? `<button type="button" class="secondary-button" data-action="view-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">View</button>` : ""}${documentItem?.storageUrl && !locked ? `<button type="button" class="secondary-button" data-action="delete-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">Delete</button>` : ""}${!locked ? `<button type="button" class="secondary-button" data-action="upload-employee-document" data-document-type="${escapeHtml(type)}">${documentItem?.storageUrl ? "Change" : "Upload"}</button>` : ""}</div>
         </article>`;
       }).join("")}
     </div>
@@ -3291,6 +3367,7 @@ function renderDashboard() {
     : "";
   if (!isAdminSession()) {
     return `
+      ${postLoginAnnouncementNotice()}
       <section class="kpi-grid">
         ${kpi("Open Shipments", open, liveShipmentCaption, "open-shipments")}
         ${kpi("In Transit", transit, "Status: In-Transit", "in-transit")}
@@ -3304,6 +3381,7 @@ function renderDashboard() {
       ${incomingShipmentPanel()}`;
   }
   return `
+    ${postLoginAnnouncementNotice()}
     <section class="kpi-grid">
       ${kpi("Open Shipments", open, liveShipmentCaption, "open-shipments")}
       ${kpi("In Transit", transit, "Status: In-Transit", "in-transit")}
@@ -5510,6 +5588,11 @@ async function handleModuleClick(event) {
     return;
   }
 
+  if (action === "mark-announcement-read") {
+    await markAnnouncementRead(button.dataset.id || "");
+    return;
+  }
+
   if (action === "edit-customer-request") {
     state.ui.customerRequestEditNo = button.dataset.requestNo || "";
     activeModule = "Customer New Shipment";
@@ -5698,6 +5781,11 @@ async function handleModuleClick(event) {
 
   if (action === "upload-employee-document-admin") {
     await uploadEmployeeProfileDocumentAsAdmin(button.dataset.employee || "", button.dataset.documentType || "");
+    return;
+  }
+
+  if (action === "toggle-employee-document-lock") {
+    await toggleEmployeeDocumentLock(button.dataset.documentNo || "", button.dataset.locked !== "true");
     return;
   }
 
@@ -7762,10 +7850,10 @@ function userDialogBody(record) {
     ${select("accountStatus", "User Account", accountStatusOptions(), fieldValue("accountStatus", "Active"))}
     ${select("branchAccess", "Branch Access", branchAccessOptions(), fieldValue("branchAccess", branchOptions()[0]))}
     ${select("branchViewScope", "View Scope", branchViewScopeOptions(), fieldValue("branchViewScope", "Assigned Branch Only"))}
-    ${checkbox("erpPortalAccess", "Allow ERP Portal access (Company Login)", loaded ? isChecked(fieldValue("erpPortalAccess", true)) : true)}
     ${sectionAccessCheckboxes(checkedSections, {
       billingSalesChecked: loaded ? isChecked(fieldValue("canBillingSalesEntry", true)) : true,
       billingCostChecked: loaded ? isChecked(fieldValue("canBillingCostEntry", true)) : true,
+      erpPortalChecked: loaded ? isChecked(fieldValue("erpPortalAccess", true)) : true,
       hrPortalChecked: isChecked(fieldValue("hrPortalAccess", false)),
       hrAdminChecked: isChecked(fieldValue("isHrAdmin", false)),
       maintenancePortalChecked: isChecked(fieldValue("maintenancePortalAccess", false))
@@ -7788,7 +7876,7 @@ function changePasswordDialogBody() {
 }
 
 function sectionAccessCheckboxes(checkedSections = new Set(), options = {}) {
-  const { billingSalesChecked = true, billingCostChecked = true, hrPortalChecked = false, hrAdminChecked = false, maintenancePortalChecked = false } = options;
+  const { billingSalesChecked = true, billingCostChecked = true, erpPortalChecked = true, hrPortalChecked = false, hrAdminChecked = false, maintenancePortalChecked = false } = options;
   return `<fieldset class="section-access-grid">
     <legend>Menu Access Permissions</legend>
     ${modules.map(([name]) => {
@@ -7801,8 +7889,9 @@ function sectionAccessCheckboxes(checkedSections = new Set(), options = {}) {
       }
       return row;
     }).join("")}
-    <div class="checkbox-field permission-group-label"><span>Employee Portal</span></div>
+    <div class="checkbox-field permission-group-label"><span>Portal Access</span></div>
     <div class="permission-sub-options">
+      ${checkbox("erpPortalAccess", "Allow ERP Portal access (Company Login)", erpPortalChecked)}
       ${checkbox("hrPortalAccess", "Allow HR Portal access (Employee Login)", hrPortalChecked)}
       ${checkbox("maintenancePortalAccess", "Allow Maintenance Portal access", maintenancePortalChecked)}
       ${checkbox("isHrAdmin", "Is HR Admin (independent of ERP role - manage all employee records, leave, payslips, announcements)", hrAdminChecked)}
@@ -11327,7 +11416,8 @@ async function createUser(data) {
     isChecked(data.canBillingSalesEntry),
     isChecked(data.canBillingCostEntry),
     isChecked(data.erpPortalAccess),
-    isChecked(data.isHrAdmin)
+    isChecked(data.isHrAdmin),
+    isChecked(data.maintenancePortalAccess)
   );
   state.users.unshift(record);
   await postRecord("user", record);
@@ -12170,7 +12260,9 @@ function employeeDocumentUploadRule(documentType) {
     "Civil ID Front": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" },
     "Civil ID Back": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" },
     "Passport Front": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" },
-    "Passport Back": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" }
+    "Passport Back": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" },
+    "Work Permit": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" },
+    "Other": { accept: "application/pdf,.pdf,image/jpeg,image/png", mimeTypes: ["application/pdf", "image/jpeg", "image/png"], maxBytes: 10 * 1024 * 1024, label: "PDF, JPG or PNG" }
   };
   return rules[documentType] || null;
 }
@@ -12250,26 +12342,25 @@ async function deleteEmployeeProfileDocument(documentNo) {
 }
 
 const EMPLOYEE_DOCUMENT_TYPES_FOR_DIALOG = [
-  ["Employee Photo", "Profile Photo", "JPG, JPEG or PNG • Maximum 5 MB"],
-  ["Civil ID Front", "Civil ID — Front", "PDF • Maximum 10 MB"],
-  ["Civil ID Back", "Civil ID — Back", "PDF • Maximum 10 MB"],
-  ["Passport Front", "Passport — Front", "PDF • Maximum 10 MB"],
-  ["Passport Back", "Passport — Back", "PDF • Maximum 10 MB"]
+  ["Employee Photo", "Profile Photo", "JPG, JPEG or PNG • Maximum 10 MB"],
+  ["Civil ID Front", "Civil ID — Front", "PDF, JPG or PNG • Maximum 10 MB"],
+  ["Civil ID Back", "Civil ID — Back", "PDF, JPG or PNG • Maximum 10 MB"],
+  ["Passport Front", "Passport — Front", "PDF, JPG or PNG • Maximum 10 MB"],
+  ["Passport Back", "Passport — Back", "PDF, JPG or PNG • Maximum 10 MB"],
+  ["Work Permit", "Work Permit", "PDF, JPG or PNG • Maximum 10 MB"],
+  ["Other", "Other Document", "PDF, JPG or PNG • Maximum 10 MB"]
 ];
 
 function employeeDocumentsDialogBody(userName, documents) {
-  return `<div class="employee-document-grid">
+  return `<div class="employee-document-list">
     ${EMPLOYEE_DOCUMENT_TYPES_FOR_DIALOG.map(([type, label, help]) => {
       const documentItem = documents.find((item) => item.type === type);
-      return `<article class="employee-document-card">
-        <strong>${escapeHtml(label)}</strong>
-        <small>${escapeHtml(help)}</small>
-        ${type === "Employee Photo" && documentItem?.storageUrl ? `<img class="employee-profile-thumbnail" src="${escapeHtml(documentItem.storageUrl)}" alt="Employee profile" />` : ""}
+      const locked = documentItem?.locked === true;
+      return `<article class="employee-document-row${locked ? " is-locked" : ""}">
+        <div class="employee-document-row-main"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(help)}</small>${type === "Employee Photo" && documentItem?.storageUrl ? `<img class="employee-profile-thumbnail" src="${escapeHtml(documentItem.storageUrl)}" alt="Employee profile" />` : ""}</div>
         <span class="${documentItem?.storageUrl ? "document-uploaded" : "document-missing"}">${documentItem?.storageUrl ? "Uploaded" : "Not uploaded"}</span>
-        <div class="employee-document-card-actions">
-          ${documentItem?.documentNo ? `<button type="button" class="secondary-button" data-action="view-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">View file</button>` : ""}
-          <button type="button" class="secondary-button" data-action="upload-employee-document-admin" data-document-type="${escapeHtml(type)}" data-employee="${escapeHtml(userName)}">${documentItem?.storageUrl ? "Replace file" : "Upload file"}</button>
-        </div>
+        ${locked ? `<span class="document-locked">Locked</span>` : `<span class="document-unlocked">Unlocked</span>`}
+        <div class="employee-document-row-actions">${documentItem?.documentNo ? `<button type="button" class="secondary-button" data-action="view-employee-document" data-document-no="${escapeHtml(documentItem.documentNo)}">View</button>` : ""}<button type="button" class="secondary-button" data-action="upload-employee-document-admin" data-document-type="${escapeHtml(type)}" data-employee="${escapeHtml(userName)}">${documentItem?.storageUrl ? "Change" : "Upload"}</button>${documentItem?.documentNo ? `<button type="button" class="${locked ? "secondary-button" : "ghost-button"}" data-action="toggle-employee-document-lock" data-document-no="${escapeHtml(documentItem.documentNo)}" data-locked="${locked ? "true" : "false"}">${locked ? "Unlock" : "Lock"}</button>` : ""}</div>
       </article>`;
     }).join("")}
   </div>`;
@@ -12280,6 +12371,7 @@ function employeeDocumentsDialogBody(userName, documents) {
 // must not get overwritten by whichever other employee an admin happens to be looking at).
 async function openEmployeeDocumentsDialog(userName) {
   if (!userName || !isHrAdmin()) return;
+  state.ui.openEmployeeDocumentsUserName = userName;
   let documents = [];
   try {
     const result = await fetchJson(`/api/employee-profile-documents?employee=${encodeURIComponent(userName)}`);
@@ -12299,6 +12391,21 @@ async function openEmployeeDocumentsDialog(userName) {
       recordDialog.close();
     }
   });
+}
+
+async function toggleEmployeeDocumentLock(documentNo, locked) {
+  if (!documentNo || !isHrAdmin()) return;
+  try {
+    await fetchJson(`/api/employee-profile-documents/${encodeURIComponent(documentNo)}/lock`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locked: Boolean(locked) })
+    });
+    notifySuccess(locked ? "Document locked" : "Document unlocked", locked ? "The employee cannot change or delete this document now." : "The employee can change or delete this document again.");
+    await openEmployeeDocumentsDialog(state.ui.openEmployeeDocumentsUserName || "");
+  } catch (error) {
+    notifyDenied("Document access not changed", error.message || "The document lock state could not be updated.");
+  }
 }
 
 // Same upload flow as the employee's own self-service upload, but tagged with employeeUserName so
