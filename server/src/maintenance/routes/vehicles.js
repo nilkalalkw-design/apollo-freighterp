@@ -85,7 +85,7 @@ vehiclesRouter.put("/:id", requireAuth, async (req, res) => {
   }
 });
 
-vehiclesRouter.get("/:id/history", async (req, res) => {
+vehiclesRouter.get("/:id/history", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await query(

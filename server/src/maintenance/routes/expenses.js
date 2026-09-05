@@ -98,7 +98,7 @@ expensesRouter.put("/:id", requireAuth, async (req, res) => {
   }
 });
 
-expensesRouter.get("/:id/history", async (req, res) => {
+expensesRouter.get("/:id/history", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await query(
