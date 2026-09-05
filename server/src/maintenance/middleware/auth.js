@@ -53,7 +53,8 @@ function permissionsFromErpUser(row) {
     // Maintenance Portal access is the explicit permission to create new maintenance entries.
     // Edit/delete ownership and all-record visibility remain controlled by their separate flags below.
     create: isAdmin || row.maintenance_portal_access === true || row.can_edit_all_entry === true || row.can_view_all_entry === true,
-    updateOwn: isAdmin || row.can_view_only_self_entry !== true,
+    // Maintenance users may update entries they created; edit-all remains a separate permission.
+    updateOwn: isAdmin || row.maintenance_portal_access === true || row.can_view_only_self_entry !== true,
     viewAll: isAdmin || row.can_view_all_entry === true,
     editAll: isAdmin || row.can_edit_all_entry === true
   };
