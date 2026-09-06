@@ -53,6 +53,7 @@ const modules = [
 ];
 
 const state = loadState();
+let announcementReadStateReady = false;
 let activeModule = "Dashboard";
 let editing = null;
 let dialogState = null;
@@ -2240,6 +2241,7 @@ function showLogin() {
 }
 
 function showApp() {
+  announcementReadStateReady = false;
   liveShipmentDataReady = false;
   loginScreen.classList.add("is-hidden");
   appShell.classList.remove("is-hidden");
@@ -2415,10 +2417,12 @@ async function syncFromApi() {
         };
       }
     }
+    if (!databaseReady) announcementReadStateReady = true;
     saveState();
     maybePlayAdminNotification();
   } catch (error) {
     liveShipmentDataReady = false;
+    announcementReadStateReady = true;
     state.api = { status: "API offline", database: "local data", mode: "browser", error: error.message };
   } finally {
     // Always clears, whichever branch ran (customer portal, success, or failure) - so the person
@@ -2831,7 +2835,7 @@ function latestUnreadAnnouncement(userName = currentUserName()) {
 
 function postLoginAnnouncementNotice() {
   const session = currentSession();
-  if (!session?.token || isCustomerSession()) return "";
+  if (!announcementReadStateReady || !session?.token || isCustomerSession()) return "";
   const row = latestUnreadAnnouncement();
   if (!row) return "";
   const posted = String(row.postedAt || "").replace("T", " ").slice(0, 16);
@@ -2839,18 +2843,23 @@ function postLoginAnnouncementNotice() {
 }
 
 async function syncAnnouncementReadState() {
-  if (!currentSession()?.token || isCustomerSession()) return;
+  const session = currentSession();
+  if (!session?.token || isCustomerSession()) {
+    announcementReadStateReady = true;
+    return;
+  }
   try {
     const result = await fetchJson("/api/hr-announcement-reads");
     const serverIds = (result.rows || []).map((row) => String(row.announcement_id ?? row.announcementId ?? "")).filter(Boolean);
-    if (!serverIds.length) return;
     const key = announcementReadKey();
     const current = state.hrAnnouncementReadIds && typeof state.hrAnnouncementReadIds === "object" ? state.hrAnnouncementReadIds : {};
     const merged = new Set([...(Array.isArray(current[key]) ? current[key].map((value) => String(value)) : []), ...serverIds]);
     state.hrAnnouncementReadIds = { ...current, [key]: [...merged] };
+    announcementReadStateReady = true;
   } catch (error) {
     // The announcement read endpoint is additive. Keep the locally stored state when an older live
     // server has not deployed it yet, so the normal bootstrap and existing portal flows continue.
+    announcementReadStateReady = true;
     console.warn("Announcement read state could not be loaded", error);
   }
 }
@@ -2863,6 +2872,7 @@ async function markAnnouncementRead(id) {
   const readIds = new Set(Array.isArray(current[key]) ? current[key].map((value) => String(value)) : []);
   readIds.add(announcementId);
   state.hrAnnouncementReadIds = { ...current, [key]: [...readIds] };
+  announcementReadStateReady = true;
   saveState();
   render();
   try {
