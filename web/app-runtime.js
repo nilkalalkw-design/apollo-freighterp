@@ -2824,7 +2824,8 @@ function apiAudit(row) {
     dateTime: String(row.date_time || "").replace("T", " ").slice(0, 16),
     user: row.user_name,
     action: row.action,
-    reference: row.reference
+    reference: row.reference,
+    details: row.details || ""
   };
 }
 
