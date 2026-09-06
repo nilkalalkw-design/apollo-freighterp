@@ -96,9 +96,11 @@ if (allowedOrigins.includes("*")) {
 }
 
 // The token signing secret. Starts as whatever was explicitly configured (may be empty) and is
-// resolved to a stable value by ensurePortalSecret() before the server starts accepting requests -
-// see the comment in config.js for why this can no longer be a fresh random value per process.
+// resolved to a stable value by ensurePortalSecret() during startup. The HTTP server binds before
+// migrations so Render can detect the assigned port promptly; login waits for this initialization.
 let customerPortalSecret = configuredSecret || "";
+let startupReady = false;
+let startupReadyPromise = Promise.resolve();
 
 async function ensurePortalSecret() {
   try {
@@ -1804,6 +1806,11 @@ app.post("/api/session/handoff", loginRateLimiter, async (request, response, nex
 });
 
 app.post("/api/login", loginRateLimiter, async (request, response, next) => {
+  // Render must see an open port while migrations run, but credentials must not be signed with an
+  // uninitialized or temporary secret. Wait only for login requests during the one-time startup.
+  if (!startupReady) {
+    await startupReadyPromise;
+  }
   const identifier = String(request.body?.userName || request.body?.email || "").trim();
   const password = String(request.body?.password || "");
   const loginMode = String(request.body?.loginMode || "company").trim().toLowerCase();
@@ -3554,27 +3561,37 @@ app.use((error, _request, response, _next) => {
   });
 });
 
-async function start() {
-  if (autoMigrate) {
-    try {
-      await runMigrations();
-      runtimeStatus.migration = "applied";
-      runtimeStatus.startupError = "";
-    } catch (error) {
-      runtimeStatus.migration = "skipped";
-      runtimeStatus.startupError = error.message;
-      console.warn(`Database migration skipped: ${error.message}`);
-    }
-  }
-
-  // Must resolve to a stable value before the server accepts any requests - if this ran lazily on
-  // first login instead, a burst of concurrent logins right after a cold start could each generate
-  // their own secret and race each other.
-  await ensurePortalSecret();
-
-  app.listen(port, () => {
+function start() {
+  // Bind before migrations. Render's port scanner has a short startup window and will terminate a
+  // process that does not listen while a slow or locked database migration is being applied.
+  const server = app.listen(port, () => {
     console.log(`Apollo Freight Solutions Portal server running on port ${port}`);
   });
-}
+  server.on("error", (error) => {
+    runtimeStatus.startupError = error.message;
+    console.error(`Could not bind server to port ${port}: ${error.message}`);
+  });
 
+  startupReadyPromise = (async () => {
+    if (autoMigrate) {
+      try {
+        await runMigrations();
+        runtimeStatus.migration = "applied";
+        runtimeStatus.startupError = "";
+      } catch (error) {
+        runtimeStatus.migration = "skipped";
+        runtimeStatus.startupError = error.message;
+        console.warn(`Database migration skipped: ${error.message}`);
+      }
+    }
+    // Resolve the stable shared secret after migrations. Login requests wait for this promise,
+    // preventing token signing races while still allowing Render to detect the open port.
+    await ensurePortalSecret();
+    startupReady = true;
+  })().catch((error) => {
+    runtimeStatus.startupError = error.message;
+    console.error(`Startup initialization failed: ${error.message}`);
+    startupReady = true;
+  });
+}
 start();
