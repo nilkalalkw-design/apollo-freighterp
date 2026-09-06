@@ -95,10 +95,10 @@ if (allowedOrigins.includes("*")) {
   );
 }
 
-// The token signing secret. Starts as whatever was explicitly configured (may be empty) and is
-// resolved to a stable value by ensurePortalSecret() during startup. The HTTP server binds before
-// migrations so Render can detect the assigned port promptly; login waits for this initialization.
-let customerPortalSecret = configuredSecret || "";
+// The token signing secret. Starts with the configured value, or a process-local fallback while
+// the database-backed shared secret is initialized in the background. The HTTP server and login
+// route remain responsive while migrations complete.
+let customerPortalSecret = configuredSecret || crypto.randomBytes(32).toString("hex");
 let startupReady = false;
 let startupReadyPromise = Promise.resolve();
 
@@ -1806,11 +1806,9 @@ app.post("/api/session/handoff", loginRateLimiter, async (request, response, nex
 });
 
 app.post("/api/login", loginRateLimiter, async (request, response, next) => {
-  // Render must see an open port while migrations run, but credentials must not be signed with an
-  // uninitialized or temporary secret. Wait only for login requests during the one-time startup.
-  if (!startupReady) {
-    await startupReadyPromise;
-  }
+  // Database migrations and shared-secret hydration run in the background so login requests do not
+  // hang when a migration is slow or waiting on a database lock. Production uses the configured
+  // CUSTOMER_PORTAL_SECRET until the persisted secret is available.
   const identifier = String(request.body?.userName || request.body?.email || "").trim();
   const password = String(request.body?.password || "");
   const loginMode = String(request.body?.loginMode || "company").trim().toLowerCase();
