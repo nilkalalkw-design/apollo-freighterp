@@ -2326,31 +2326,13 @@ async function syncFromApi() {
       await syncCustomerPortal();
       return;
     }
-    const [
-      health,
-      shipments,
-      consolidations,
-      customers,
-      suppliers,
-      tariffs,
-      documents,
-      additionalCharges,
-      invoices,
-      quotations,
-      shipmentRequests,
-      shipmentStatusHistory,
-      users,
-      customerUsers,
-      unblockRequests,
-      adminRequests,
-      auditLog,
-      settings,
-      employees,
-      leaveRequests,
-      payslips,
-      hrAnnouncements,
-      employeeProfileDocuments
-    ] = await Promise.all([
+    const requestNames = [
+      "health", "shipments", "consolidations", "customers", "suppliers", "tariffs", "documents",
+      "additionalCharges", "invoices", "quotations", "shipmentRequests", "shipmentStatusHistory",
+      "users", "customerUsers", "unblockRequests", "adminRequests", "audit", "settings", "employees",
+      "leaveRequests", "payslips", "hrAnnouncements", "employeeProfileDocuments"
+    ];
+    const results = await Promise.allSettled([
       fetchJson("/api/health"),
       fetchJson("/api/shipments"),
       fetchJson("/api/consolidations"),
@@ -2375,6 +2357,12 @@ async function syncFromApi() {
       fetchJson("/api/hr-announcements"),
       isHrSession() ? fetchJson("/api/employee-profile-documents") : Promise.resolve({ rows: [] })
     ]);
+    const valueAt = (index) => results[index]?.status === "fulfilled" ? results[index].value : null;
+    const health = valueAt(0);
+    const failures = results
+      .map((result, index) => result.status === "rejected" ? `${requestNames[index]}: ${result.reason?.message || "request failed"}` : "")
+      .filter(Boolean);
+    if (!health) throw new Error(failures[0] || "Health request failed.");
 
     const apiMode = health.mode || (health.database === "connected" ? "database" : "demo");
     const databaseReady = health.database === "connected" && apiMode === "database";
@@ -2382,40 +2370,44 @@ async function syncFromApi() {
       status: databaseReady ? "API connected" : "API setup required",
       database: health.database || "unknown",
       mode: apiMode,
-      error: health.error || health.startupError || ""
+      error: [health.error || health.startupError || "", ...failures].filter(Boolean).join(" | ")
     };
     if (databaseReady) {
-      state.shipments = (shipments.rows || []).map(apiShipment);
-      state.loads = (consolidations.rows || []).map(apiLoad);
-      state.customers = (customers.rows || []).map(apiCustomer);
-      state.suppliers = (suppliers.rows || []).map(apiSupplier);
-      state.tariffs = (tariffs.rows || []).map(apiTariff);
-      state.documents = (documents.rows || []).map(apiDocument);
-      state.additionalCharges = (additionalCharges.rows || []).map(apiAdditionalCharge);
-      state.invoices = (invoices.rows || []).map(apiInvoice);
-      state.quotations = (quotations.rows || []).map(apiQuotation);
-      state.shipmentRequests = (shipmentRequests.rows || []).map(apiShipmentRequest);
-      state.shipmentStatusHistory = (shipmentStatusHistory.rows || []).map(apiShipmentStatusHistory);
-      state.users = normalizeUsers((users.rows || []).map(apiUser));
-      state.customerUsers = (customerUsers.rows || []).map(apiCustomerUser);
-      state.unblockRequests = (unblockRequests.rows || []).map(apiUnblockRequest);
-      state.adminRequests = (adminRequests.rows || []).map(apiAdminRequest);
-      state.audit = (auditLog.rows || []).map(apiAudit);
-      state.employees = (employees.rows || []).map(apiEmployee);
-      state.leaveRequests = (leaveRequests.rows || []).map(apiLeaveRequest);
-      state.payslips = (payslips.rows || []).map(apiPayslip);
-      state.hrAnnouncements = (hrAnnouncements.rows || []).map(apiHrAnnouncement);
-      await syncAnnouncementReadState();
-      renderErpAnnouncementsDropdown();
-      state.employeeProfileDocuments = (employeeProfileDocuments.rows || []).map(apiDocument);
-      liveShipmentDataReady = true;
-      if (settings.rows?.length) {
-        state.settings = apiSettings(settings.rows[0]);
-        state.dropdownOptions = {
-          ...state.dropdownOptions,
-          ...parseDropdownOptions(state.settings.dropdownOptionsJson)
-        };
+      const rowsAt = (index) => valueAt(index)?.rows;
+      if (rowsAt(1)) state.shipments = rowsAt(1).map(apiShipment);
+      if (rowsAt(2)) state.loads = rowsAt(2).map(apiLoad);
+      if (rowsAt(3)) state.customers = rowsAt(3).map(apiCustomer);
+      if (rowsAt(4)) state.suppliers = rowsAt(4).map(apiSupplier);
+      if (rowsAt(5)) state.tariffs = rowsAt(5).map(apiTariff);
+      if (rowsAt(6)) state.documents = rowsAt(6).map(apiDocument);
+      if (rowsAt(7)) state.additionalCharges = rowsAt(7).map(apiAdditionalCharge);
+      if (rowsAt(8)) state.invoices = rowsAt(8).map(apiInvoice);
+      if (rowsAt(9)) state.quotations = rowsAt(9).map(apiQuotation);
+      if (rowsAt(10)) state.shipmentRequests = rowsAt(10).map(apiShipmentRequest);
+      if (rowsAt(11)) state.shipmentStatusHistory = rowsAt(11).map(apiShipmentStatusHistory);
+      if (rowsAt(12)) state.users = normalizeUsers(rowsAt(12).map(apiUser));
+      if (rowsAt(13)) state.customerUsers = rowsAt(13).map(apiCustomerUser);
+      if (rowsAt(14)) state.unblockRequests = rowsAt(14).map(apiUnblockRequest);
+      if (rowsAt(15)) state.adminRequests = rowsAt(15).map(apiAdminRequest);
+      if (rowsAt(16)) state.audit = rowsAt(16).map(apiAudit);
+      if (rowsAt(18)) state.employees = rowsAt(18).map(apiEmployee);
+      if (rowsAt(19)) state.leaveRequests = rowsAt(19).map(apiLeaveRequest);
+      if (rowsAt(20)) state.payslips = rowsAt(20).map(apiPayslip);
+      if (rowsAt(21)) state.hrAnnouncements = rowsAt(21).map(apiHrAnnouncement);
+      if (rowsAt(22)) state.employeeProfileDocuments = rowsAt(22).map(apiDocument);
+      const settingsRows = rowsAt(17);
+      if (settingsRows?.length) {
+        state.settings = apiSettings(settingsRows[0]);
+        state.dropdownOptions = { ...state.dropdownOptions, ...parseDropdownOptions(state.settings.dropdownOptionsJson) };
       }
+      try {
+        await syncAnnouncementReadState();
+      } catch (error) {
+        announcementReadStateReady = true;
+        state.api.error = [state.api.error, `announcement reads: ${error.message}`].filter(Boolean).join(" | ");
+      }
+      renderErpAnnouncementsDropdown();
+      liveShipmentDataReady = Boolean(rowsAt(1));
     }
     if (!databaseReady) announcementReadStateReady = true;
     saveState();
@@ -2425,8 +2417,6 @@ async function syncFromApi() {
     announcementReadStateReady = true;
     state.api = { status: "API offline", database: "local data", mode: "browser", error: error.message };
   } finally {
-    // Always clears, whichever branch ran (customer portal, success, or failure) - so the person
-    // is never left staring at a "loading" indicator that never goes away.
     hideSyncingIndicator();
     render();
   }
