@@ -3177,6 +3177,108 @@ async function withDatabaseTransaction(work) {
     client.release();
   }
 }
+
+function normalizeAirwayBillNo(value) {
+  return String(value || "").trim();
+}
+
+async function synchronizeAirwayBillGroup(client, airwayBillNo, options = {}) {
+  const normalizedAwb = normalizeAirwayBillNo(airwayBillNo);
+  if (!normalizedAwb) return [];
+  const syncStatus = options.syncStatus === true;
+  const syncPodStatus = options.syncPodStatus === true;
+  const nextStatus = String(options.status || "").trim();
+  const nextPodStatus = String(options.podStatus || "").trim();
+  if (syncStatus && !nextStatus) return [];
+  if (syncPodStatus && !nextPodStatus) return [];
+  const updatedBy = String(options.updatedBy || "system").trim();
+  const updatedAt = String(options.updatedAt || new Date().toISOString()).trim();
+  const note = String(options.notes || `AWB group synchronization for ${normalizedAwb}`).trim();
+  const found = await client.query(
+    "select * from shipments where lower(trim(airway_bill_no)) = lower(trim($1)) order by job_no for update",
+    [normalizedAwb]
+  );
+  const updated = [];
+  for (const current of found.rows) {
+    const currentStatus = String(current.status || "").trim();
+    const currentPodStatus = String(current.pod_status || "").trim();
+    const targetStatus = syncStatus ? nextStatus : currentStatus;
+    const targetPodStatus = syncPodStatus ? nextPodStatus : currentPodStatus;
+    const statusChanged = currentStatus.toLowerCase() !== targetStatus.toLowerCase();
+    const podChanged = currentPodStatus.toLowerCase() !== targetPodStatus.toLowerCase();
+    let row = current;
+    if (statusChanged || podChanged) {
+      const saved = await client.query(
+        "update shipments set status = $1, pod_status = $2, updated_at = now() where job_no = $3 returning *",
+        [targetStatus, targetPodStatus, current.job_no]
+      );
+      row = saved.rows[0] || current;
+      await client.query(
+        "insert into shipment_status_history (job_no, status, pod_status, invoice_status, notes, updated_by, updated_at) values ($1, $2, $3, $4, $5, $6, $7)",
+        [row.job_no, targetStatus, targetPodStatus, row.invoice_status || "", note, updatedBy, updatedAt]
+      );
+    }
+    updated.push(row);
+  }
+  return updated;
+}
+
+async function latestAirwayBillState(client, airwayBillNo, excludeJobNo = "") {
+  const normalizedAwb = normalizeAirwayBillNo(airwayBillNo);
+  if (!normalizedAwb) return null;
+  const result = await client.query(
+    `with awb_events as (
+       select h.status, h.pod_status, h.updated_at, 1 as source_priority, h.id as source_id
+       from shipment_status_history h
+       join shipments s on lower(trim(s.job_no)) = lower(trim(h.job_no))
+       where lower(trim(s.airway_bill_no)) = lower(trim($1))
+         and ($2 = '' or s.job_no <> $2)
+       union all
+       select s.status, s.pod_status, s.updated_at, 0 as source_priority, s.id as source_id
+       from shipments s
+       where lower(trim(s.airway_bill_no)) = lower(trim($1))
+         and ($2 = '' or s.job_no <> $2)
+     )
+     select status, pod_status
+     from awb_events
+     order by updated_at desc, source_priority desc, source_id desc
+     limit 1`,
+    [normalizedAwb, String(excludeJobNo || "")]
+  );
+  return result.rows[0] || null;
+}
+
+async function synchronizeShipmentAirwayBill(row, options = {}) {
+  const airwayBillNo = normalizeAirwayBillNo(row?.airway_bill_no || row?.airwayBillNo);
+  if (!airwayBillNo) return [row];
+  return withDatabaseTransaction(async (client) => {
+    let syncStatus = options.syncStatus === true;
+    let syncPodStatus = options.syncPodStatus === true;
+    let status = String(options.status || row.status || "").trim();
+    let podStatus = String(options.podStatus || row.pod_status || "").trim();
+
+    if (options.joinExistingGroup === true && !options.statusChanged && !options.podStatusChanged) {
+      const latest = await latestAirwayBillState(client, airwayBillNo, row.job_no);
+      if (latest) {
+        syncStatus = true;
+        syncPodStatus = true;
+        status = String(latest.status || "").trim();
+        podStatus = String(latest.pod_status || "").trim();
+      }
+    }
+
+    return synchronizeAirwayBillGroup(client, airwayBillNo, {
+      syncStatus,
+      syncPodStatus,
+      status,
+      podStatus,
+      updatedBy: options.updatedBy,
+      updatedAt: options.updatedAt,
+      notes: options.notes
+    });
+  });
+}
+
 app.post("/api/shipments/status-by-awb", requireAppAuth, async (request, response, next) => {
   try {
     const airwayBillNo = String(request.body?.airwayBillNo ?? request.body?.airway_bill_no ?? "").trim();
@@ -3227,7 +3329,13 @@ app.post("/api/shipments", requireAppAuth, async (request, response, next) => {
     }
 
     const row = await insertRow(resources.shipments, request.body || {});
-    response.status(201).json({ ok: true, row });
+    const relatedRows = await synchronizeShipmentAirwayBill(row, {
+      joinExistingGroup: true,
+      updatedBy: request.appSession?.userName || "system",
+      notes: `AWB group synchronization after shipment creation for ${row.airway_bill_no || ""}`
+    });
+    const savedRow = relatedRows.find((item) => String(item.job_no) === String(row.job_no)) || row;
+    response.status(201).json({ ok: true, row: savedRow, relatedRows });
   } catch (error) {
     if (isDatabaseSetupError(error)) {
       return response.status(201).json({ ok: true, mode: "demo", row: request.body || {} });
@@ -3326,8 +3434,29 @@ app.put("/api/shipments/:id", requireAppAuth, async (request, response, next) =>
       }
     }
 
+    const currentResult = await query("select * from shipments where job_no = $1 limit 1", [shipmentId]);
+    const currentBeforeUpdate = currentResult.rows[0];
     const row = await updateRow(resources.shipments, shipmentId, request.body || {});
-    response.json({ ok: true, row });
+    const requestedStatus = request.body?.status ?? request.body?.status;
+    const requestedPodStatus = request.body?.podStatus ?? request.body?.pod_status;
+    const statusChanged = requestedStatus !== undefined
+      && String(requestedStatus || "").trim().toLowerCase() !== String(currentBeforeUpdate?.status || "").trim().toLowerCase();
+    const podStatusChanged = requestedPodStatus !== undefined
+      && String(requestedPodStatus || "").trim().toLowerCase() !== String(currentBeforeUpdate?.pod_status || "").trim().toLowerCase();
+    const airwayBillChanged = normalizeAirwayBillNo(row.airway_bill_no).toLowerCase() !== normalizeAirwayBillNo(currentBeforeUpdate?.airway_bill_no).toLowerCase();
+    const relatedRows = await synchronizeShipmentAirwayBill(row, {
+      joinExistingGroup: airwayBillChanged,
+      statusChanged,
+      podStatusChanged,
+      syncStatus: statusChanged,
+      syncPodStatus: podStatusChanged,
+      status: row.status,
+      podStatus: row.pod_status,
+      updatedBy: request.appSession?.userName || row.created_by || "system",
+      notes: `AWB group synchronization after shipment update for ${row.airway_bill_no || ""}`
+    });
+    const savedRow = relatedRows.find((item) => String(item.job_no) === String(row.job_no)) || row;
+    response.json({ ok: true, row: savedRow, relatedRows });
   } catch (error) {
     if (isDatabaseSetupError(error)) {
       return response.json({ ok: true, mode: "demo", row: request.body || {} });

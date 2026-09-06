@@ -11856,6 +11856,15 @@ function endpointFor(type) {
   }[type];
 }
 
+function mergeSynchronizedShipmentRows(rows) {
+  if (!Array.isArray(rows)) return;
+  rows.forEach((row) => {
+    const normalized = apiShipment(row || {});
+    const index = state.shipments.findIndex((item) => String(item.jobNo || "") === String(normalized.jobNo || ""));
+    if (index >= 0) state.shipments[index] = { ...state.shipments[index], ...normalized };
+  });
+}
+
 async function postRecord(type, record) {
   const endpoint = endpointFor(type);
   if (!endpoint) return false;
@@ -11866,6 +11875,7 @@ async function postRecord(type, record) {
       body: JSON.stringify(record)
     });
     if (result.mode === "demo") throw new Error("Database tables are not ready yet.");
+    if (type === "shipment") mergeSynchronizedShipmentRows(result.relatedRows);
     return result.row || true;
   } catch (error) {
     if (/already exists/i.test(error?.message || "")) {
@@ -11889,6 +11899,7 @@ async function persistRecord(type, record) {
       body: JSON.stringify(record)
     });
     if (result.mode === "demo") throw new Error("Database tables are not ready yet.");
+    if (type === "shipment") mergeSynchronizedShipmentRows(result.relatedRows);
     return true;
   } catch (error) {
     markApiWriteError(error);
