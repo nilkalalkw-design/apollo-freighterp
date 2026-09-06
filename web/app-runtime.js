@@ -1055,6 +1055,8 @@ function loadState() {
 }
 
 let saveStateTimer = null;
+let columnLayoutHydrated = false;
+let lastPersistedColumnLayoutJson = "";
 const SAVE_STATE_DEBOUNCE_MS = 200;
 const SAVE_STATE_MAX_AUDIT_ROWS = 500;
 
@@ -1075,7 +1077,92 @@ function writeStateSnapshot() {
   } catch (error) {
     console.warn("Could not save local state (it will still be saved to the server):", error);
   }
+  persistColumnLayoutToServer();
 }
+
+function columnLayoutScopes() {
+  return Object.keys(state.ui || {}).filter((key) => {
+    if (key === "shipmentRegisterColumns" || key === "dashboardShipmentColumns" || key === "customerShipmentHistoryColumns") return true;
+    return key.startsWith("columnSettings_");
+  });
+}
+
+const DASHBOARD_LAYOUT_STORAGE_KEY = "apollo.dashboard.columns.v3";
+
+function readDashboardLayoutSnapshot() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_STORAGE_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function serializeColumnLayout() {
+  const layouts = {};
+  columnLayoutScopes().forEach((key) => {
+    const value = state.ui[key];
+    if (value && typeof value === "object") layouts[key] = value;
+  });
+  return JSON.stringify({
+    version: 1,
+    layouts,
+    columnWidths: state.ui.columnWidths || {},
+    columnWidthsLocked: state.ui.columnWidthsLocked || {},
+    dashboardLayout: readDashboardLayoutSnapshot()
+  });
+}
+
+function parseColumnLayoutJson(value) {
+  try {
+    const parsed = JSON.parse(String(value || "{}"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function hydrateColumnLayoutFromServer(value) {
+  const snapshot = parseColumnLayoutJson(value);
+  const layouts = snapshot.layouts && typeof snapshot.layouts === "object" ? snapshot.layouts : {};
+  Object.entries(layouts).forEach(([key, layout]) => {
+    if (!layout || typeof layout !== "object" || !Array.isArray(layout.order)) return;
+    state.ui[key] = {
+      order: layout.order.slice(),
+      visible: { ...(layout.visible || {}) }
+    };
+  });
+  if (snapshot.columnWidths && typeof snapshot.columnWidths === "object") {
+    state.ui.columnWidths = { ...(state.ui.columnWidths || {}), ...snapshot.columnWidths };
+  }
+  if (snapshot.columnWidthsLocked && typeof snapshot.columnWidthsLocked === "object") {
+    state.ui.columnWidthsLocked = { ...(state.ui.columnWidthsLocked || {}), ...snapshot.columnWidthsLocked };
+  }
+  if (snapshot.dashboardLayout && typeof snapshot.dashboardLayout === "object") {
+    try { localStorage.setItem(DASHBOARD_LAYOUT_STORAGE_KEY, JSON.stringify(snapshot.dashboardLayout)); } catch {}
+    window.apolloDashboardLayout?.init?.();
+  }
+  lastPersistedColumnLayoutJson = String(value || "{}");
+}
+
+function persistColumnLayoutToServer() {
+  if (!columnLayoutHydrated || !state.settings?.settingsKey) return;
+  const columnLayoutJson = serializeColumnLayout();
+  if (columnLayoutJson === lastPersistedColumnLayoutJson) return;
+  state.settings.columnLayoutJson = columnLayoutJson;
+  lastPersistedColumnLayoutJson = columnLayoutJson;
+  persistRecord("settings", {
+    settingsKey: state.settings.settingsKey || "default",
+    columnLayoutJson
+  }).then((saved) => {
+    if (!saved) lastPersistedColumnLayoutJson = "";
+  }).catch((error) => {
+    lastPersistedColumnLayoutJson = "";
+    console.warn("Could not persist register column settings", error);
+  });
+}
+
+window.apolloPersistColumnLayout = persistColumnLayoutToServer;
 
 window.addEventListener("beforeunload", () => {
   if (saveStateTimer) {
@@ -2398,6 +2485,8 @@ async function syncFromApi() {
       const settingsRows = rowsAt(17);
       if (settingsRows?.length) {
         state.settings = apiSettings(settingsRows[0]);
+        hydrateColumnLayoutFromServer(state.settings.columnLayoutJson);
+        columnLayoutHydrated = true;
         state.dropdownOptions = { ...state.dropdownOptions, ...parseDropdownOptions(state.settings.dropdownOptionsJson) };
       }
       try {
@@ -12709,7 +12798,7 @@ boot();
 (function () {
   "use strict";
 
-  // Dashboard has its own independent settings.
+  // Dashboard has its own independent settings, mirrored into the durable app settings snapshot.
   const STORAGE = "apollo.dashboard.columns.v3";
   const ROOTS = [
     '[data-page="dashboard"]',
@@ -12735,6 +12824,7 @@ boot();
 
   function save(x) {
     try { localStorage.setItem(STORAGE, JSON.stringify(x)); } catch (_) {}
+    window.apolloPersistColumnLayout?.();
   }
 
   function getItems(r) {
