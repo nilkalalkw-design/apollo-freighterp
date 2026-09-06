@@ -37,6 +37,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGIN || "*")
   .filter(Boolean);
 
 const configuredSecret = process.env.CUSTOMER_PORTAL_SECRET || process.env.SESSION_SECRET || process.env.API_SECRET || "";
+const isProduction = (process.env.NODE_ENV || "development").toLowerCase() === "production";
 // NOTE: this used to fall back to crypto.randomBytes(32) here, generating a brand new secret every
 // time the process started. On a serverless/multi-instance host (Vercel, Cloud Run, etc.) that meant
 // every cold start invalidated every token issued by every other instance - users got kicked out with
@@ -55,5 +56,8 @@ module.exports = {
   isCloudSqlSocket,
   allowedOrigins,
   configuredSecret,
-  autoMigrate: process.env.AUTO_MIGRATE !== "false"
+  // Production must not replay the entire historical migration directory on every restart.
+  // Run `npm run migrate` explicitly for a newly reviewed migration; local development can
+  // still opt in with AUTO_MIGRATE=true.
+  autoMigrate: !isProduction && process.env.AUTO_MIGRATE === "true"
 };
