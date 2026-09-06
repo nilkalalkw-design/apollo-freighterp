@@ -6838,7 +6838,7 @@ async function saveDialogRecordInner() {
       "Additional Charges",
       editing.id,
       "Charge change request submitted by non-admin user.",
-      summarizeChanges(editing.record, updatedRecord),
+      summarizeChanges(editing.record, updatedRecord, Object.keys(data)),
       "Charge Change Request"
     );
     addHistory("Submitted charge change request", editing.id);
@@ -6860,7 +6860,7 @@ async function saveDialogRecordInner() {
       "Consolidation",
       editing.id,
       "Consolidation change request submitted by non-admin user.",
-      summarizeChanges(editing.record, updatedRecord),
+      summarizeChanges(editing.record, updatedRecord, Object.keys(data)),
       "Manifest Approval"
     );
     editing.record.manifestStatus = "Pending Approval";
@@ -6875,7 +6875,7 @@ async function saveDialogRecordInner() {
     return;
   }
 
-  const changeSummary = summarizeChanges(editing.record, updatedRecord);
+  const changeSummary = summarizeChanges(editing.record, updatedRecord, Object.keys(data));
   const originalSnapshot = { ...editing.record };
   Object.assign(editing.record, updatedRecord);
   const editedType = editing.type;
@@ -9591,8 +9591,9 @@ function dialogSafeValue(name, fallback = "") {
   return moduleContent.querySelector(`[name='${name}']`)?.value || fallback;
 }
 
-function summarizeChanges(previous, next) {
-  return Object.keys(next)
+function summarizeChanges(previous, next, submittedKeys = null) {
+  const keys = Array.isArray(submittedKeys) ? submittedKeys : Object.keys(next);
+  return [...new Set(keys)]
     .filter((key) => String(previous[key] ?? "") !== String(next[key] ?? ""))
     .map((key) => `${key}: ${previous[key] ?? ""} -> ${next[key] ?? ""}`)
     .join(" | ");
@@ -11721,7 +11722,7 @@ async function createShipmentDraft(data) {
     });
     updatedRecord.status = "Draft";
     updatedRecord.notes = shipmentMetaNotes(updatedRecord);
-    const changeSummary = summarizeChanges(editing.record, updatedRecord);
+    const changeSummary = summarizeChanges(editing.record, updatedRecord, Object.keys(data));
     const saved = await persistRecord("shipment", updatedRecord);
     if (!saved) {
       notifyDenied("Draft not saved", "The draft could not be saved. Check the connection and try again.");
@@ -12679,7 +12680,7 @@ async function updateStatus(data) {
     state.shipmentStatusHistory.unshift(historyEntry);
     if (!airwayBillNo) await postRecord("statusHistory", historyEntry);
   }
-  const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}${airwayBillNo ? ` | AWB ${airwayBillNo} | ${updatedGroup.length} shipment(s) updated` : ""}${shipmentItem.expectedArrivalDate ? ` | expected arrival: ${shipmentItem.expectedArrivalDate}` : ""}`;
+  const statusDetails = `status: ${oldStatus} -> ${newStatus}`;
   addHistory("Updated shipment status", `${airwayBillNo ? `AWB ${airwayBillNo}` : jobNo} -> ${newStatus}`, statusDetails);
   notifySuccess("Status updated", airwayBillNo ? `AWB ${airwayBillNo} and ${updatedGroup.length} related shipment(s) are now ${newStatus}.` : `${jobNo} is now ${newStatus}.`);
   if (airwayBillNo) {
@@ -12755,7 +12756,7 @@ async function updateLoadStatus(data) {
     await postRecord("statusHistory", historyEntry);
   }
 
-  const statusDetails = `status: ${oldStatus} -> ${newStatus}${remark ? ` | remark: ${remark}` : ""} | date: ${entryDate}${updatedShipments ? ` | ${updatedShipments} shipment(s) updated` : ""}`;
+  const statusDetails = `status: ${oldStatus} -> ${newStatus}`;
   addHistory("Updated manifest status", `${loadNo} -> ${newStatus}`, statusDetails);
   notifySuccess("Manifest status updated", `${loadNo} is now ${newStatus}${updatedShipments ? ` - ${updatedShipments} linked shipment(s) updated too.` : "."}`);
   return true;
