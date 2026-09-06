@@ -2439,10 +2439,24 @@ async function fetchJson(path, options = {}) {
   const headers = session?.token && !hasAuthHeader
     ? { ...existingHeaders, Authorization: "Bearer " + session.token }
     : existingHeaders;
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) throw new Error(data.error || `Request failed: ${response.status}`);
-  return data;
+  const timeoutMs = Number(options.timeoutMs || 15000);
+  const controller = options.signal ? null : new AbortController();
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  const requestOptions = { ...options, headers, signal: options.signal || controller?.signal };
+  delete requestOptions.timeoutMs;
+  try {
+    const response = await fetch(`${API_URL}${path}`, requestOptions);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.error || `Request failed: ${response.status}`);
+    return data;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds: ${path}`);
+    }
+    throw error;
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
 }
 
 async function syncCustomerPortal() {
