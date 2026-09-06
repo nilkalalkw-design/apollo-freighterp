@@ -4947,9 +4947,9 @@ function auditReferenceKey(reference) {
   return text.slice(0, cut).trim() || text;
 }
 
-// Audit "details" strings are written as "field: before -> after | field2: before2 -> after2"
-// (see summarizeChanges, updateStatus, updatePod). This recovers both sides for a before/after
-// table. Segments without a "->" (plain notes like "remark: ...") are not changes and are skipped.
+// Audit "details" strings are written as "field: before -> after | field2: before2 -> after2".
+// The field names remain stored for audit integrity, but the UI intentionally displays only the
+// changed values so an update reads simply: "Before: old -> After: new".
 function parseChangeDetailPairs(details) {
   return String(details || "")
     .split("|")
@@ -4980,18 +4980,19 @@ function auditHistoryForReference(referenceKey) {
     .sort((a, b) => String(a.dateTime || "").localeCompare(String(b.dateTime || "")));
 }
 
+function auditChangeValueText(details) {
+  const pairs = parseChangeDetailPairs(details);
+  if (!pairs.length) return String(details || "").trim();
+  return pairs
+    .map((pair) => `Before: ${pair.before || "-"} -> After: ${pair.after || "-"}`)
+    .join(" | ");
+}
+
 function auditDetailEntryMarkup(entry, position) {
-  const pairs = parseChangeDetailPairs(entry.details);
-  const changesMarkup = pairs.length
-    ? `<table class="audit-change-table"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>${pairs
-        .map(
-          (pair) =>
-            `<tr><td>${escapeHtml(pair.field)}</td><td>${escapeHtml(pair.before || "-")}</td><td>${escapeHtml(pair.after || "-")}</td></tr>`
-        )
-        .join("")}</tbody></table>`
-    : entry.details
-      ? `<p class="audit-change-note">${escapeHtml(entry.details)}</p>`
-      : `<p class="audit-change-note audit-change-note-empty">No field-level changes recorded for this entry.</p>`;
+  const valueText = auditChangeValueText(entry.details);
+  const changesMarkup = valueText
+    ? `<p class="audit-change-values">${escapeHtml(valueText)}</p>`
+    : `<p class="audit-change-note audit-change-note-empty">No value changes recorded for this entry.</p>`;
 
   return `<div class="audit-detail-entry">
     <div class="audit-detail-entry-head">
@@ -5077,9 +5078,9 @@ function cellHtml(type, key, row, index = 0) {
   }
   if (type === "document" && key === "linkedNo") return documentLinkedToMarkup(row);
   if (type === "audit" && key === "details") {
-    const value = String(row.details || "");
+    const value = auditChangeValueText(row.details);
     if (!value) return `<span class="audit-details-empty">-</span>`;
-    const short = value.length > 80 ? `${value.slice(0, 80)}...` : value;
+    const short = value.length > 120 ? `${value.slice(0, 120)}...` : value;
     return `<span class="audit-details" title="${escapeHtml(value)}">${escapeHtml(short)}</span>`;
   }
   if (key === "palletCount") return escapeHtml(cargoPalletCount(row));
