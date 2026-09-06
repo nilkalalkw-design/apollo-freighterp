@@ -2351,65 +2351,68 @@ async function syncFromApi() {
       hrAnnouncements,
       employeeProfileDocuments
     ] = await Promise.all([
-      fetchJson("/api/health"),
-      fetchJson("/api/shipments"),
-      fetchJson("/api/consolidations"),
-      fetchJson("/api/customers"),
-      fetchJson("/api/suppliers"),
-      fetchJson("/api/tariffs"),
-      fetchJson("/api/documents"),
-      fetchJson("/api/additional-charges"),
-      fetchJson("/api/invoices"),
-      fetchJson("/api/quotations"),
-      fetchJson("/api/shipment-requests"),
-      fetchJson("/api/shipment-status-history"),
-      fetchJson("/api/users"),
-      fetchJson("/api/customer-users"),
-      fetchJson("/api/unblock-requests"),
-      fetchJson("/api/admin-requests"),
-      fetchJson("/api/audit"),
-      fetchJson("/api/settings"),
-      fetchJson("/api/employees"),
-      fetchJson("/api/leave-requests"),
-      fetchJson("/api/payslips"),
-      fetchJson("/api/hr-announcements"),
-      isHrSession() ? fetchJson("/api/employee-profile-documents") : Promise.resolve({ rows: [] })
+      fetchJsonOrNull("/api/health"),
+      fetchJsonOrNull("/api/shipments"),
+      fetchJsonOrNull("/api/consolidations"),
+      fetchJsonOrNull("/api/customers"),
+      fetchJsonOrNull("/api/suppliers"),
+      fetchJsonOrNull("/api/tariffs"),
+      fetchJsonOrNull("/api/documents"),
+      fetchJsonOrNull("/api/additional-charges"),
+      fetchJsonOrNull("/api/invoices"),
+      fetchJsonOrNull("/api/quotations"),
+      fetchJsonOrNull("/api/shipment-requests"),
+      fetchJsonOrNull("/api/shipment-status-history"),
+      fetchJsonOrNull("/api/users"),
+      fetchJsonOrNull("/api/customer-users"),
+      fetchJsonOrNull("/api/unblock-requests"),
+      fetchJsonOrNull("/api/admin-requests"),
+      fetchJsonOrNull("/api/audit"),
+      fetchJsonOrNull("/api/settings"),
+      fetchJsonOrNull("/api/employees"),
+      fetchJsonOrNull("/api/leave-requests"),
+      fetchJsonOrNull("/api/payslips"),
+      fetchJsonOrNull("/api/hr-announcements"),
+      isHrSession() ? fetchJsonOrNull("/api/employee-profile-documents") : Promise.resolve({ rows: [] })
     ]);
 
-    const apiMode = health.mode || (health.database === "connected" ? "database" : "demo");
-    const databaseReady = health.database === "connected" && apiMode === "database";
+    const hasFreshResourceData = Boolean(
+      shipments?.rows || consolidations?.rows || customers?.rows || suppliers?.rows || tariffs?.rows
+    );
+    const apiMode = health?.mode || (health?.database === "connected" ? "database" : hasFreshResourceData ? "database" : "offline");
+    const databaseReady = (health?.database === "connected" && apiMode === "database") || (!health && hasFreshResourceData);
     state.api = {
       status: databaseReady ? "API connected" : "API setup required",
-      database: health.database || "unknown",
+      database: health?.database || (hasFreshResourceData ? "connected" : "unknown"),
       mode: apiMode,
-      error: health.error || health.startupError || ""
+      error: health?.error || health?.startupError || ""
     };
     if (databaseReady) {
-      state.shipments = (shipments.rows || []).map(apiShipment);
-      state.loads = (consolidations.rows || []).map(apiLoad);
-      state.customers = (customers.rows || []).map(apiCustomer);
-      state.suppliers = (suppliers.rows || []).map(apiSupplier);
-      state.tariffs = (tariffs.rows || []).map(apiTariff);
-      state.documents = (documents.rows || []).map(apiDocument);
-      state.additionalCharges = (additionalCharges.rows || []).map(apiAdditionalCharge);
-      state.invoices = (invoices.rows || []).map(apiInvoice);
-      state.quotations = (quotations.rows || []).map(apiQuotation);
-      state.shipmentRequests = (shipmentRequests.rows || []).map(apiShipmentRequest);
-      state.shipmentStatusHistory = (shipmentStatusHistory.rows || []).map(apiShipmentStatusHistory);
-      state.users = normalizeUsers((users.rows || []).map(apiUser));
-      state.customerUsers = (customerUsers.rows || []).map(apiCustomerUser);
-      state.unblockRequests = (unblockRequests.rows || []).map(apiUnblockRequest);
-      state.adminRequests = (adminRequests.rows || []).map(apiAdminRequest);
-      state.audit = (auditLog.rows || []).map(apiAudit);
-      state.employees = (employees.rows || []).map(apiEmployee);
-      state.leaveRequests = (leaveRequests.rows || []).map(apiLeaveRequest);
-      state.payslips = (payslips.rows || []).map(apiPayslip);
-      state.hrAnnouncements = (hrAnnouncements.rows || []).map(apiHrAnnouncement);
+      if (shipments?.rows) state.shipments = shipments.rows.map(apiShipment);
+      if (consolidations?.rows) state.loads = consolidations.rows.map(apiLoad);
+      if (customers?.rows) state.customers = customers.rows.map(apiCustomer);
+      if (suppliers?.rows) state.suppliers = suppliers.rows.map(apiSupplier);
+      if (tariffs?.rows) state.tariffs = tariffs.rows.map(apiTariff);
+      if (documents?.rows) state.documents = documents.rows.map(apiDocument);
+      if (additionalCharges?.rows) state.additionalCharges = additionalCharges.rows.map(apiAdditionalCharge);
+      if (invoices?.rows) state.invoices = invoices.rows.map(apiInvoice);
+      if (quotations?.rows) state.quotations = quotations.rows.map(apiQuotation);
+      if (shipmentRequests?.rows) state.shipmentRequests = shipmentRequests.rows.map(apiShipmentRequest);
+      if (shipmentStatusHistory?.rows) state.shipmentStatusHistory = shipmentStatusHistory.rows.map(apiShipmentStatusHistory);
+      if (users?.rows) state.users = normalizeUsers(users.rows.map(apiUser));
+      if (customerUsers?.rows) state.customerUsers = customerUsers.rows.map(apiCustomerUser);
+      if (unblockRequests?.rows) state.unblockRequests = unblockRequests.rows.map(apiUnblockRequest);
+      if (adminRequests?.rows) state.adminRequests = adminRequests.rows.map(apiAdminRequest);
+      if (auditLog?.rows) state.audit = auditLog.rows.map(apiAudit);
+      if (employees?.rows) state.employees = employees.rows.map(apiEmployee);
+      if (leaveRequests?.rows) state.leaveRequests = leaveRequests.rows.map(apiLeaveRequest);
+      if (payslips?.rows) state.payslips = payslips.rows.map(apiPayslip);
+      if (hrAnnouncements?.rows) state.hrAnnouncements = hrAnnouncements.rows.map(apiHrAnnouncement);
       await syncAnnouncementReadState();
       renderErpAnnouncementsDropdown();
-      state.employeeProfileDocuments = (employeeProfileDocuments.rows || []).map(apiDocument);
+      if (employeeProfileDocuments?.rows) state.employeeProfileDocuments = employeeProfileDocuments.rows.map(apiDocument);
       liveShipmentDataReady = true;
-      if (settings.rows?.length) {
+      if (settings?.rows?.length) {
         state.settings = apiSettings(settings.rows[0]);
         state.dropdownOptions = {
           ...state.dropdownOptions,
@@ -2442,7 +2445,12 @@ async function fetchJson(path, options = {}) {
   const timeoutMs = Number(options.timeoutMs || 15000);
   const controller = options.signal ? null : new AbortController();
   const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
-  const requestOptions = { ...options, headers, signal: options.signal || controller?.signal };
+  const requestOptions = {
+    ...options,
+    headers,
+    signal: options.signal || controller?.signal,
+    cache: options.cache || "no-store"
+  };
   delete requestOptions.timeoutMs;
   try {
     const response = await fetch(`${API_URL}${path}`, requestOptions);
@@ -2459,6 +2467,14 @@ async function fetchJson(path, options = {}) {
   }
 }
 
+async function fetchJsonOrNull(path, options = {}) {
+  try {
+    return await fetchJson(path, options);
+  } catch (error) {
+    console.warn(`Data refresh failed for ${path}: ${error.message}`);
+    return null;
+  }
+}
 async function syncCustomerPortal() {
   const session = currentSession();
   if (!session?.token) { render(); return; }
