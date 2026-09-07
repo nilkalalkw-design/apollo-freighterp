@@ -6951,6 +6951,15 @@ function openDialog({ title, typeLabel, body, saveLabel, secondaryLabel = "", on
   dialogTitle.textContent = title;
   dialogBody.innerHTML = body;
   dialogBody.classList.toggle("single-column", Boolean(singleColumn));
+  if (dialogBody._tablePageHandler) {
+    dialogBody.removeEventListener("click", dialogBody._tablePageHandler);
+  }
+  dialogBody._tablePageHandler = (event) => {
+    if (event.target.closest("[data-action='table-page']")) {
+      handleModuleClick(event);
+    }
+  };
+  dialogBody.addEventListener("click", dialogBody._tablePageHandler);
   dialogSave.textContent = saveLabel || "Save Changes";
   dialogState = { onSave, onSecondary };
   if (secondaryLabel && onSecondary) {
