@@ -5855,6 +5855,10 @@ async function handleModuleClick(event) {
       openCustomerShipmentHistory(state.ui.customerShipmentHistory.customerCode, state.ui.customerShipmentHistory);
       return;
     }
+    if (scope.startsWith("metric:")) {
+      openDashboardMetricDialog(scope.slice("metric:".length));
+      return;
+    }
     render();
     return;
   }
