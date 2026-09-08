@@ -2656,22 +2656,25 @@ function dateParts(startDate, endDate) {
 async function hrCalendarRules(branch = "Kuwait HO") {
   const [weekends, holidays, types] = await Promise.all([
     query("select branch,weekday,active from hr_weekend_rules where branch in ('All',$1) order by weekday", [branch]),
-    query("select id, holiday_date, day_type, title, notes, branch from hr_calendar_days where active = true and branch in ('All',$1) order by holiday_date", [branch]),
+    query("select id, holiday_date, day_type, title, notes, branch from hr_calendar_days where active = true and (lower(trim(branch))='all' or lower(trim(branch))=lower(trim($1))) order by holiday_date", [branch]),
     query("select * from hr_leave_types where active = true order by id")
   ]);
-  const branchWeekendRows = weekends.rows.filter((row) => row.branch === branch);
+  const normalizedBranch = normalizeHrBranch(branch);
+  const branchWeekendRows = weekends.rows.filter((row) => normalizeHrBranch(row.branch) === normalizedBranch);
   const weekendRows = branchWeekendRows.length ? branchWeekendRows.filter((row) => row.active) : weekends.rows.filter((row) => row.branch === "All" && row.active);
   const holidayMap = new Map();
-  holidays.rows.filter((row) => row.branch === "All").forEach((row) => holidayMap.set(`${row.holiday_date}-${row.day_type}`, row));
-  holidays.rows.filter((row) => row.branch === branch).forEach((row) => holidayMap.set(`${row.holiday_date}-${row.day_type}`, row));
-  return { branch, weekends: weekendRows.map((row) => Number(row.weekday)), holidays: [...holidayMap.values()], leaveTypes: types.rows };
+  holidays.rows.filter((row) => normalizeHrBranch(row.branch) === "Kuwait HO" && String(row.branch).trim().toLowerCase() === "all").forEach((row) => holidayMap.set(`${String(row.holiday_date).slice(0, 10)}-${row.day_type}`, row));
+  holidays.rows.filter((row) => normalizeHrBranch(row.branch) === normalizedBranch && String(row.branch).trim().toLowerCase() !== "all").forEach((row) => holidayMap.set(`${String(row.holiday_date).slice(0, 10)}-${row.day_type}`, row));
+  return { branch: normalizedBranch, weekends: weekendRows.map((row) => Number(row.weekday)), holidays: [...holidayMap.values()], leaveTypes: types.rows };
 }
 
 async function calculateHrLeave(startDate, endDate, branch = "Kuwait HO") {
   const dates = dateParts(startDate, endDate);
   if (!dates) throw new Error("A valid leave date range is required.");
   const rules = await hrCalendarRules(branch);
-  const holidayMap = new Map(rules.holidays.map((row) => [String(row.holiday_date).slice(0, 10), row]));
+  const holidayMap = new Map(rules.holidays
+    .filter((row) => String(row.day_type || "").trim().toUpperCase() === "PUBLIC_HOLIDAY")
+    .map((row) => [String(row.holiday_date).slice(0, 10), row]));
   let weekendDays = 0;
   let publicHolidayDays = 0;
   let workingDays = 0;
@@ -2986,7 +2989,7 @@ app.post("/api/hr/leave-requests/:requestNo/rejoin", requireEmployeePortalAuth, 
 
 app.post("/api/hr/calendar/holiday", requireHrAdmin, async (request,response,next)=>{
   try{
-    const d=request.body||{}; const branch=String(d.branch||"All").trim()||"All";
+    const d=request.body||{}; const rawBranch=String(d.branch||"All").trim(); const branch=rawBranch.toLowerCase()==="all"?"All":normalizeHrBranch(rawBranch);
     const startDate=isoDate(d.startDate)||isoDate(d.holidayDate); const endDate=isoDate(d.endDate)||startDate;
     const title=String(d.title||"").trim();
     if(!startDate||!endDate||endDate<startDate||!title) return response.status(400).json({ok:false,error:"A valid holiday date range and title are required."});
