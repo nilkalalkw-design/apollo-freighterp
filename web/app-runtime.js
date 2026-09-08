@@ -7562,7 +7562,7 @@ function dialogConfigFor(type, mode = "") {
           ${input("driverNumber", "Driver Number", "")}
           ${input("driverMobile", "Driver Mobile", "")}
         `, true)}
-        ${select("status", "Status", ["Planned", "Loading", "Dispatched", "Delivered", "Closed"])}
+        ${strictSelect("status", "Status", manifestUpdateStatusOptions(), "Draft")}
         ${strictSelect("manifestStatus", "Manifest Status", manifestStatusOptions(), "Not Generated")}
         ${consolidationShipmentPicker()}
         ${input("lastManifestRequestNo", "Last Manifest Request No", "")}
