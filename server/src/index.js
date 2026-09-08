@@ -2739,6 +2739,18 @@ async function hrAllBalances(userName, year) {
   return Promise.all(types.map((row) => hrBalanceForUser(userName, year, row.code)));
 }
 
+async function hrAllYearBalances(userName) {
+  const years = (await query(
+    `select distinct year from hr_employee_leave_policies where lower(user_name)=lower($1)
+     union select distinct extract(year from start_date)::int from leave_requests where lower(user_name)=lower($1)
+     union select $2
+     order by year desc`,
+    [userName, new Date().getFullYear()]
+  )).rows.map((row) => Number(row.year)).filter(Number.isFinite);
+  const balances = await Promise.all(years.map((year) => hrAllBalances(userName, year)));
+  return balances.flat();
+}
+
 app.get("/api/hr/leave-config", requireEmployeePortalAuth, async (request, response, next) => {
   try {
     const year = Number(request.query.year || new Date().getFullYear());
@@ -3028,11 +3040,12 @@ app.delete("/api/hr/admin/delegations/:id", requireHrAdmin, async (request,respo
 
 app.get("/api/hr/admin/balances", requireHrAdmin, async (request,response,next)=>{
   try{
-    const year=Number(request.query.year||new Date().getFullYear());
+    const yearParam=String(request.query.year||new Date().getFullYear()).trim().toLowerCase();
+    const year=yearParam==="all"?"all":Number(yearParam);
     const employees=(await query("select user_name,employee_code,full_name,department,designation from employees order by full_name")).rows;
     const rows=[];
     for(const employee of employees){
-      const balances=await hrAllBalances(employee.user_name,year);
+      const balances=year==="all" ? await hrAllYearBalances(employee.user_name) : await hrAllBalances(employee.user_name,year);
       rows.push({...employee,balances});
     }
     return response.json({ok:true,year,rows});
