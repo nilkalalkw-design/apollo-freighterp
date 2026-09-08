@@ -2619,6 +2619,28 @@ tr.shipment-row-cancelled td { background: #f2f3f5; }
   grid-template-columns: 1fr;
 }
 
+/* Keep the User Management access controls together and easy to scan. */
+.user-account-access-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--blue-soft);
+}
+
+.user-account-access-grid label {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .user-account-access-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .record-dialog.is-maximized {
   width: calc(100vw - 16px);
   height: calc(100vh - 16px);

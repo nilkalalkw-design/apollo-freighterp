@@ -1956,12 +1956,12 @@ function canBillingCostEntry() {
 
 function canViewProfitMargin() {
   const role = String(currentSession()?.role || "").toLowerCase();
-  return isAdminSession() || ["billing", "accounts", "accountant"].includes(role);
+  return isAdminSession() || ["billing", "billings", "accounts", "accountant"].includes(role);
 }
 
 function canViewBillingSummary() {
   const role = String(currentSession()?.role || "").toLowerCase();
-  return isAdminSession() || ["billing", "accounts", "accountant"].includes(role);
+  return isAdminSession() || ["billing", "billings", "accounts", "accountant"].includes(role);
 }
 
 function canViewAllBranches() {
@@ -5291,11 +5291,14 @@ function manifestStatusOptions() {
 }
 
 function roleOptions() {
-  return dropdownOptions("role", ["Admin", "Operations", "Billing", "Accounts", "HR", "Management", "Read-only"]);
+  // Fixed choices for User Management. Legacy values remain selectable through
+  // strictSelect when an older account is opened, so editing it never overwrites
+  // a stored role silently.
+  return ["Admin", "Operations", "Billings", "Accountant", "HR", "Management", "Read Only", "Staff"];
 }
 
 function accountStatusOptions() {
-  return dropdownOptions("accountStatus", ["Active", "Inactive", "Locked"]);
+  return ["Active", "Inactive", "Locked"];
 }
 
 function branchAccessOptions() {
@@ -7964,10 +7967,12 @@ function userDialogBody(record) {
     ${input("userName", "User Name", fieldValue("userName"), loaded)}
     ${passwordField("password", loaded ? "Reset Password (leave blank to keep current)" : "Password", "")}
     ${input("email", "Email", fieldValue("email"), false, "email")}
-    ${select("role", "User Role", roleOptions(), fieldValue("role", "Operations"))}
-    ${select("accountStatus", "User Account", accountStatusOptions(), fieldValue("accountStatus", "Active"))}
-    ${select("branchAccess", "Branch Access", branchAccessOptions(), fieldValue("branchAccess", branchOptions()[0]))}
-    ${select("branchViewScope", "View Scope", branchViewScopeOptions(), fieldValue("branchViewScope", "Assigned Branch Only"))}
+    <div class="user-account-access-grid">
+      ${strictSelect("role", "User Role", roleOptions(), fieldValue("role", "Operations"))}
+      ${strictSelect("accountStatus", "User Account", accountStatusOptions(), fieldValue("accountStatus", "Active"))}
+      ${strictSelect("branchAccess", "Branch Access", branchAccessOptions(), fieldValue("branchAccess", branchOptions()[0]))}
+      ${strictSelect("branchViewScope", "View Scope", branchViewScopeOptions(), fieldValue("branchViewScope", "Assigned Branch Only"))}
+    </div>
     ${sectionAccessCheckboxes(checkedSections, {
       billingSalesChecked: loaded ? isChecked(fieldValue("canBillingSalesEntry", true)) : true,
       billingCostChecked: loaded ? isChecked(fieldValue("canBillingCostEntry", true)) : true,
