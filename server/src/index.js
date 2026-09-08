@@ -3045,7 +3045,11 @@ app.get("/api/hr/admin/balances", requireHrAdmin, async (request,response,next)=
   try{
     const yearParam=String(request.query.year||new Date().getFullYear()).trim().toLowerCase();
     const year=yearParam==="all"?"all":Number(yearParam);
-    const employees=(await query("select user_name,employee_code,full_name,department,designation from employees order by full_name")).rows;
+    const selectedUser=String(request.query.userName||"").trim();
+    const employees=(await query(selectedUser
+      ? "select user_name,employee_code,full_name,department,designation from employees where lower(user_name)=lower($1) order by full_name"
+      : "select user_name,employee_code,full_name,department,designation from employees order by full_name",
+      selectedUser?[selectedUser]:[])).rows;
     const rows=[];
     for(const employee of employees){
       const balances=year==="all" ? await hrAllYearBalances(employee.user_name) : await hrAllBalances(employee.user_name,year);
