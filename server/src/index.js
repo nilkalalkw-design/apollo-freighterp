@@ -2678,10 +2678,12 @@ async function calculateHrLeave(startDate, endDate, branch = "Kuwait HO") {
   for (const date of dates) {
     const key = date.toISOString().slice(0, 10);
     const day = date.getUTCDay();
+    // Weekends count as leave. A marked public holiday is the only date
+    // excluded from the leave total, even if it is also a weekend.
+    if (rules.weekends.includes(day)) weekendDays += 1;
     if (holidayMap.has(key) && String(holidayMap.get(key).day_type) === "PUBLIC_HOLIDAY") {
       publicHolidayDays += 1;
     } else {
-      if (rules.weekends.includes(day)) weekendDays += 1;
       workingDays += 1;
     }
   }

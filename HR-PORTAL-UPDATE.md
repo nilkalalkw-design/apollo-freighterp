@@ -46,7 +46,9 @@ npm start
 
 Actual leave days are calculated on the server:
 
-`Calendar days - configured weekend days - configured public holidays = actual leave days`
+`Calendar days - configured public holidays = actual leave days`
+
+Configured weekend days count as leave days. When a weekend is also marked as a public holiday, it is counted once as a public holiday exclusion and not as leave. The public holiday is therefore deducted from the total leave days.
 
 Blackout/restricted dates prevent a leave request from being submitted until HR changes the calendar rule.
 
