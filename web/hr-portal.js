@@ -37,7 +37,8 @@ const activeCalendarBranch = () => cache.calendarBranch || sessionBranch();
 async function loadConfig(){ cache.config = await hrFetch(`/api/hr/leave-config?year=${year()}&branch=${encodeURIComponent(activeCalendarBranch())}`); return cache.config; }
 async function loadRequests(){ cache.requests = (await hrFetch("/api/hr/leave-requests")).rows || []; return cache.requests; }
 async function loadAdminBalances(){ cache.adminBalances = (await hrFetch(`/api/hr/admin/balances?year=${year()}`)).rows || []; return cache.adminBalances; }
-async function loadPolicies(){ const selectedYear=policyFilter?.year||String(year()); cache.policies = await hrFetch(`/api/hr/admin/policies?year=${encodeURIComponent(selectedYear)}`); return cache.policies; }
+// Keep the complete policy set in the cache; the panel filters it by employee/year.
+async function loadPolicies(){ cache.policies = await hrFetch("/api/hr/admin/policies?year=all"); return cache.policies; }
 async function loadLeaveTypes(){ cache.leaveTypes = (await hrFetch("/api/hr/admin/leave-types")).rows || []; return cache.leaveTypes; }
 async function loadDelegations(){ cache.delegations = (await hrFetch("/api/hr/admin/delegations")).rows || []; return cache.delegations; }
 async function loadLedger(){ cache.ledger = (await hrFetch("/api/hr/leave-ledger")).rows || []; return cache.ledger; }
