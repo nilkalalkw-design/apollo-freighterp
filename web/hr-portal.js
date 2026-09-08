@@ -64,7 +64,25 @@ async function ensureAdminData(){
   adminLoadPromise=Promise.all(work).catch(e=>console.warn("HR admin data unavailable",e)).finally(()=>{adminLoadPromise=null;requestCoreRender();});
   return adminLoadPromise;
 }
-function requestCoreRender(){ if(typeof window.__APOLLO_HR_RENDER === "function") window.__APOLLO_HR_RENDER(); }
+function requestCoreRender(){
+  if(typeof window.__APOLLO_HR_RENDER !== "function") return;
+  const controls=[];
+  document.querySelectorAll(".hr-page form, [data-hr-modal] form").forEach((form,formIndex)=>{
+    form.querySelectorAll("input[name],select[name],textarea[name]").forEach((field,fieldIndex)=>{
+      controls.push({formIndex,fieldIndex,name:field.name,type:field.type,value:field.value,checked:field.checked,selected:[...field.options||[]].map(o=>o.selected)});
+    });
+  });
+  window.__APOLLO_HR_RENDER();
+  document.querySelectorAll(".hr-page form, [data-hr-modal] form").forEach((form,formIndex)=>{
+    controls.filter(item=>item.formIndex===formIndex).forEach(item=>{
+      const field=form.querySelectorAll("input[name],select[name],textarea[name]")[item.fieldIndex];
+      if(!field) return;
+      if(field.type==="checkbox"||field.type==="radio") field.checked=item.checked;
+      else if(field.tagName==="SELECT" && item.selected.length){[...field.options].forEach((option,index)=>{option.selected=Boolean(item.selected[index]);});}
+      else field.value=item.value;
+    });
+  });
+}
 function kpi(title,value,note){ return `<article class="hr-kpi"><strong>${esc(value)}</strong><span>${esc(title)}</span><small>${esc(note)}</small></article>`; }
 function panel(title,body,note=""){ return `<article class="panel hr-panel"><div class="hr-panel-head"><div><h3>${esc(title)}</h3>${note?`<small>${esc(note)}</small>`:""}</div></div>${body}</article>`; }
 function badge(status){ return `<span class="hr-status hr-status-${esc(String(status||"").toLowerCase().replace(/\s+/g,"-"))}">${esc(status||"")}</span>`; }
@@ -247,7 +265,6 @@ window.ApolloHR={renderMyLeave:()=>{ensureLoaded();return renderMyLeave();},rend
 window.addEventListener("apollo-hr-refresh",requestCoreRender);
 document.addEventListener("change",async event=>{const select=event.target.closest("[data-hr-branch-select]");if(!select)return;cache.calendarBranch=select.value;await loadConfig();requestCoreRender();});
 document.addEventListener("click",async event=>{const button=event.target.closest("[data-hr-action='extend-leave'],[data-hr-action='remove-delegation']");if(!button)return;if(button.dataset.hrAction==="extend-leave")return extendLeave(button.dataset.id);if(!window.confirm("End this delegated approval?"))return;try{await hrFetch(`/api/hr/admin/delegations/${encodeURIComponent(button.dataset.id)}`,{method:"DELETE"});cache.delegations=null;await loadDelegations();requestCoreRender();}catch(e){window.alert(e.message);}});
-document.addEventListener("submit",async event=>{const form=event.target.closest("form[data-hr-form='balance-filter']");if(!form)return;event.preventDefault();const data=Object.fromEntries(new FormData(form).entries());balanceFilter={employee:String(data.employee||""),leaveType:String(data.leaveType||""),submitted:true};requestCoreRender();});
   document.addEventListener("submit",async event=>{const form=event.target.closest("form[data-hr-form='delegation']");if(!form)return;event.preventDefault();try{await hrFetch("/api/hr/admin/delegations",{method:"PUT",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});cache.delegations=null;await loadDelegations();form.reset();requestCoreRender();}catch(e){window.alert(e.message);}});
 bindHrEvents();
 ensureLoaded();
