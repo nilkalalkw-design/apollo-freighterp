@@ -4517,7 +4517,7 @@ function consolidationJobsPanel(loadItem) {
       </div>
       <form data-form="load-status" class="inline-status-form">
         <input type="hidden" name="loadNo" value="${escapeHtml(loadItem.loadNo)}" />
-        ${strictSelect("status", "Status", manifestStatusOptions(), loadItem.status)}
+        ${strictSelect("status", "Status", manifestUpdateStatusOptions(), loadItem.status)}
         ${input("date", "Date", today(), false, "date")}
         ${input("notes", "Manual Remark", "")}
         <div class="action-row">
@@ -5265,31 +5265,48 @@ function dropdownKeyForField(name) {
 }
 
 function statusOptions() {
-  const removedStatuses = new Set(["uploaded", "active", "blocked", "planned", "a", "loading"]);
-  return dropdownOptions("status", [
+  return [
+    "Draft",
+    "Pending Approvals",
+    "Approved",
+    "Booked",
+    "Dispatched",
+    "In-Transit",
+    "Arrived",
+    "Under-Clearance",
+    "Clearance Delay",
+    "Customs Cleared",
+    "Partially Delivered",
+    "Delivered",
+    "Invoiced",
+    "Closed"
+  ];
+}
+
+// Manifest Status is the approval state for the manifest record itself. Operational status
+// changes that propagate to linked shipments use manifestUpdateStatusOptions() below.
+function manifestStatusOptions() {
+  return ["Not Generated", "Pending Approval", "Approved", "Rejected"];
+}
+
+// The operational manifest status update changes the linked shipment statuses.
+// Keep approval states limited to the separate Manifest Status field above.
+function manifestUpdateStatusOptions() {
+  return [
     "Draft",
     "Booked",
     "Dispatched",
     "In-Transit",
-    "Partially Delivered",
-    "Delivered",
-    "Invoiced",
-    "Closed",
     "Arrived",
     "Under-Clearance",
     "Clearance Delay",
-    "Pending Approvals",
-    "Customs Cleared"
-  ]).filter((status) => !removedStatuses.has(String(status || "").trim().toLowerCase()));
+    "Customs Cleared",
+    "Partially Delivered",
+    "Delivered",
+    "Invoiced",
+    "Closed"
+  ];
 }
-
-// Manifest Status Update uses its own list (no "Partially Delivered") - deliveries are recorded
-// per shipment, one at a time, through the POD dialog, never in bulk across a whole manifest, so
-// a manifest-level bulk status change should never set that status on shipments it touches.
-function manifestStatusOptions() {
-  return dropdownOptions("status", ["Draft", "Booked", "Dispatched", "In-Transit", "Delivered", "Invoiced", "Closed", "Blocked"]);
-}
-
 function roleOptions() {
   // Fixed choices for User Management. Legacy values remain selectable through
   // strictSelect when an older account is opened, so editing it never overwrites
@@ -6743,7 +6760,7 @@ function detailFieldOptions(type, key, record) {
     shipmentDirection: shipmentDirectionOptions(),
     shipmentService: shipmentServiceOptions(record.shipmentDirection || "Export"),
     volumeCategory: volumeCategoryOptions(),
-    manifestStatus: ["Not Generated", "Pending Approval", "Approved", "Rejected"],
+    manifestStatus: manifestStatusOptions(),
     chargeType: chargeTypeOptions(),
     chargeBasis: chargeBasisOptions(),
     currency: currencyOptions(),
@@ -7524,7 +7541,7 @@ function dialogConfigFor(type, mode = "") {
           ${input("driverMobile", "Driver Mobile", "")}
         `, true)}
         ${select("status", "Status", ["Planned", "Loading", "Dispatched", "Delivered", "Closed"])}
-        ${select("manifestStatus", "Manifest Status", ["Not Generated", "Pending Approval", "Approved", "Rejected"])}
+        ${strictSelect("manifestStatus", "Manifest Status", manifestStatusOptions(), "Not Generated")}
         ${consolidationShipmentPicker()}
         ${input("lastManifestRequestNo", "Last Manifest Request No", "")}
       `,
@@ -7658,7 +7675,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${input("shipmentDate", "Shipment Date", fieldValue("shipmentDate", today()), false, "date")}
       ${strictSelect("status", "Status", statusOptions(), fieldValue("status", ""))}
       ${strictSelect("loadType", "Load Type", ["LTL", "FTL"], fieldValue("loadType", "LTL"))}
-      ${select("shipmentVia", "Shipment Via", ["Air", "Sea", "Land", "FTL", "Warehouse", "Consolidation"], fieldValue("shipmentVia", shipmentViaValue(record) || ""))}
+      ${strictSelect("shipmentVia", "Shipment Via", ["Air", "Sea", "Land", "Warehouse"], fieldValue("shipmentVia", shipmentViaValue(record) || ""))}
       ${strictSelect("shipmentDirection", "Shipment Type", shipmentDirectionOptions(), fieldValue("shipmentDirection", ""))}
       ${strictSelect("shipmentService", "Service Type", shipmentServiceOptions(fieldValue("shipmentDirection", "")), fieldValue("shipmentService", ""))}
       ${selectEditable("origin", "Origin", "origin", ["Kuwait City"], fieldValue("origin"))}
