@@ -3049,6 +3049,15 @@ function render() {
     selectionStart: focusedFilter.selectionStart,
     selectionEnd: focusedFilter.selectionEnd
   } : null;
+  const hrFormState = isHrSession() ? Array.from(moduleContent.querySelectorAll("form")).map((form) => ({
+    key: form.dataset.hrForm || form.dataset.form || "",
+    values: Array.from(form.querySelectorAll("input[name],select[name],textarea[name]")).map((field) => ({
+      name: field.name,
+      value: field.value,
+      checked: field.checked,
+      selected: field.tagName === "SELECT" ? Array.from(field.options).map((option) => option.selected) : null
+    }))
+  })) : [];
 
   if (!visibleModules().some(([name]) => name === activeModule)) {
     activeModule = isCustomerSession() ? "Customer Dashboard" : isHrSession() ? "HR Dashboard" : "Dashboard";
@@ -3109,6 +3118,19 @@ function render() {
     "Post Announcement": renderHrAdminAnnouncements
   };
   moduleContent.innerHTML = (renderers[activeModule] || renderDashboard)();
+  if (hrFormState.length) {
+    moduleContent.querySelectorAll("form").forEach((form, formIndex) => {
+      const saved = hrFormState[formIndex];
+      if (!saved || (saved.key && saved.key !== (form.dataset.hrForm || form.dataset.form || ""))) return;
+      saved.values.forEach((item) => {
+        const field = form.querySelector(`[name="${cssAttrEscape(item.name)}"]`);
+        if (!field) return;
+        if (field.type === "checkbox" || field.type === "radio") field.checked = item.checked;
+        else if (field.tagName === "SELECT" && item.selected) Array.from(field.options).forEach((option, index) => { option.selected = Boolean(item.selected[index]); });
+        else field.value = item.value;
+      });
+    });
+  }
   renderErpAnnouncementsDropdown();
   window.__APOLLO_HR_RENDER = () => { if (typeof render === "function") render(); };
   // Lets hr-portal.js (a separate script, loaded independently) write to the same audit log as
@@ -3263,7 +3285,8 @@ function employeeColumns() {
 
 function announcementCard(row) {
   const posted = String(row.postedAt || "").replace("T", " ").slice(0, 16);
-  return `<article class="alert${row.pinned ? " hr-announcement-pinned" : ""}"><strong>${escapeHtml(row.pinned ? "📌 " : "")}${escapeHtml(row.title)}</strong><span>${escapeHtml(row.body)}</span><small>${escapeHtml(row.postedBy)} | ${escapeHtml(posted)}</small></article>`;
+  const actions = isHrAdmin() ? `<div class="row-action-group"><button type="button" class="ghost-button" data-action="open" data-type="hrAnnouncement" data-id="${escapeHtml(row.id)}">Edit</button><button type="button" class="ghost-button danger-text" data-action="delete-record-direct" data-type="hrAnnouncement" data-id="${escapeHtml(row.id)}">Delete</button></div>` : "";
+  return `<article class="alert${row.pinned ? " hr-announcement-pinned" : ""}"><strong>${escapeHtml(row.pinned ? "📌 " : "")}${escapeHtml(row.title)}</strong><span>${escapeHtml(row.body)}</span><small>${escapeHtml(row.postedBy)} | ${escapeHtml(posted)}</small>${actions}</article>`;
 }
 
 function renderHrDashboard() {
@@ -3419,7 +3442,6 @@ function renderHrAdminAnnouncements() {
   return `<section class="panel">${panelHeader("Post Announcement")}
     <div class="action-row"><button type="button" data-action="new-record" data-type="hrAnnouncement">New Announcement</button></div>
     ${announcements.length ? announcements.map(announcementCard).join("") : empty("No announcements yet.")}
-    ${hrAdminDeletePanel("hrAnnouncement", "Announcement")}
   </section>`;
 }
 
