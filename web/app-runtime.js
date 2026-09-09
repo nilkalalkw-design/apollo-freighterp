@@ -8762,7 +8762,7 @@ function bindPalletDimensionBuilder() {
     const logoUrl = window.prompt("Enter the logo URL for the duplicate TCN (leave blank to use the uploaded Alt Express logo):", "/assets/alt-express-logo.png");
     if (logoUrl === null) return;
     const tcn = nextTcnNumber();
-    openPrintableDocument(tcnDocumentHtml({ ...data, airwayBillNo: tcn, tcnNumber: tcn, palletDimensionsJson: hiddenField.value, documentCompanyName: companyName.trim(), documentCompanyLogoUrl: logoUrl.trim() }));
+    openPrintableDocument(duplicateTcnDocumentHtml({ ...data, airwayBillNo: tcn, tcnNumber: tcn, palletDimensionsJson: hiddenField.value, documentCompanyName: companyName.trim(), documentCompanyLogoUrl: logoUrl.trim() }));
   };
 
   const sync = () => {
@@ -13211,3 +13211,23 @@ boot();
     subtree: true
   });
 })();
+function duplicateTcnDocumentHtml(record) {
+  const lines = parsePalletDimensions(record.cargoItemsJson || record.palletDimensionsJson || "[]");
+  const pieces = Number(record.pieces || 0) || lines.reduce((sum, line) => sum + Number(line.quantity || line.count || 0), 0);
+  const weight = Number(record.actualKg || 0) || lines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0);
+  const description = record.natureOfGoods || record.goodsDescription || "";
+  const logo = String(record.documentCompanyLogoUrl || "/assets/alt-express-logo.png").trim();
+  const company = String(record.documentCompanyName || "ALT EXPRESS CARGO AND CLEARING LLC").trim();
+  const date = record.bookingDate || today();
+  const displayDate = date ? new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }).replace(/ /g, "-") : "";
+  const cell = (label, value, extra = "") => `<div class="dw-cell"><b>${escapeHtml(label)}</b><span>${escapeHtml(value || "")}</span>${extra}</div>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(record.tcnNumber || record.jobNo || "Duplicate TCN")}</title><style>
+    @page{size:A4 portrait;margin:10mm}*{box-sizing:border-box}body{margin:0;background:#fff;color:#111;font-family:"Courier New",monospace;font-size:10px}.waybill{width:190mm;margin:0 auto;border:1px solid #111}.top{padding:5px 7px;border-bottom:1px solid #111;font-weight:700}.top span{float:right}.grid{display:grid;grid-template-columns:1fr 1fr}.dw-cell{min-height:28mm;padding:5px 7px;border-bottom:1px solid #111}.grid>.dw-cell:nth-child(odd){border-right:1px solid #111}.dw-cell b{display:block;text-decoration:underline;margin-bottom:8px}.dw-cell span{display:block;white-space:pre-line}.logo-cell{text-align:center}.logo-cell img{display:block;width:48mm;height:22mm;object-fit:contain;margin:2px auto}.small{min-height:12mm}.cargo{border-bottom:1px solid #111}.cargo-title{text-align:center;font-weight:700;padding:4px;border-bottom:1px solid #111}.cargo-head,.cargo-row{display:grid;grid-template-columns:1.1fr 1.1fr 2fr;border-bottom:1px solid #111}.cargo-head b,.cargo-row span{padding:4px 7px;border-right:1px solid #111}.cargo-head b:last-child,.cargo-row span:last-child{border-right:0}.total{padding:5px 7px;border-bottom:1px solid #111}.notes{min-height:42mm;padding:6px 7px;border-bottom:1px solid #111}.charges{display:grid;grid-template-columns:1fr 1fr;min-height:25mm;border-bottom:1px solid #111}.charges>div{padding:5px 7px}.charges>div:first-child{border-right:1px solid #111}.footer{text-align:center;padding:4px}.print{position:fixed;right:12px;top:12px;padding:7px 12px;border:1px solid #555;background:#eee;font-family:Arial,sans-serif}@media print{.print{display:none}.waybill{width:100%}}
+  </style></head><body><button class="print" onclick="window.print()">Print</button><main class="waybill">
+    <div class="top">TRUCK WAY BILL NUMBER <span>: ${escapeHtml(record.tcnNumber || record.jobNo || "")}</span><small><br>To be used for Single Consignment, Full Truck Load and Less Truck Load</small></div>
+    <div class="grid">${cell("Shipper's Name and Address:", [record.shipperName || record.customer || "", record.shipperAddress || "", record.shipperCountry || ""].filter(Boolean).join("\n"))}${cell("TRUCK WAY BILL NUMBER", "")}${cell("Consignee Name and Address:", [record.consigneeName || record.customer || "", record.consigneeAddress || "", record.consigneeCountry || ""].filter(Boolean).join("\n"))}${cell("Truck AWB Issued By", "", '<div class="logo-cell"><img src="' + escapeHtml(logo) + '" alt="' + escapeHtml(company) + '"><span>' + escapeHtml(company) + '</span></div>')}${cell("Notify Party", record.notifyPartyName || record.notifyPartyAddress || "")}${cell("Delivery Agent", record.deliveryLocation || record.deliveryAddress || "")}${cell("Booking Party", record.bookingParty || "APOLLO FREIGHT SOLUTIONS FZCO")}${cell("Accounting Information", record.accountingInformation || "Credit Account")}${cell("Origin", [record.origin || record.pickupLocation || "", record.originCity || ""].filter(Boolean).join("     "))}${cell("Destination", [record.destination || record.deliveryLocation || "", record.destinationCity || ""].filter(Boolean).join("     "))}</div>
+    <section class="cargo"><div class="cargo-title">PARTICULARS FURNISHED BY SHIPPER - CARRIER/AGENT NOT RESPONSIBLE</div><div class="cargo-head"><b>No of Pieces</b><b>Gross Weight (kgs.)</b><b>Description</b></div><div class="cargo-row"><span>${escapeHtml(pieces ? `${pieces} PACKAGE` : "")}</span><span>${escapeHtml(weight ? `${weight.toLocaleString()} Kgs` : "")}</span><span>${escapeHtml(description)}</span></div><div class="total">Total&nbsp;&nbsp; ${escapeHtml(pieces ? `${pieces} PACKAGE` : "")}&nbsp;&nbsp;&nbsp; ${escapeHtml(weight ? `${weight.toLocaleString()} Kgs` : "")}</div></section>
+    <div class="notes">Invoice : ${escapeHtml(record.invoiceNo || "")}　　　　　　　　　　　　 VALUE ${escapeHtml(record.currency || "AED")}<br><br>The particulars given above are as stated by shipper. The actual weight, measure, quantity, condition, content and value of the Goods are unknown to the Carrier.</div>
+    <div class="charges"><div>Move Type　　　　　　　　 BND<br>Freight Charges<br>Duty and Other Charges<br>Origin Charges<br>Destination Charges</div><div>THIS AWB IS ONLY FOR THE ALT REF.</div></div><div class="footer">DATE　　 ${escapeHtml(displayDate)}</div>
+  </main></body></html>`;
+}
