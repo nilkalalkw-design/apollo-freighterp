@@ -7875,16 +7875,16 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     <input type="hidden" name="tcnNumber" value="${escapeHtml(fieldValue("tcnNumber"))}" />
     <input type="hidden" name="transitDays" value="${escapeHtml(fieldValue("transitDays", "3"))}" />
     <input type="hidden" name="shipmentServiceOther" value="${escapeHtml(fieldValue("shipmentServiceOther"))}" />
-    ${checkbox("printOnlyCargoDetails", "Cargo Summary", fieldValue("printOnlyCargoDetails", false))}
     <input class="is-hidden" name="shipmentDocumentUpload" type="file" accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf" />
     <div class="action-row shipment-document-actions">
+      ${checkbox("printOnlyCargoDetails", "Cargo Summary", fieldValue("printOnlyCargoDetails", false))}
+      <button type="button" class="secondary-button" data-dialog-action="save-draft">Save Draft</button>
       <button type="button" class="secondary-button" data-dialog-action="upload-shipment-document">Upload Documents</button>
       <span class="empty-state" data-shipment-document-name></span>
       <button type="button" class="secondary-button" data-dialog-action="generate-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before generating a TCN\""}>Generate TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="view-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before viewing a TCN\""}>View TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="duplicate-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before duplicating a TCN\""}>Duplicate TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="generate-pod">Delivery Note / POD</button>
-      <button type="button" class="secondary-button" data-dialog-action="save-draft">Save Draft</button>
     </div>
   `;
 }

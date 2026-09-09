@@ -1941,6 +1941,20 @@ th {
   font-size: 11px;
   white-space: nowrap;
 }
+.shipment-document-actions .checkbox-field {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  min-height: 31px;
+  margin: 0;
+  white-space: nowrap;
+}
+.shipment-document-actions .checkbox-field input {
+  width: auto;
+  min-height: 16px;
+  padding: 0;
+}
 .shipment-document-actions [data-shipment-document-name] {
   flex: 0 1 120px;
   overflow: hidden;
