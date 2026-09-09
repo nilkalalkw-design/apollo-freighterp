@@ -4316,7 +4316,7 @@ function renderReports() {
     </section>
     <section class="panel">${panelHeader("Report Preview and Export", "Reports")}
       <div class="report-toolbar">
-        ${select("reportType", "Report Type", reportTypeOptions(), state.ui.reportType || "Daily shipments")}
+        ${strictSelect("reportType", "Report Type", reportTypeOptions(), normalizedReportType(state.ui.reportType))}
         ${select("reportFormat", "Preview As", ["PDF", "Excel CSV"], state.ui.reportFormat || "PDF")}
         ${input("reportFromDate", "From Date", state.ui.reportFromDate || "", false, "date")}
         ${input("reportToDate", "To Date", state.ui.reportToDate || "", false, "date")}
@@ -4905,7 +4905,11 @@ function chargeStatusOptions() {
 }
 
 function reportTypeOptions() {
-  return ["Daily shipments", "Open / in-transit / delivered", "Pending POD / invoice", "Revenue by customer / route", "Margin and cost vs sell"];
+  return statusOptions();
+}
+function normalizedReportType(value = "") {
+  const selected = statusOptions().find((option) => option.toLowerCase() === String(value || "").trim().toLowerCase());
+  return selected || statusOptions()[0];
 }
 
 function shipmentDirectionOptions() {
@@ -9731,7 +9735,7 @@ function parseChangeSummary(summary) {
 }
 
 function previewReport() {
-  const reportType = moduleContent.querySelector("[name='reportType']")?.value || state.ui.reportType || "Daily shipments";
+  const reportType = normalizedReportType(moduleContent.querySelector("[name='reportType']")?.value || state.ui.reportType);
   const reportFormat = moduleContent.querySelector("[name='reportFormat']")?.value || state.ui.reportFormat || "PDF";
   const reportFromDate = moduleContent.querySelector("[name='reportFromDate']")?.value || "";
   const reportToDate = moduleContent.querySelector("[name='reportToDate']")?.value || "";
@@ -9771,10 +9775,13 @@ function reportRows(reportType, reportFromDate = "", reportToDate = "") {
     return rows.filter((row) => ["Booked", "In-Transit", "Delivered"].includes(row.status));
   }
 
-  if (reportType === "Pending POD / invoice") {
+    if (reportType === "Pending POD / invoice") {
     return rows.filter((row) => row.podStatus !== "Uploaded" || ["Unbilled", "Draft", "Overdue"].includes(row.invoiceStatus));
   }
-
+  const selectedStatus = statusOptions().find((status) => status.toLowerCase() === String(reportType || "").trim().toLowerCase());
+  if (selectedStatus) {
+    return rows.filter((row) => String(row.status || "").trim().toLowerCase() === selectedStatus.toLowerCase());
+  }
   return rows;
 }
 
