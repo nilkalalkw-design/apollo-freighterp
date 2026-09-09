@@ -1930,12 +1930,14 @@ th {
   flex-wrap: nowrap;
   gap: 6px;
   align-items: center;
-  overflow-x: auto;
+  width: 100%;
+  overflow: visible;
   padding-bottom: 2px;
 }
 
 .shipment-document-actions .secondary-button {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 31px;
   padding: 5px 9px;
   font-size: 11px;
@@ -2543,7 +2545,7 @@ tr.shipment-row-cancelled td { background: #f2f3f5; }
 }
 
 .record-dialog {
-  width: min(1120px, calc(100vw - 32px));
+  width: min(1500px, calc(100vw - 16px));
   min-width: 480px;
   min-height: 360px;
   max-width: calc(100vw - 24px);
