@@ -2660,8 +2660,10 @@ async function hrCalendarRules(branch = "Kuwait HO") {
     query("select * from hr_leave_types where active = true order by id")
   ]);
   const normalizedBranch = normalizeHrBranch(branch);
-  const branchWeekendRows = weekends.rows.filter((row) => normalizeHrBranch(row.branch) === normalizedBranch);
-  const weekendRows = branchWeekendRows.length ? branchWeekendRows.filter((row) => row.active) : weekends.rows.filter((row) => row.branch === "All" && row.active);
+  const exactWeekendRows = weekends.rows.filter((row) => String(row.branch || "").trim().toLowerCase() !== "all" && normalizeHrBranch(row.branch) === normalizedBranch);
+  const sharedWeekendRows = weekends.rows.filter((row) => String(row.branch || "").trim().toLowerCase() === "all");
+  const activeExactWeekendRows = exactWeekendRows.filter((row) => row.active);
+  const weekendRows = activeExactWeekendRows.length ? activeExactWeekendRows : sharedWeekendRows.filter((row) => row.active);
   const holidayMap = new Map();
   holidays.rows.filter((row) => normalizeHrBranch(row.branch) === "Kuwait HO" && String(row.branch).trim().toLowerCase() === "all").forEach((row) => holidayMap.set(`${String(row.holiday_date).slice(0, 10)}-${row.day_type}`, row));
   holidays.rows.filter((row) => normalizeHrBranch(row.branch) === normalizedBranch && String(row.branch).trim().toLowerCase() !== "all").forEach((row) => holidayMap.set(`${String(row.holiday_date).slice(0, 10)}-${row.day_type}`, row));
@@ -2699,16 +2701,17 @@ async function calculateHrLeave(startDate, endDate, branch = "Kuwait HO") {
 }
 
 async function hrBalanceForUser(userName, year, leaveTypeCode) {
-  const type = (await query("select * from hr_leave_types where code = $1 limit 1", [leaveTypeCode])).rows[0];
+  const type = (await query("select * from hr_leave_types where upper(code)=upper($1) or lower(name)=lower($1) limit 1", [leaveTypeCode])).rows[0];
   if (!type) throw new Error("Leave type not found.");
+  const normalizedLeaveTypeCode = String(type.code || leaveTypeCode).trim().toUpperCase();
   const policy = (await query(
     "select * from hr_employee_leave_policies where lower(user_name)=lower($1) and year=$2 and leave_type_code=$3 limit 1",
-    [userName, year, leaveTypeCode]
+    [userName, year, normalizedLeaveTypeCode]
   )).rows[0];
   const entitlement = Number(policy?.entitlement ?? type.annual_entitlement ?? 0);
   let carryForward = Number(policy?.carry_forward ?? 0);
   if (!policy && type.allow_carry_forward && year > 1) {
-    const previous = (await query(`select greatest(0, least($1, coalesce(b.available_days,0))) as days from hr_leave_balances b where lower(b.user_name)=lower($2) and b.year=$3 and b.leave_type_code=$4 limit 1`, [Number(type.max_carry_forward || 0), userName, year - 1, leaveTypeCode])).rows[0];
+    const previous = (await query(`select greatest(0, least($1, coalesce(b.available_days,0))) as days from hr_leave_balances b where lower(b.user_name)=lower($2) and b.year=$3 and b.leave_type_code=$4 limit 1`, [Number(type.max_carry_forward || 0), userName, year - 1, normalizedLeaveTypeCode])).rows[0];
     carryForward = Number(previous?.days || 0);
     if (type.carry_forward_expiry_month && type.carry_forward_expiry_day) {
       const expiry = new Date(Date.UTC(year, Number(type.carry_forward_expiry_month) - 1, Number(type.carry_forward_expiry_day)));
@@ -2719,12 +2722,12 @@ async function hrBalanceForUser(userName, year, leaveTypeCode) {
   const previousUsed = Number(policy?.previous_used_days ?? 0);
   const approvedUsed = Number((await query(
     "select coalesce(sum(coalesce(actual_leave_days,total_days)+coalesce(late_return_days,0)),0) as days from leave_requests where lower(user_name)=lower($1) and status='Approved' and (upper(leave_type)=upper($2) or lower(leave_type)=lower((select name from hr_leave_types where code=$2))) and extract(year from start_date)=$3",
-    [userName, leaveTypeCode, year]
+    [userName, normalizedLeaveTypeCode, year]
   )).rows[0]?.days || 0);
   const used = previousUsed + approvedUsed;
   const pending = Number((await query(
     "select coalesce(sum(coalesce(actual_leave_days,total_days)),0) as days from leave_requests where lower(user_name)=lower($1) and status='Pending' and (upper(leave_type)=upper($2) or lower(leave_type)=lower((select name from hr_leave_types where code=$2))) and extract(year from start_date)=$3",
-    [userName, leaveTypeCode, year]
+    [userName, normalizedLeaveTypeCode, year]
   )).rows[0]?.days || 0);
   const available = entitlement + carryForward + adjustment - used;
   const projected = available - pending;
@@ -2732,9 +2735,9 @@ async function hrBalanceForUser(userName, year, leaveTypeCode) {
     `insert into hr_leave_balances (user_name, year, leave_type_code, entitlement, carry_forward, adjustment, used_days, pending_days, available_days, projected_days, updated_at)
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
      on conflict (user_name,year,leave_type_code) do update set entitlement=excluded.entitlement,carry_forward=excluded.carry_forward,adjustment=excluded.adjustment,used_days=excluded.used_days,pending_days=excluded.pending_days,available_days=excluded.available_days,projected_days=excluded.projected_days,updated_at=now()`,
-    [userName, year, leaveTypeCode, entitlement, carryForward, adjustment, used, pending, available, projected]
+    [userName, year, normalizedLeaveTypeCode, entitlement, carryForward, adjustment, used, pending, available, projected]
   );
-  return { userName, year, leaveTypeCode, leaveTypeName: type.name, entitlement, carryForward, adjustment, previousUsed, approvedUsed, used, pending, available, projected };
+  return { userName, year, leaveTypeCode: normalizedLeaveTypeCode, leaveTypeName: type.name, entitlement, carryForward, adjustment, previousUsed, approvedUsed, used, pending, available, projected };
 }
 
 async function hrAllBalances(userName, year) {
@@ -2782,8 +2785,7 @@ app.get("/api/hr/balances", requireEmployeePortalAuth, async (request, response,
   try {
     const year = Number(request.query.year || new Date().getFullYear());
     const userName = String(request.query.userName || request.appSession.userName || "").trim();
-    const role = String(request.appSession.role || "").toLowerCase();
-    if (userName.toLowerCase() !== String(request.appSession.userName || "").toLowerCase() && !["admin","hr"].includes(role)) return response.status(403).json({ ok:false,error:"You can only view your own balance." });
+    if (userName.toLowerCase() !== String(request.appSession.userName || "").toLowerCase() && !isHrAdminSession(request.appSession)) return response.status(403).json({ ok:false,error:"You can only view your own balance." });
     return response.json({ ok:true, year, rows: await hrAllBalances(userName, year) });
   } catch (error) { return next(error); }
 });
@@ -2902,7 +2904,7 @@ app.get("/api/hr/leave-requests/:requestNo/attachment", requireEmployeePortalAut
     const requestNo=String(request.params.requestNo||"").trim();
     const existing=(await query("select request_no,user_name,attachment_url from leave_requests where request_no=$1 limit 1",[requestNo])).rows[0];
     if(!existing?.attachment_url) return response.status(404).json({ok:false,error:"No supporting document is attached."});
-    const admin=["admin","hr"].includes(String(request.appSession.role||"").toLowerCase()) && Boolean(request.appSession.employeePortal);
+    const admin=isHrAdminSession(request.appSession);
     if(!admin && String(existing.user_name).toLowerCase()!==String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"You can only view your own leave document."});
     let metadata={}; try{metadata=JSON.parse(existing.attachment_url||"{}");}catch{}
     const cloudinary=cloudinaryConfig(); if(!cloudinary||!metadata.cloudinaryPublicId) return response.status(404).json({ok:false,error:"Supporting document details are incomplete."});
@@ -2925,7 +2927,8 @@ app.put("/api/hr/leave-requests/:requestNo/decision", requireEmployeePortalAuth,
     const status = decision === "approve" ? "Approved" : decision === "reject" ? "Rejected" : "Sent Back";
     const comment = String(request.body?.reason || "").trim();
     if (decision !== "approve" && !comment) return response.status(400).json({ok:false,error:`A ${decision === "reject" ? "rejection" : "send-back"} reason is required.`});
-    const saved = await query("update leave_requests set status=$1,approved_by=$2,approved_at=now(),rejection_reason=$3,approved_by_delegate=$4,updated_at=now() where request_no=$5 returning *",[status,request.appSession.userName,comment,authority.delegated,requestNo]);
+    const saved = await query("update leave_requests set status=$1,approved_by=$2,approved_at=now(),rejection_reason=$3,approved_by_delegate=$4,updated_at=now() where request_no=$5 and status='Pending' returning *",[status,request.appSession.userName,comment,authority.delegated,requestNo]);
+    if (!saved.rows[0]) return response.status(409).json({ok:false,error:"This leave request was already updated by another reviewer."});
     const balance = await hrBalanceForUser(existing.user_name, Number(String(existing.start_date).slice(0,4)), existing.leave_type);
     if (status === "Approved") await query("insert into hr_leave_ledger(user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by) values($1,$2,$3,'APPROVED_LEAVE',$4,$5,$6,$7,$8)",[existing.user_name,balance.year,existing.leave_type,requestNo,-Number(existing.actual_leave_days||existing.total_days||0),balance.available,"Leave approved",request.appSession.userName]);
     return response.json({ok:true,row:saved.rows[0]});
@@ -2937,12 +2940,13 @@ app.post("/api/hr/leave-requests/:requestNo/cancel", requireEmployeePortalAuth, 
     const requestNo=String(request.params.requestNo||"").trim();
     const existing=(await query("select * from leave_requests where request_no=$1 limit 1",[requestNo])).rows[0];
     if(!existing) return response.status(404).json({ok:false,error:"Leave request not found."});
-    if(String(existing.status||"")!=="Approved") return response.status(400).json({ok:false,error:"Only approved leave can be closed with a rejoin form."});
-    const admin=["admin","hr"].includes(String(request.appSession.role||"").toLowerCase());
+    if(!["Pending","Sent Back","Approved"].includes(String(existing.status||""))) return response.status(400).json({ok:false,error:`A ${existing.status} leave request cannot be cancelled.`});
+    const admin=isHrAdminSession(request.appSession);
     if(!admin && String(existing.user_name).toLowerCase()!==String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"You can only cancel your own leave."});
     if(["Rejected","Cancelled"].includes(existing.status)) return response.status(400).json({ok:false,error:`This request is already ${existing.status}.`});
     const reason=String(request.body?.reason||"Cancelled by employee").trim();
-    const saved=await query("update leave_requests set status='Cancelled',cancellation_reason=$1,updated_at=now() where request_no=$2 returning *",[reason,requestNo]);
+    const saved=await query("update leave_requests set status='Cancelled',cancellation_reason=$1,updated_at=now() where request_no=$2 and status=$3 returning *",[reason,requestNo,existing.status]);
+    if(!saved.rows[0]) return response.status(409).json({ok:false,error:"This leave request was already updated by another user."});
     if(existing.status==="Approved"){ const balance=await hrBalanceForUser(existing.user_name,Number(String(existing.start_date).slice(0,4)),existing.leave_type); await query("insert into hr_leave_ledger(user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by) values($1,$2,$3,'CANCELLATION',$4,$5,$6,$7,$8)",[existing.user_name,balance.year,existing.leave_type,requestNo,Number(existing.actual_leave_days||existing.total_days||0),balance.available,reason,request.appSession.userName]); }
     return response.json({ok:true,row:saved.rows[0]});
   }catch(error){return next(error);}
@@ -2952,7 +2956,7 @@ app.post("/api/hr/leave-requests/:requestNo/extension", requireEmployeePortalAut
   try {
     const original=(await query("select * from leave_requests where request_no=$1 limit 1",[String(request.params.requestNo||"").trim()])).rows[0];
     if(!original) return response.status(404).json({ok:false,error:"Leave request not found."});
-    const admin=["admin","hr"].includes(String(request.appSession.role||"").toLowerCase());
+    const admin=isHrAdminSession(request.appSession);
     if(!admin && String(original.user_name).toLowerCase()!==String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"You can only extend your own leave."});
     if(original.status!=="Approved") return response.status(400).json({ok:false,error:"Only an approved leave request can be extended."});
     const newEnd=isoDate(request.body?.endDate); const start=new Date(`${String(original.end_date).slice(0,10)}T00:00:00Z`); start.setUTCDate(start.getUTCDate()+1); const extensionStart=start.toISOString().slice(0,10);
@@ -2974,14 +2978,17 @@ app.post("/api/hr/leave-requests/:requestNo/rejoin", requireEmployeePortalAuth, 
     const requestNo=String(request.params.requestNo||"").trim();
     const existing=(await query("select * from leave_requests where request_no=$1 limit 1",[requestNo])).rows[0];
     if(!existing) return response.status(404).json({ok:false,error:"Leave request not found."});
-    const admin=["admin","hr"].includes(String(request.appSession.role||"").toLowerCase());
+    if(existing.status!=="Approved") return response.status(400).json({ok:false,error:"Only approved leave can be marked as rejoined."});
+    if(existing.rejoined_at) return response.status(409).json({ok:false,error:"This leave request has already been marked as rejoined."});
+    const admin=isHrAdminSession(request.appSession);
     if(!admin && String(existing.user_name).toLowerCase()!==String(request.appSession.userName).toLowerCase()) return response.status(403).json({ok:false,error:"Not allowed."});
     const actualReturn=isoDate(request.body?.actualReturnDate)||new Date().toISOString().slice(0,10);
     const promised=isoDate(existing.rejoining_date);
     if(!promised||actualReturn<promised) return response.status(400).json({ok:false,error:"Actual return date must be on or after the promised rejoining date."});
     let lateReturnDays=0;
     if(actualReturn>promised){ const dayBefore=new Date(`${actualReturn}T00:00:00Z`); dayBefore.setUTCDate(dayBefore.getUTCDate()-1); const type=(await query("select paid from hr_leave_types where upper(code)=upper($1) or lower(name)=lower($1) limit 1",[existing.leave_type])).rows[0]; const calc=await calculateHrLeave(promised,dayBefore.toISOString().slice(0,10),hrBranchForRequest(request)); lateReturnDays=type?.paid===false?0:Number(calc.actualLeaveDays||0); }
-    const saved=await query("update leave_requests set rejoined_at=$1,rejoined_by=$2,late_return_days=$3,updated_at=now() where request_no=$4 returning *",[actualReturn,request.appSession.userName,lateReturnDays,requestNo]);
+    const saved=await query("update leave_requests set rejoined_at=$1,rejoined_by=$2,late_return_days=$3,updated_at=now() where request_no=$4 and rejoined_at is null returning *",[actualReturn,request.appSession.userName,lateReturnDays,requestNo]);
+    if(!saved.rows[0]) return response.status(409).json({ok:false,error:"This leave request was already marked as rejoined."});
     if(lateReturnDays>0) await query("insert into hr_leave_ledger(user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by) values($1,$2,$3,'LATE_RETURN',$4,$5,0,$6,$7)",[existing.user_name,Number(String(existing.start_date).slice(0,4)),String(existing.leave_type||'').toUpperCase(),requestNo,lateReturnDays,`Late return: ${lateReturnDays} additional leave day(s)`,request.appSession.userName]);
     return response.json({ok:true,row:saved.rows[0],lateReturnDays});
   }catch(error){return next(error);}
