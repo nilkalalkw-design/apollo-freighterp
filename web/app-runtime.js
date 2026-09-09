@@ -1430,6 +1430,23 @@ function branchOptions() {
   return CANONICAL_BRANCHES.slice();
 }
 
+function creditLimitOptions() {
+  return ["15 Days", "30 Days", "45 Days"];
+}
+
+function customerStatusOptions() {
+  return ["Active", "Inactive"];
+}
+
+function normalizedCreditLimit(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return { "15 days": "15 Days", "30 days": "30 Days", "45 days": "45 Days" }[normalized] || "15 Days";
+}
+
+function normalizedCustomerStatus(value = "") {
+  return String(value || "").trim().toLowerCase() === "inactive" ? "Inactive" : "Active";
+}
+
 function defaultUserBranch() {
   const access = String(currentSession()?.branchAccess || "").trim();
   if (access && !["both", "all"].includes(access.toLowerCase())) {
@@ -3757,17 +3774,17 @@ function openCustomerDetails(customerCode) {
     secondaryLabel: "Close",
     body: `
       ${input("code", "Customer Code", customer.code || "", true)}
-      ${input("status", "Status", customer.status || "Active", true)}
+      ${strictSelect("status", "Status", customerStatusOptions(), normalizedCustomerStatus(customer.status))}
       ${input("name", "Name", customer.name || "")}
       ${input("locationOrLane", "Lane / Location", customer.locationOrLane || "")}
       ${textarea("fullAddress", "Full Address / Shipping Delivery Address", customer.fullAddress || "", false, 3)}
       ${input("email", "Contact Email", customer.email || "", false, "email")}
       ${input("mobile", "Mobile Number", customer.mobile || "")}
-      ${select("terms", "Credit Limit Days", ["15 days", "30 days", "45 days"], customer.terms || "15 days")}
-      ${select("branch", "Branch", branchOptions(), customer.branch || defaultUserBranch())}
+      ${strictSelect("terms", "Credit Limit Days", creditLimitOptions(), normalizedCreditLimit(customer.terms))}
+      ${strictSelect("branch", "Branch", branchOptions(), normalizeBranchName(customer.branch || defaultUserBranch()))}
       <div class="action-row customer-detail-actions">
         ${adminActing ? `<button type="button" class="secondary-button" data-dialog-action="check-performance">Check Performance</button>` : ""}
-        ${select("blockBranch", "Branch to Block / Unblock", branchOptions(), customer.branch || defaultUserBranch())}
+        ${strictSelect("blockBranch", "Branch to Block / Unblock", branchOptions(), normalizeBranchName(customer.branch || defaultUserBranch()))}
         <button type="button" class="secondary-button" data-dialog-action="block-customer">${adminActing ? "Block" : "Block Request"}</button>
         <button type="button" class="secondary-button" data-dialog-action="unblock-customer">${adminActing ? "Unblock" : "Unblock Request"}</button>
       </div>
@@ -3791,8 +3808,9 @@ function openCustomerDetails(customerCode) {
         fullAddress: String(data.fullAddress || "").trim(),
         email: String(data.email || "").trim(),
         mobile: String(data.mobile || "").trim(),
-        terms: String(data.terms || "").trim(),
-        branch: String(data.branch || defaultUserBranch()).trim()
+        terms: normalizedCreditLimit(data.terms),
+        status: normalizedCustomerStatus(data.status),
+        branch: normalizeBranchName(data.branch || defaultUserBranch())
       });
       const saved = await persistRecord("customers", customer);
       if (!saved) {
@@ -4346,7 +4364,7 @@ function renderSettings() {
           ${input("awbNumberFormat", "Airway Bill Number Format", state.settings.awbNumberFormat)}
           ${input("defaultVolumetricDivisor", "Default Volumetric Divisor", state.settings.defaultVolumetricDivisor)}
           ${select("requirePodBeforeInvoice", "Require POD Before Invoice", ["Yes", "No"], state.settings.requirePodBeforeInvoice)}
-          ${select("branches", "Branches", branchOptions(), normalizeBranchName(state.settings.branches || branchOptions()[0]))}
+          ${strictSelect("branches", "Branches", branchOptions(), normalizeBranchName(state.settings.branches || branchOptions()[0]))}
           ${select("allowGlobalShipmentQuickSearch", "Allow 'Open by Number' to search all branches", ["No", "Yes"], state.settings.allowGlobalShipmentQuickSearch || "No")}
           <p class="empty-state">Next Kuwait shipment: ${escapeHtml(nextShipmentNumber("Kuwait HO", "LI"))} | Next Dubai shipment: ${escapeHtml(nextShipmentNumber("Dubai", "SI"))} | invoice: ${escapeHtml(nextInvoiceNumber())} | manifest: ${escapeHtml(nextConsolidationNumber())} | TCN: ${escapeHtml(nextTcnNumber())} | POD: ${escapeHtml(nextDeliveryNoteNumber())} | customer: ${escapeHtml(nextCustomerNumber())} | charge: ${escapeHtml(nextAdditionalChargeNumber())} | supplier: ${escapeHtml(nextSupplierNumber())} | quotation: ${escapeHtml(nextQuotationNumber())}</p>
           <button type="submit">Save Company Settings</button>
@@ -7673,9 +7691,9 @@ function partyDialogConfig(key, label) {
       ${key === "customers" ? textarea("fullAddress", "Full Address / Shipping Delivery Address", "", false, 3) : ""}
       ${input("email", "Contact Email", "", false, "email")}
       ${input("mobile", "Mobile Number", "")}
-      ${select("terms", "Credit Limit Days", ["15 days", "30 days", "45 days"])}
-      ${select("status", "Status", ["Active", "Inactive", "Blocked"])}
-      ${select("branch", "Branch", branchOptions(), defaultUserBranch())}
+      ${key === "customers" ? strictSelect("terms", "Credit Limit Days", creditLimitOptions(), "15 Days") : select("terms", "Credit Limit Days", ["15 days", "30 days", "45 days"])}
+      ${key === "customers" ? strictSelect("status", "Status", customerStatusOptions(), "Active") : select("status", "Status", ["Active", "Inactive", "Blocked"])}
+      ${strictSelect("branch", "Branch", branchOptions(), defaultUserBranch())}
     `,
     onSave: (data) => createParty(key, data)
   };
@@ -7704,7 +7722,7 @@ function shipmentDialogBody(mode = "shipment", record = null) {
       ${selectEditable("destination", "Destination", "destination", ["Riyadh"], fieldValue("destination"))}
       ${input("customerReference", "Customer Reference", fieldValue("customerReference"))}
       ${textarea("shipmentRemarks", "Remarks", fieldValue("shipmentRemarks"), false, 2)}
-      ${select("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
+      ${strictSelect("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
       ${input("salesPerson", "Sales Person", fieldValue("salesPerson", currentUserName()))}
       <label>Airway Bill / Bill of Lading
         <span class="inline-input-button">
@@ -7868,7 +7886,7 @@ function quotationDialogBody(record) {
     ${input("quotationNo", "Quotation No", fieldValue("quotationNo", nextQuotationNumber()), loaded)}
     ${input("date", "Date", fieldValue("date", today()), false, "date")}
     ${select("status", "Status", ["Draft", "Sent", "Converted"], fieldValue("status", "Draft"))}
-    ${select("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
+    ${strictSelect("branch", "Branch", branchOptions(), normalizeBranchName(fieldValue("branch", defaultUserBranch())))}
     ${formSection("Customer Information", `
       ${selectFrom("customerName", "Customer Name", state.customers.map((row) => row.name), fieldValue("customerName"))}
       ${input("customerContactPerson", "Contact Person", fieldValue("customerContactPerson"))}
