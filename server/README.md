@@ -65,6 +65,17 @@ The server also accepts these fallback variable names if you already use them el
 - `PG_CONNECTION_STRING`
 - `RENDER_DATABASE_URL`
 
+## HR leave email notifications
+
+After a leave request is successfully saved, the server sends an email notification to every active `app_users` account whose `is_hr_admin` flag is enabled or whose role is `Admin` or `HR`. Configure these server environment variables to enable delivery through Resend:
+
+```text
+RESEND_API_KEY=re_...
+EMAIL_FROM=HR Portal <hr@your-verified-domain.example>
+```
+
+The `EMAIL_FROM` domain must be verified in the email provider. If these variables are not configured, leave requests continue to save normally and the server logs that notification delivery was skipped. If the provider is temporarily unavailable, the leave request remains saved and the failure is logged; the employee does not lose the submitted request.
+
 ## Database files
 
 - `sql/001_init.sql` creates the full ERP schema, indexes, triggers, and upgrade-safe columns.
