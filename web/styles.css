@@ -1925,6 +1925,29 @@ th {
   gap: 10px;
 }
 
+.shipment-document-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.shipment-document-actions .secondary-button {
+  flex: 0 0 auto;
+  min-height: 31px;
+  padding: 5px 9px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.shipment-document-actions [data-shipment-document-name] {
+  flex: 0 1 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-expand-row td {
   background: rgba(0, 0, 0, 0.02);
   padding: 0;

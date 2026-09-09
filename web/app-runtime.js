@@ -7877,13 +7877,14 @@ function shipmentDialogBody(mode = "shipment", record = null) {
     <input type="hidden" name="shipmentServiceOther" value="${escapeHtml(fieldValue("shipmentServiceOther"))}" />
     ${checkbox("printOnlyCargoDetails", "Cargo Summary", fieldValue("printOnlyCargoDetails", false))}
     <input class="is-hidden" name="shipmentDocumentUpload" type="file" accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf" />
-    <div class="action-row">
-      <button type="button" class="secondary-button" data-dialog-action="upload-shipment-document">Upload Shipment Documents</button>
+    <div class="action-row shipment-document-actions">
+      <button type="button" class="secondary-button" data-dialog-action="upload-shipment-document">Upload Documents</button>
       <span class="empty-state" data-shipment-document-name></span>
       <button type="button" class="secondary-button" data-dialog-action="generate-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before generating a TCN\""}>Generate TCN</button>
       <button type="button" class="secondary-button" data-dialog-action="view-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before viewing a TCN\""}>View TCN</button>
-      <button type="button" class="secondary-button" data-dialog-action="generate-pod">Generate Delivery Note / POD</button>
-      <button type="button" class="secondary-button" data-dialog-action="save-draft">Save as Draft</button>
+      <button type="button" class="secondary-button" data-dialog-action="duplicate-tcn" ${tcnAvailable ? "" : "disabled title=\"Save the shipment before duplicating a TCN\""}>Duplicate TCN</button>
+      <button type="button" class="secondary-button" data-dialog-action="generate-pod">Delivery Note / POD</button>
+      <button type="button" class="secondary-button" data-dialog-action="save-draft">Save Draft</button>
     </div>
   `;
 }
@@ -8749,6 +8750,21 @@ function bindPalletDimensionBuilder() {
     openPrintableDocument(tcnDocumentHtml({ ...data, airwayBillNo: tcn, tcnNumber: tcn, palletDimensionsJson: hiddenField.value }));
   };
 
+  const duplicateTcn = () => {
+    const data = currentShipmentData();
+    const savedShipment = state.shipments.some((shipmentItem) => shipmentItem.jobNo === data.jobNo);
+    if (!savedShipment) {
+      notifyDenied("Save shipment first", "Save or create this shipment before duplicating a TCN.");
+      return;
+    }
+    const companyName = window.prompt("Enter the company name for the duplicate TCN:", "ALT EXPRESS CARGO AND CLEARING LLC");
+    if (companyName === null || !companyName.trim()) return;
+    const logoUrl = window.prompt("Enter the logo URL for the duplicate TCN (leave blank to use the default logo):", state.settings.companyLogoUrl || "");
+    if (logoUrl === null) return;
+    const tcn = nextTcnNumber();
+    openPrintableDocument(tcnDocumentHtml({ ...data, airwayBillNo: tcn, tcnNumber: tcn, palletDimensionsJson: hiddenField.value, documentCompanyName: companyName.trim(), documentCompanyLogoUrl: logoUrl.trim() }));
+  };
+
   const sync = () => {
     const totalPieces = lines.reduce((sum, line) => sum + Number(line.count || line.quantity || 0), 0);
     const actualWeight = lines.reduce((sum, line) => sum + Number(line.weightKg || line.weight || 0), 0);
@@ -8857,6 +8873,7 @@ function bindPalletDimensionBuilder() {
   dialogBody.querySelector("[data-dialog-action='save-draft']")?.addEventListener("click", () => createShipmentDraft(currentShipmentData()));
   dialogBody.querySelector("[data-dialog-action='generate-tcn']")?.addEventListener("click", () => printTcn(true));
   dialogBody.querySelector("[data-dialog-action='view-tcn']")?.addEventListener("click", () => printTcn(false));
+  dialogBody.querySelector("[data-dialog-action='duplicate-tcn']")?.addEventListener("click", duplicateTcn);
   const shipmentDocumentUpload = dialogBody.querySelector("input[name='shipmentDocumentUpload']");
   const shipmentDocumentName = dialogBody.querySelector("[data-shipment-document-name]");
   dialogBody.querySelector("[data-dialog-action='upload-shipment-document']")?.addEventListener("click", () => shipmentDocumentUpload?.click());
@@ -10499,10 +10516,10 @@ function tcnDocumentHtml(record) {
       </table>
       ${printOnlyCargoDetails ? "" : tcnDimensionsTable(cargoLines, mergedRecord.volumeCategory)}
       ${tcnTermsHtml()}
-         <section class="tcn-signatures">
+      <section class="tcn-signatures">
       </section>
     `,
-    { hideDefaultSignatures: true }
+    { hideDefaultSignatures: true, companyName: record.documentCompanyName, logoUrl: record.documentCompanyLogoUrl }
   );
 }
 
@@ -10647,8 +10664,8 @@ function palletDimensionPrintTable(lines, roundedTotal) {
 function documentShell(title, documentLabel, documentNo, documentDate, body, options = {}) {
   const printedAt = formatDateTimeNow();
   const generatedBy = currentUserName();
-  const companyName = state.settings.companyName || "APOLLO FREIGHT SOLUTIONS";
-  const logoUrl = String(state.settings.companyLogoUrl || "").trim() || defaultDocumentLogoUrl();
+  const companyName = options.companyName || state.settings.companyName || "APOLLO FREIGHT SOLUTIONS";
+  const logoUrl = String(options.logoUrl || state.settings.companyLogoUrl || "").trim() || defaultDocumentLogoUrl();
   const pageSize = options.landscape ? "A4 landscape" : "A4 portrait";
   const pageWidth = options.landscape ? "297mm" : "210mm";
   const pageMinHeight = options.landscape ? "210mm" : "297mm";
