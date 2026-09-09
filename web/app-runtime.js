@@ -3705,6 +3705,31 @@ function dashboardMetricTableType(metric) {
   return "shipment";
 }
 
+function exportDashboardMetricExcel(metric) {
+  const config = dashboardMetricConfig(metric);
+  if (!config || !config.rows.length || !config.columns.length) {
+    notifyDenied("Export not ready", "No rows are available for this dashboard card.");
+    return;
+  }
+  const tableType = dashboardMetricTableType(metric);
+  const scope = `metric:${metric}`;
+  const headers = config.columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("");
+  const rows = config.rows.map((row, index) => {
+    const cells = config.columns.map(([key]) => {
+      const rawValue = key === "slNo" ? index + 1 : displayCellValue(tableType, key, row, index);
+      return `<td>${escapeHtml(display(rawValue ?? ""))}</td>`;
+    }).join("");
+    return `<tr>${cells}</tr>`;
+  }).join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif}table{border-collapse:collapse}th,td{border:1px solid #b8c2cc;padding:6px;text-align:left}th{background:#e7eef5;font-weight:700}</style></head><body><h2>${escapeHtml(config.title)}</h2><p>${escapeHtml(config.summary)}</p><table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table></body></html>`;
+  const blob = new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${config.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${today()}.xls`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+  notifySuccess("Excel export ready", `${config.rows.length} row(s) exported from ${config.title}.`);
+}
 function openDashboardMetricDialog(metric) {
   const config = dashboardMetricConfig(metric);
   if (!config) return;
@@ -3721,6 +3746,9 @@ function openDashboardMetricDialog(metric) {
               <p>${escapeHtml(config.summary)}</p>
             </div>
             <span class="status-badge neutral">${escapeHtml(String(config.rows.length))}</span>
+          </div>
+          <div class="action-row dashboard-metric-actions">
+            <button type="button" class="secondary-button" data-action="export-dashboard-metric" data-dashboard-metric="${escapeHtml(metric)}" ${config.rows.length ? "" : "disabled"}>Export Excel</button>
           </div>
           ${config.rows.length ? table(dashboardMetricTableType(metric), config.rows, config.columns, !metric.startsWith("customer-"), `metric:${metric}`, false) : `<p class="empty-state">No matching records found.</p>`}
         </div>
@@ -6018,6 +6046,10 @@ async function handleModuleClick(event) {
     exportCollectionCsv(type);
     return;
   }
+  if (action === "export-dashboard-metric") {
+    exportDashboardMetricExcel(button.dataset.dashboardMetric || "");
+    return;
+  }
 
   if (action === "approve-load-manifest") {
     await approveLoadManifest(id);
@@ -7019,7 +7051,7 @@ function openDialog({ title, typeLabel, body, saveLabel, secondaryLabel = "", on
     dialogBody.removeEventListener("click", dialogBody._tablePageHandler);
   }
   dialogBody._tablePageHandler = (event) => {
-    if (event.target.closest("[data-action='table-page']")) {
+    if (event.target.closest("[data-action='table-page'], [data-action='export-dashboard-metric']")) {
       handleModuleClick(event);
     }
   };
