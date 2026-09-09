@@ -8759,7 +8759,7 @@ function bindPalletDimensionBuilder() {
     }
     const companyName = window.prompt("Enter the company name for the duplicate TCN:", "ALT EXPRESS CARGO AND CLEARING LLC");
     if (companyName === null || !companyName.trim()) return;
-    const logoUrl = window.prompt("Enter the logo URL for the duplicate TCN (leave blank to use the default logo):", state.settings.companyLogoUrl || "");
+    const logoUrl = window.prompt("Enter the logo URL for the duplicate TCN (leave blank to use the uploaded Alt Express logo):", "/assets/alt-express-logo.png");
     if (logoUrl === null) return;
     const tcn = nextTcnNumber();
     openPrintableDocument(tcnDocumentHtml({ ...data, airwayBillNo: tcn, tcnNumber: tcn, palletDimensionsJson: hiddenField.value, documentCompanyName: companyName.trim(), documentCompanyLogoUrl: logoUrl.trim() }));
