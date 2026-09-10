@@ -963,6 +963,20 @@ label {
   font-size: 11px;
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
+}
+
+.table-wrap th,
+.table-wrap td {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+.table-wrap th > *,
+.table-wrap td > * {
+  max-width: 100%;
 }
 
 .table-wrap thead th {
