@@ -3,10 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Apollo Connected | Apollo Freight Solutions</title>
+    <title>Apollo Freight Solutions Portal</title>
     <link rel="stylesheet" href="./styles.css" />
-    <link rel="stylesheet" href="./apollo-connected.css?v=20260910" />
-    <meta name="theme-color" content="#071827" />
   </head>
   <body>
     <section id="loginScreen" class="login-screen">
@@ -14,23 +12,22 @@
         <aside class="login-brand-panel">
           <div class="login-brand-block">
             <div class="brand-row brand-row-large">
-              <img class="brand-logo brand-logo-large" src="./assets/apollo-website-logo.png" alt="Apollo Freight Solutions" onerror="this.hidden=true" />
+              <img class="brand-logo brand-logo-large" src="./assets/logo.png?v=portal-20260903-text-only" alt="Apollo Freight Solutions Portal logo" onerror="this.hidden=true" />
               <div>
-                <p class="eyebrow eyebrow-light company-name-ui">Apollo Connected</p>
-                <h1 class="brand-heading">Your freight.<br>Your control.<br><span>Connected.</span></h1>
+                <p class="eyebrow eyebrow-light company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions <span>P</span>ortal</p>
+                <h1 class="brand-heading">Cargo Shipments</h1>
               </div>
             </div>
-            <p class="login-tagline">We bring continents closer.</p>
+            <p class="login-tagline">We Bring Continents closer...</p>
             <div class="brand-divider"></div>
-            <p class="brand-description">Built for GCC freight execution. One workspace for shipments, documents, billing, and your team.</p>
+            <p class="brand-description">Land freight consolidation, tariffs, POD, documents, billing, and audit controls.</p>
           </div>
         </aside>
 
         <div class="login-card-shell">
           <div class="login-card">
-            <p class="auth-eyebrow company-name-ui">Apollo Connected</p>
-            <h2>Welcome back.</h2>
-            <p class="auth-copy">Sign in to your Apollo workspace.</p>
+            <p class="auth-eyebrow company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions <span>P</span>ortal</p>
+            <h2>Sign in</h2>
 
             <form id="loginForm" class="login-form">
               <label>
@@ -51,9 +48,9 @@
                 <button type="button" class="login-mode-button" data-login-mode-option="maintenance" aria-pressed="false">Maintenance Portal</button>
               </div>
               <input id="loginModeField" type="hidden" name="loginMode" value="company" />
-              <p class="login-mode-help">Select your workspace, then enter your account details.</p>
+              <p class="login-mode-help">Choose Company Portal, Employee Login for HR, or Maintenance Portal. All options use the same ERP user name and password, and each portal checks its own User Management permission.</p>
               <p id="loginMessage" class="form-message" role="status"></p>
-              <button type="submit">Sign in to Apollo Connected</button>
+              <button type="submit">Login</button>
             </form>
 
             <details class="reset-panel">
@@ -65,11 +62,11 @@
                 </label>
                 <button id="resetPasswordButton" type="button" class="navy-button">Send Reset Link</button>
                 <p id="resetMessage" class="reset-message" role="status"></p>
-                <p class="reset-help">Need help accessing your account? Contact your Apollo administrator.</p>
+                <p class="reset-help">For the live server version, this will send a real email reset link once SMTP or Microsoft 365 is configured on the API.</p>
               </div>
             </details>
 
-            <p class="auth-footer">Designed by ApolloIT | Copyright 2026 <span class="company-name-ui">Apollo Connected</span>. All rights reserved.</p>
+            <p class="auth-footer">Designed by ApolloIT | Copyright 2026 <span class="company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions <span>P</span>ortal</span>. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -79,12 +76,12 @@
       <aside class="sidebar">
         <div class="sidebar-brand-shell">
           <div class="sidebar-brand">
-            <img class="brand-logo" src="./assets/apollo-website-logo.png" alt="Apollo Freight Solutions" onerror="this.hidden=true" />
+            <img class="brand-logo" src="./assets/logo.png?v=portal-20260903-text-only" alt="Apollo Freight Solutions Portal logo" onerror="this.hidden=true" />
             <div>
-              <p class="eyebrow eyebrow-light company-name-ui">Apollo Connected</p>
+              <p class="eyebrow eyebrow-light company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions <span>P</span>ortal</p>
             </div>
           </div>
-          <p class="sidebar-tagline">APOLLO FREIGHT SOLUTIONS</p>
+          <p class="sidebar-tagline">We Bring Continents closer...</p>
           <div class="brand-divider"></div>
         </div>
         <nav id="moduleNav" class="nav-list" aria-label="ERP sections"></nav>
@@ -100,8 +97,8 @@
         <header class="topbar">
           <div class="topbar-main">
             <div class="brand-ribbon">
-              <p class="eyebrow company-name-ui">Apollo Connected</p>
-              <span>We bring continents closer.</span>
+              <p class="eyebrow company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions <span>P</span>ortal</p>
+              <span>We Bring Continents closer...</span>
             </div>
             <div class="page-heading">
               <p id="pageEyebrow" class="eyebrow">Dashboard</p>
@@ -146,7 +143,7 @@
         <main class="workspace">
           <section id="moduleContent" class="module-content" aria-live="polite"></section>
         </main>
-        <footer class="app-footer">Designed by ApolloIT | Copyright 2026 <span class="company-name-ui">Apollo Connected</span>. All rights reserved.</footer>
+        <footer class="app-footer">Designed by ApolloIT | Copyright 2026 <span class="company-name-ui"><span>A</span>pollo <span>F</span>reight <span>S</span>olutions <span>P</span>ortal</span>. All rights reserved.</footer>
       </div>
     </div>
 
