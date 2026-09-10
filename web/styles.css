@@ -963,20 +963,26 @@ label {
   font-size: 11px;
   border-collapse: separate;
   border-spacing: 0;
-  table-layout: fixed;
 }
 
 .table-wrap th,
 .table-wrap td {
-  max-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  white-space: normal;
   vertical-align: top;
 }
 
 .table-wrap th > *,
 .table-wrap td > * {
   max-width: 100%;
+}
+
+.table-wrap td .table-inline-link {
+  display: inline-block;
+  max-width: calc(100% - 24px);
+  overflow-wrap: anywhere;
+  vertical-align: top;
 }
 
 .table-wrap thead th {
@@ -3039,3 +3045,4 @@ tr.shipment-row-cancelled td { background: #f2f3f5; }
 /* HR completion additions */
 .hr-form-section{padding:16px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;display:grid;gap:12px}.hr-form-section h3{margin:0}.hr-form-section .form-help,.hr-form-section small{color:#667085}.hr-leave-application{width:min(980px,96vw)}.hr-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;background:#dfe5ec;padding:1px}.hr-cal-head{background:#f8fafc;padding:10px;font-size:12px;font-weight:700;text-align:center}.hr-cal-cell{min-height:82px;background:#fff;padding:8px;display:flex;flex-direction:column;gap:5px}.hr-cal-cell strong{font-size:15px}.hr-cal-cell small{font-size:10px;color:#667085;overflow:hidden;text-overflow:ellipsis}.hr-cal-cell.is-empty{background:#f8fafc}.hr-cal-cell.is-weekend{background:#f3f4f6}.hr-cal-cell.is-holiday{background:#e9f7ee}.hr-cal-cell.is-blackout{background:#fff1f2}.hr-cal-cell.is-leave-approved{outline:2px solid #72b987;outline-offset:-2px}.hr-cal-cell.is-leave-pending{outline:2px solid #e5b93f;outline-offset:-2px}.hr-cal-cell.is-leave-rejected{outline:2px solid #e58a8a;outline-offset:-2px}.hr-legend{display:flex;flex-wrap:wrap;gap:10px;padding:16px}.hr-legend span{padding:8px 12px;border:1px solid #dfe5ec;border-radius:8px;font-size:12px}.hr-legend span:nth-child(1){background:#f3f4f6}.hr-legend span:nth-child(2){background:#e9f7ee}.hr-legend span:nth-child(3){background:#eef8f0}.hr-legend span:nth-child(4){background:#fff1f2}
 @media(max-width:600px){.hr-calendar-grid{font-size:11px}.hr-cal-cell{min-height:64px;padding:5px}.hr-cal-head{padding:7px 3px}}
+.table-wrap .shipment-register-indicator { max-width: none; white-space: nowrap; overflow: visible; }
