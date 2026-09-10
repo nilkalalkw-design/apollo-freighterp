@@ -3164,6 +3164,54 @@ app.get("/api/hr/admin/policies", requireHrAdmin, async (request,response,next)=
   }catch(error){return next(error);}
 });
 
+app.put("/api/hr/admin/adjustment-audit/:id", requireHrAdmin, async (request,response,next)=>{
+  try {
+    const id=Number(request.params.id);
+    if(!Number.isInteger(id)||id<=0) return response.status(400).json({ok:false,error:"Invalid adjustment audit entry."});
+    const data=request.body||{};
+    const reason=String(data.reason||"").trim();
+    const newAdjustment=Number(data.newAdjustment);
+    if(!Number.isFinite(newAdjustment)) return response.status(400).json({ok:false,error:"A valid new adjustment is required."});
+    const result=await withDatabaseTransaction(async client=>{
+      const audit=(await client.query("select * from hr_leave_adjustment_audit where id=$1 for update",[id])).rows[0];
+      if(!audit) return null;
+      const policy=(await client.query("select id,adjustment from hr_employee_leave_policies where lower(user_name)=lower($1) and leave_type_code=$2 and year=$3 order by updated_at desc nulls last,id desc limit 1 for update",[audit.user_name,audit.leave_type_code,audit.year])).rows[0];
+      const updated=(await client.query("update hr_leave_adjustment_audit set new_adjustment=$1,reason=$2 where id=$3 returning *",[newAdjustment,reason,id])).rows[0];
+      try { await client.query("update hr_employee_leave_policy_history set adjustment=$1,notes=$2 where lower(user_name)=lower($3) and leave_type_code=$4 and year=$5 and saved_at=$6",[newAdjustment,reason,audit.user_name,audit.leave_type_code,audit.year,audit.created_at]); } catch(historyError) { if(historyError.code!=="42P01") throw historyError; }
+      const latest=(await client.query("select new_adjustment from hr_leave_adjustment_audit where lower(user_name)=lower($1) and leave_type_code=$2 and year=$3 order by created_at desc,id desc limit 1",[audit.user_name,audit.leave_type_code,audit.year])).rows[0];
+      const target=Number(latest?.new_adjustment||0);
+      if(policy) await client.query("update hr_employee_leave_policies set adjustment=$1,updated_at=now() where id=$2",[target,policy.id]);
+      return {audit:updated,oldPolicyAdjustment:Number(policy?.adjustment||0),newPolicyAdjustment:target};
+    });
+    if(!result) return response.status(404).json({ok:false,error:"Adjustment audit entry not found."});
+    const delta=result.newPolicyAdjustment-result.oldPolicyAdjustment;
+    if(delta!==0){const balance=await hrBalanceForUser(result.audit.user_name,result.audit.year,result.audit.leave_type_code);await query("insert into hr_leave_ledger(user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by) values($1,$2,$3,'MANUAL_ADJUSTMENT',$4,$5,$6,$7,$8)",[result.audit.user_name,result.audit.year,result.audit.leave_type_code,`AUDIT-EDIT-${id}`,delta,balance.available,reason||"Adjustment audit corrected",request.appSession.userName]);}
+    return response.json({ok:true,row:result.audit,delta});
+  } catch(error) { return next(error); }
+});
+
+app.delete("/api/hr/admin/adjustment-audit/:id", requireHrAdmin, async (request,response,next)=>{
+  try {
+    const id=Number(request.params.id);
+    if(!Number.isInteger(id)||id<=0) return response.status(400).json({ok:false,error:"Invalid adjustment audit entry."});
+    const deleted=await withDatabaseTransaction(async client=>{
+      const audit=(await client.query("select * from hr_leave_adjustment_audit where id=$1 for update",[id])).rows[0];
+      if(!audit) return null;
+      const policy=(await client.query("select id,adjustment from hr_employee_leave_policies where lower(user_name)=lower($1) and leave_type_code=$2 and year=$3 order by updated_at desc nulls last,id desc limit 1 for update",[audit.user_name,audit.leave_type_code,audit.year])).rows[0];
+      await client.query("delete from hr_leave_adjustment_audit where id=$1",[id]);
+      try { await client.query(`delete from hr_employee_leave_policy_history where lower(user_name)=lower($1) and leave_type_code=$2 and year=$3 and saved_at=$4 and adjustment=$5`,[audit.user_name,audit.leave_type_code,audit.year,audit.created_at,audit.new_adjustment]); } catch(historyError) { if(historyError.code!=="42P01") throw historyError; }
+      const latest=(await client.query("select new_adjustment from hr_leave_adjustment_audit where lower(user_name)=lower($1) and leave_type_code=$2 and year=$3 order by created_at desc,id desc limit 1",[audit.user_name,audit.leave_type_code,audit.year])).rows[0];
+      const target=Number(latest?.new_adjustment||0);
+      if(policy) await client.query("update hr_employee_leave_policies set adjustment=$1,updated_at=now() where id=$2",[target,policy.id]);
+      return {audit,oldPolicyAdjustment:Number(policy?.adjustment||0),newPolicyAdjustment:target};
+    });
+    if(!deleted) return response.status(404).json({ok:false,error:"Adjustment audit entry not found."});
+    const delta=deleted.newPolicyAdjustment-deleted.oldPolicyAdjustment;
+    if(delta!==0){const balance=await hrBalanceForUser(deleted.audit.user_name,deleted.audit.year,deleted.audit.leave_type_code);await query("insert into hr_leave_ledger(user_name,year,leave_type_code,transaction_type,reference_no,days,balance_after,reason,created_by) values($1,$2,$3,'MANUAL_ADJUSTMENT',$4,$5,$6,$7,$8)",[deleted.audit.user_name,deleted.audit.year,deleted.audit.leave_type_code,`AUDIT-DELETE-${id}`,delta,balance.available,"Adjustment audit deleted/corrected",request.appSession.userName]);}
+    return response.json({ok:true,row:deleted.audit,delta});
+  } catch(error) { return next(error); }
+});
+
 app.put("/api/hr/admin/policies", requireHrAdmin, async (request,response,next)=>{
   try{
     const data=request.body||{}; const year=Number(data.year||new Date().getFullYear());
