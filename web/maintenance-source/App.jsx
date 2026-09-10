@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import logo from "./assets/logo.png";
 
-const DEFAULT_API_BASE_URL = import.meta.env.PROD
-  ? "https://apollo-freight-pst1.onrender.com"
-  : "http://localhost:4000";
+const DEFAULT_API_BASE_URL = import.meta.env.PROD ? "" : "http://localhost:4000";
 const API_BASE_URL = (import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL).replace(/\/$/, "");
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 const REPORT_FOOTER_TEXT =
@@ -15,7 +13,15 @@ function apiUrl(path) {
 
 function App() {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(() => localStorage.getItem("afs_token") || "");
+  const [token, setToken] = useState(() => {
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const handoffToken = String(params.get("erpToken") || "").trim();
+    if (handoffToken) {
+      localStorage.setItem("afs_token", handoffToken);
+      return handoffToken;
+    }
+    return localStorage.getItem("afs_token") || "";
+  });
   const [users, setUsers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -96,6 +102,14 @@ function App() {
       setActiveSection("reports");
     }
   }, [activeSection, user?.role]);
+
+  useEffect(() => {
+    // ERP opens Maintenance with a signed token in the URL hash. Remove it
+    // after storing it so credentials/tokens are not left in browser history.
+    if (new URLSearchParams(window.location.hash.replace(/^#/, "")).has("erpToken")) {
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+    }
+  }, []);
 
   useEffect(() => {
     // If we have a saved token, restore the session and load data.
@@ -344,77 +358,8 @@ function App() {
             <img className="company-logo auth-logo" src={logo} alt="Apollo-Freight Solutions logo" />
             <p className="eyebrow auth-eyebrow">Apollo-Freight Solutions</p>
             <h1><BrandName /></h1>
-            <p className="hero-copy auth-copy">
-              {authMode === "login"
-                ? "Secure access for Apollo-Freight Solutions users."
-                : authMode === "forgot"
-                  ? "Enter the registered email to receive a password reset OTP."
-                  : "Enter the OTP from your email and choose a new password."}
-            </p>
-            {authMode === "login" ? (
-              <form className="auth-form" onSubmit={handleLogin}>
-                <input
-                  value={authForm.username}
-                  onChange={(event) => setAuthForm((current) => ({ ...current, username: event.target.value }))}
-                  placeholder="Username"
-                />
-                <input
-                  type="password"
-                  value={authForm.password}
-                  onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))}
-                  placeholder="Password"
-                />
-                <button className="primary-action" type="submit">Login</button>
-                <button className="link-action" type="button" onClick={() => switchAuthMode("forgot")}>
-                  Forgot password?
-                </button>
-              </form>
-            ) : null}
-
-            {authMode === "forgot" ? (
-              <form className="auth-form" onSubmit={handleForgotPassword}>
-                <input
-                  type="email"
-                  value={resetForm.email}
-                  onChange={(event) => setResetForm((current) => ({ ...current, email: event.target.value }))}
-                  placeholder="Registered email"
-                  required
-                />
-                <button className="primary-action" type="submit">Send OTP</button>
-                <button className="secondary-form-action" type="button" onClick={() => switchAuthMode("login")}>
-                  Back to Login
-                </button>
-              </form>
-            ) : null}
-
-            {authMode === "reset" ? (
-              <form className="auth-form" onSubmit={handleResetPassword}>
-                <input
-                  type="email"
-                  value={resetForm.email}
-                  onChange={(event) => setResetForm((current) => ({ ...current, email: event.target.value }))}
-                  placeholder="Registered email"
-                  required
-                />
-                <input
-                  value={resetForm.otp}
-                  onChange={(event) => setResetForm((current) => ({ ...current, otp: event.target.value }))}
-                  placeholder="Email OTP"
-                  required
-                />
-                <input
-                  type="password"
-                  value={resetForm.password}
-                  onChange={(event) => setResetForm((current) => ({ ...current, password: event.target.value }))}
-                  placeholder="New password"
-                  required
-                />
-                <button className="primary-action" type="submit">Reset Password</button>
-                <button className="secondary-form-action" type="button" onClick={() => switchAuthMode("login")}>
-                  Back to Login
-                </button>
-              </form>
-            ) : null}
+            <p className="hero-copy auth-copy">Maintenance uses your ERP account. Open it from ERP using Switch Portal; no separate Maintenance user ID or password is required.</p>
+            <button className="primary-action" type="button" onClick={() => window.location.assign("/")}>Return to ERP Login</button>
             {authError ? <p className="error-text">{authError}</p> : null}
             {message ? <p className="auth-note">{message}</p> : null}
           </div>
