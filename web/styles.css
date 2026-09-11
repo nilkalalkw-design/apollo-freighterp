@@ -1683,6 +1683,32 @@ td {
   white-space: nowrap;
 }
 
+/* Keep long register values inside their own columns. Resizable registers use fixed layout;
+   wrapping here prevents a narrow column's text from visually spilling into its neighbour. */
+.table-wrap > table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.table-wrap th,
+.table-wrap td {
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+  vertical-align: top;
+}
+
+.table-wrap th .sort-header-button,
+.table-wrap td .table-inline-link,
+.table-wrap td .status-badge {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
 th {
   color: var(--muted);
   font-size: 11px;

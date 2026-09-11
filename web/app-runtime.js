@@ -1705,6 +1705,9 @@ async function boot() {
   moduleContent.addEventListener("click", handleModuleClick);
   moduleContent.addEventListener("click", handleModuleLinkClick);
   moduleContent.addEventListener("input", handleColumnFilterInput);
+  // Dashboard metric tables live inside the reusable record dialog rather than moduleContent.
+  // Delegate the same filter handler there so their filter boxes work like register filters.
+  recordDialog?.addEventListener("input", handleColumnFilterInput);
   moduleContent.addEventListener("input", handleShipmentQuickOpenInput);
   moduleContent.addEventListener("mousedown", handleColumnResizeStart);
   moduleContent.addEventListener("dragstart", handleShipmentColumnDragStart);
@@ -4790,6 +4793,14 @@ function handleColumnFilterInput(event) {
   else delete state.ui.columnFilters[scope][key];
   state.ui.tablePages = state.ui.tablePages || {};
   state.ui.tablePages[scope] = 1;
+  if (scope.startsWith("metric:")) {
+    openDashboardMetricDialog(scope.slice("metric:".length));
+    return;
+  }
+  if (scope === "shipment:customer-history" && state.ui.customerShipmentHistory?.customerCode) {
+    openCustomerShipmentHistory(state.ui.customerShipmentHistory.customerCode, state.ui.customerShipmentHistory);
+    return;
+  }
   render();
 }
 
