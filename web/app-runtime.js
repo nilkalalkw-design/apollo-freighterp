@@ -1488,7 +1488,11 @@ function shipmentStatusIsDelivered(row) { return shipmentStatusKey(row?.status) 
 function shipmentIsInTransit(row) { return shipmentStatusKey(row?.status) === "in transit"; }
 function shipmentIsOpen(row) { return ["draft", "booked"].includes(shipmentStatusKey(row?.status)); }
 function shipmentPodIsUploaded(row) { return String(row?.podStatus || "").trim().toLowerCase() === "uploaded"; }
-function shipmentNeedsPendingPod(row) { return shipmentStatusIsDelivered(row) && !shipmentPodIsUploaded(row); }
+// Pending POD must be based on the actual uploaded POD document, not only the legacy
+// shipment-level podStatus field. Older records can have a stale/blank podStatus even though
+// their signed POD is present in Documents; shipmentHasLiveUploadedPod also handles documents
+// linked through the shipment's AWB and excludes synchronization backfill artifacts.
+function shipmentNeedsPendingPod(row) { return shipmentStatusIsDelivered(row) && !shipmentHasLiveUploadedPod(row); }
 function shipmentInvoiceRecord(row) {
   const jobNo = String(row?.jobNo || "").trim().toLowerCase();
   return (state.invoices || []).find((invoiceRow) => String(invoiceRow?.shipmentNo || "").trim().toLowerCase() === jobNo);
